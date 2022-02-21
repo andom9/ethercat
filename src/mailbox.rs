@@ -58,7 +58,7 @@ pub(crate) fn mailbox<
 
         let res_packet = EtherCATFrame::new(&recv_buffer)?;
         let payload_offset = res_packet
-            .dlpdu_payload_offsets()
+            .dlpd0u_payload_offsets()
             .next()
             .ok_or(Error::SmallBuffer)?;
         let recv_buffer = res_packet.drop();
@@ -159,7 +159,7 @@ fn is_sm0_mailbox_empty<
 
     let recieve_packet = EtherCATFrame::new(recv_buffer)?;
     let payload_offset = recieve_packet
-        .dlpdu_payload_offsets()
+        .dlpd0u_payload_offsets()
         .next()
         .ok_or(Error::SmallBuffer)?;
     let mut data = [0; 2];
@@ -198,7 +198,7 @@ fn is_sm1_mailbox_full<
     check_wkc(recv_buffer, 1)?;
     let recieve_packet = EtherCATFrame::new(recv_buffer)?;
     let payload_offset = recieve_packet
-        .dlpdu_payload_offsets()
+        .dlpd0u_payload_offsets()
         .next()
         .ok_or(Error::SmallBuffer)?;
     let mut data = [0; 2];

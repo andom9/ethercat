@@ -130,7 +130,7 @@ fn check_sdo_res(sdo_recv_buffer: &[u8]) -> Result<heapless::Vec<u8, SDO_MAX_DAT
     let mut buffer: heapless::Vec<u8, SDO_MAX_DATA_LENGTH> = heapless::Vec::new();
 
     let payload_offset = res_packet
-        .dlpdu_payload_offsets()
+        .dlpd0u_payload_offsets()
         .next()
         .ok_or(Error::SmallBuffer)?;
     //TODO: 初めに全体の長さチェックをする。

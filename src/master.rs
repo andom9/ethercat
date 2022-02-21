@@ -15,26 +15,24 @@ use log::*;
 const FRAME_MAX_SIZE_WITHOUT_FCS: usize = 1500;
 
 //設定項目
-pub const SLAVE_MAX: usize = 16;
-pub const MAX_RXPDO_BUFFER_SIZE: usize = 1000;
+pub const MAX_SLAVES: usize = 16;
 
-pub const SM0_START_ADDRESS: u16 = 0x1800; //Mailbox(リクエスト)の先頭アドレス0x1000～0x2FFFF
-pub const SM1_START_ADDRESS: u16 = 0x1C00; //Mailbox(レスポンス)の先頭アドレス0x1000～0x2FFFF
-pub const SM2_START_ADDRESS: u16 = 0x1100; //Rxプロセスデータの先頭アドレス0x1000～0x2FFFF
-pub const SM3_START_ADDRESS: u16 = 0x1140; //Txプロセスデータの先頭アドレス0x1000～0x2FFFF
-pub const RXPDO_MAPPING_INDEX: u16 = 0x1702; //PDOのマッピング設定をするオブジェクトディクショナリのインデックス
-                                             //0x1601～0x1603, 0x1700～0x1703
-pub const TXPDO_MAPPING_INDEX: u16 = 0x1B03; //PDOのマッピング設定をするオブジェクトディクショナリのインデックス
-                                             //0x1A01～0x1A03, 0x1B00～0x1B03
-pub const LOGICAL_START_ADDRESS: u32 = 0x10000; //LRWの際に指定するアドレス
+const MAX_RXPDO_BUFFER_SIZE: usize = 10;
+pub(crate)const SM0_START_ADDRESS: u16 = 0x1800; //Mailbox(リクエスト)の先頭アドレス0x1000～0x2FFFF
+pub(crate)const SM1_START_ADDRESS: u16 = 0x1C00; //Mailbox(レスポンス)の先頭アドレス0x1000～0x2FFFF
+pub(crate)const SM2_START_ADDRESS: u16 = 0x1100; //Rxプロセスデータの先頭アドレス0x1000～0x2FFFF
+pub(crate)const SM3_START_ADDRESS: u16 = 0x1140; //Txプロセスデータの先頭アドレス0x1000～0x2FFFF
+const RXPDO_MAPPING_INDEX: u16 = 0x1702; //PDOのマッピング設定をするオブジェクトディクショナリのインデッ                                         //0x1601～0x1603, 0x1700～0x1703
+const TXPDO_MAPPING_INDEX: u16 = 0x1B03; //PDOのマッピング設定をするオブジェクトディクショナリのインデッ                                         //0x1A01～0x1A03, 0x1B00～0x1B03
+const LOGICAL_START_ADDRESS: u32 = 0x10000; //LRWの際に指定するアドレス
 
 pub struct EtherCATMaster<R: RawPacketInterface, E: EtherCATSystemTime> {
     ethdev: R,
     packet: EtherCATFrame<[u8; FRAME_MAX_SIZE_WITHOUT_FCS]>,
     slave_count: u16,
     dc_delay_ns_from_ref_time: u64,
-    slaves: heapless::Vec<SlaveDevice, SLAVE_MAX>,
-    rx_pdo_buffer: [u8; MAX_RXPDO_BUFFER_SIZE],
+    slaves: heapless::Vec<SlaveDevice, MAX_SLAVES>,
+    rx_pd0_buffer: [u8; MAX_RXPDO_BUFFER_SIZE],
     al_state: AlState,
     rx_error_count: u8,
     recieve_buffer: [u8; FRAME_MAX_SIZE_WITHOUT_FCS],
@@ -59,7 +57,7 @@ where
             slave_count: 0,
             dc_delay_ns_from_ref_time: 0,
             slaves: heapless::Vec::default(),
-            rx_pdo_buffer: [0; MAX_RXPDO_BUFFER_SIZE],
+            rx_pd0_buffer: [0; MAX_RXPDO_BUFFER_SIZE],
             al_state: AlState::Init,
             rx_error_count: 0,
             recieve_buffer,
@@ -92,7 +90,7 @@ where
         if slave_count == 0 {
             return Err(Error::NotFoundSlaves);
         }
-        if slave_count as usize > SLAVE_MAX {
+        if slave_count as usize > MAX_SLAVES {
             return Err(Error::TooManySlave(slave_count as usize));
         }
         self.slave_count = slave_count;
@@ -109,8 +107,6 @@ where
 
         self.check_esc_info()?;
         self.check_dl_topology()?;
-
-        //self.check_eeprom_info()?;
 
         Ok(())
     }
@@ -169,7 +165,7 @@ where
                                                    //dbg!(d);
         }
 
-        self.pdo_mapping()?;
+        self.pd0_mapping()?;
 
         //PreOptionalの初期化
 
@@ -206,7 +202,7 @@ where
         self.wait_sync_0_starting(2_000_000_000)?; //SYNC信号が始まったか確認
 
         //PDO SMとFMMUの設定
-        self.configure_pdo_sm()?;
+        self.configure_pd0_sm()?;
         self.configure_fmmu()?;
 
         //ウォッチドッグ無効
@@ -231,10 +227,10 @@ where
         let mut bitsum_tx = 0;
         for slave in &self.slaves {
             let mut bitsum_per_slave = 0;
-            let offset = slave.rx_pdo_start_offset();
-            let start_bit = slave.rx_pdo_start_bit();
-            for pdo_entry in slave.rx_pdo_mapping() {
-                let bitsize = pdo_entry.size_bits() as usize;
+            let offset = slave.rx_pd0_start_offset();
+            let start_bit = slave.rx_pd0_start_bit();
+            for pd0_entry in slave.rx_pd0_mapping() {
+                let bitsize = pd0_entry.bit_length() as usize;
                 let grobal_start_bit = offset * 8 + start_bit + bitsum_per_slave;
 
                 let iter_num = if bitsize % 8 == 0 {
@@ -244,8 +240,8 @@ where
                 };
                 for i in 0..iter_num {
                     let range = i * 8..(bitsize - (iter_num - 1 - i) * 8);
-                    let data = pdo_entry.data().get_bits(range.clone());
-                    self.rx_pdo_buffer.set_bits(
+                    let data = pd0_entry.data().get_bits(range.clone());
+                    self.rx_pd0_buffer.set_bits(
                         grobal_start_bit + range.start..grobal_start_bit + range.end,
                         data,
                     );
@@ -254,8 +250,8 @@ where
                 bitsum += bitsize;
                 bitsum_per_slave += bitsize;
             }
-            for pdo_entry_tx in slave.tx_pdo_mapping() {
-                bitsum_tx += pdo_entry_tx.size_bits() as usize;
+            for pd0_entry_tx in slave.tx_pd0_mapping() {
+                bitsum_tx += pd0_entry_tx.bit_length() as usize;
             }
         }
         let max_bitsum = bitsum_tx + bitsum;
@@ -266,24 +262,23 @@ where
         }; //TODO:毎回求める必要がない
 
         self.packet
-            .add_lrw(LOGICAL_START_ADDRESS, &self.rx_pdo_buffer[..length])?;
+            .add_lrw(LOGICAL_START_ADDRESS, &self.rx_pd0_buffer[..length])?;
         self.packet.add_armw(0, 0x0910, &[0; 8])?;
         self.add_brd(0x0130, &[0; 2])?;
         self.send_packet_with_error_read()?;
         self.recieve_packet_with_error_check(timeout_ns)?;
         let res_packet = EtherCATFrame::new(self.recieve_buffer)?;
         let mut predict_sys_time = 0;
-        for (i, payload_offset) in res_packet.dlpdu_payload_offsets().enumerate() {
+        for (i, payload_offset) in res_packet.dlpd0u_payload_offsets().enumerate() {
             //まずプロセスデータを処理
             if i == 0 {
                 for slave in self.slaves.iter_mut() {
-                    let offset = slave.tx_pdo_start_offset();
-                    let start_bit = slave.tx_pdo_start_bit();
+                    let offset = slave.tx_pd0_start_offset();
+                    let start_bit = slave.tx_pd0_start_bit();
                     let grobal_start_bit = offset * 8 + start_bit; // + bitsum;
                     let mut bitsum = 0;
-                    for pdo_entry in slave.tx_pdo_mapping_mut() {
-                        let bitsize = pdo_entry.size_bits() as usize;
-                        //dbg!(grobal_start_bit);
+                    for pd0_entry in slave.tx_pd0_mapping_mut() {
+                        let bitsize = pd0_entry.bit_length() as usize;
                         let iter_num = if bitsize % 8 == 0 {
                             bitsize / 8
                         } else {
@@ -291,15 +286,14 @@ where
                         };
                         for j in 0..iter_num {
                             let range = j * 8..(bitsize - (iter_num - 1 - j) * 8);
-                            //dbg!(&range);
-                            //let data = pdo_entry.data.get_bits(range.clone());
+                            //let data = pd0_entry.data.get_bits(range.clone());
                             let byte = res_packet.packet()[payload_offset..].get_bits(
                                 grobal_start_bit + range.start + bitsum
                                     ..grobal_start_bit + range.end + bitsum,
                             );
                             //dbg!(byte);
-                            pdo_entry.data_mut().set_bits(range.clone(), byte);
-                            //dbg!(pdo_entry.data);
+                            pd0_entry.data_mut().set_bits(range.clone(), byte);
+                            //dbg!(pd0_entry.data);
                         }
                         bitsum += bitsize;
                     }
@@ -408,7 +402,7 @@ where
         let rx_error_count = self.rx_error_count;
         let _ = self.receive_packet(timeout_ns)?;
         let recieve_packet = EtherCATFrame::new(self.recieve_buffer)?;
-        if let Some(offset) = recieve_packet.dlpdu_header_offsets().last() {
+        if let Some(offset) = recieve_packet.dlpd0u_header_offsets().last() {
             let rxerror =
                 EtherCATPDU::new(&self.recieve_buffer[offset..]).ok_or(Error::SmallBuffer)?;
             if rxerror.ado() != 0x0300 {
@@ -433,7 +427,7 @@ where
         self.send_packet_with_error_read()?;
         self.recieve_packet_with_error_check(1000_000_000)?;
         let res = EtherCATFrame::new(self.recieve_buffer)?;
-        for (payload_offset, slave) in res.dlpdu_payload_offsets().zip(self.slaves.iter_mut()) {
+        for (payload_offset, slave) in res.dlpd0u_payload_offsets().zip(self.slaves.iter_mut()) {
             //slave.num_supported_fmmu = *res
             //    .packet()
             //    .get(payload_offset + 5)
@@ -506,7 +500,7 @@ where
         self.send_packet_with_error_read()?;
         self.recieve_packet_with_error_check(1000_000_000)?;
         let res = EtherCATFrame::new(self.recieve_buffer)?;
-        for (i, payload_offset) in res.dlpdu_payload_offsets().enumerate() {
+        for (i, payload_offset) in res.dlpd0u_payload_offsets().enumerate() {
             if i + 1 > slave_count {
                 break;
             }
@@ -595,7 +589,7 @@ where
         self.recieve_packet_with_error_check(1000_000_000)?;
         let res = EtherCATFrame::new(self.recieve_buffer)?;
         let mut is_operation = true;
-        for (i, offset) in res.dlpdu_payload_offsets().enumerate() {
+        for (i, offset) in res.dlpd0u_payload_offsets().enumerate() {
             if (i + 1) as u16 > slave_count {
                 break;
             }
@@ -610,7 +604,7 @@ where
     }
 
     pub fn change_al_states(&mut self, state: AlState) -> Result<(), Error> {
-        let slave_numbers: heapless::Vec<_, SLAVE_MAX> = (0..self.slave_count).collect();
+        let slave_numbers: heapless::Vec<_, MAX_SLAVES> = (0..self.slave_count).collect();
         change_al_state::<_, _, E>(
             &mut self.ethdev,
             &mut self.packet,
@@ -641,7 +635,7 @@ where
         self.recieve_packet_with_error_check(1000_000_000)?;
         let recieve_packet = EtherCATFrame::new(self.recieve_buffer)?;
         let mut max_time = 0;
-        for (i, payload_offset) in recieve_packet.dlpdu_payload_offsets().enumerate() {
+        for (i, payload_offset) in recieve_packet.dlpd0u_payload_offsets().enumerate() {
             if i + 1 > slave_count {
                 break;
             }
@@ -661,7 +655,7 @@ where
         self.recieve_packet_with_error_check(1000_000_000)?;
         let recieve_packet = EtherCATFrame::new(self.recieve_buffer)?;
         let mut system_min_time = 0;
-        for (i, payload_offset) in recieve_packet.dlpdu_payload_offsets().enumerate() {
+        for (i, payload_offset) in recieve_packet.dlpd0u_payload_offsets().enumerate() {
             if i + 1 > slave_count {
                 break;
             }
@@ -727,23 +721,23 @@ where
         Ok(())
     }
 
-    fn configure_pdo_sm(&mut self) -> Result<(), Error> {
+    fn configure_pd0_sm(&mut self) -> Result<(), Error> {
         //TODO: PDOの長さは、2の倍数にする必要があるらしい。
         let sm2_register = 0x0810;
         let sm3_register = 0x0818;
         for (slave_number, slave) in self.slaves.iter().enumerate() {
-            let rx_pdo_num = if slave.rx_pdo_bit_size() % 8 == 0 {
-                slave.rx_pdo_bit_size() / 8
+            let rx_pd0_num = if slave.rx_pd0_bit_size() % 8 == 0 {
+                slave.rx_pd0_bit_size() / 8
             } else {
-                slave.rx_pdo_bit_size() / 8 + 1
+                slave.rx_pd0_bit_size() / 8 + 1
             };
-            //dbg!(rx_pdo_num);
-            let tx_pdo_num = if slave.tx_pdo_bit_size() % 8 == 0 {
-                slave.tx_pdo_bit_size() / 8
+            //dbg!(rx_pd0_num);
+            let tx_pd0_num = if slave.tx_pd0_bit_size() % 8 == 0 {
+                slave.tx_pd0_bit_size() / 8
             } else {
-                slave.tx_pdo_bit_size() / 8 + 1
+                slave.tx_pd0_bit_size() / 8 + 1
             };
-            //dbg!(tx_pdo_num);
+            //dbg!(tx_pd0_num);
 
             //0x1100から
             let address = u16::to_le_bytes(SM2_START_ADDRESS);
@@ -753,8 +747,8 @@ where
                 &[
                     address[0],
                     address[1],
-                    (rx_pdo_num & 0xFF) as u8,
-                    ((rx_pdo_num & 0xFF00) >> 8) as u8,
+                    (rx_pd0_num & 0xFF) as u8,
+                    ((rx_pd0_num & 0xFF00) >> 8) as u8,
                     0x24,
                     0x00,
                     0x01,
@@ -769,8 +763,8 @@ where
                 &[
                     address[0],
                     address[1],
-                    (tx_pdo_num & 0xFF) as u8,
-                    ((tx_pdo_num & 0xFF00) >> 8) as u8,
+                    (tx_pd0_num & 0xFF) as u8,
+                    ((tx_pd0_num & 0xFF00) >> 8) as u8,
                     0x20,
                     0x00,
                     0x01,
@@ -792,19 +786,19 @@ where
         let mut rx_bit_sum = 0;
         let mut tx_bit_sum = 0;
         for (slave_number, slave) in self.slaves.iter_mut().enumerate() {
-            //slave.rx_pdo_start_offset_bit = rx_offset_bit;
-            //slave.tx_pdo_start_offset_bit = tx_offset_bit;
+            //slave.rx_pd0_start_offset_bit = rx_offset_bit;
+            //slave.tx_pd0_start_offset_bit = tx_offset_bit;
 
-            let rx_bit_size = slave.rx_pdo_bit_size();
+            let rx_bit_size = slave.rx_pd0_bit_size();
             let rx_offset = rx_bit_sum / 8 + tx_bit_sum / 8;
 
-            let rx_pdo_start_bit = rx_bit_sum % 8;
-            let rx_pdo_length = if (rx_bit_size + rx_pdo_start_bit) % 8 != 0 {
-                (rx_bit_size + rx_pdo_start_bit) / 8 + 1
+            let rx_pd0_start_bit = rx_bit_sum % 8;
+            let rx_pd0_length = if (rx_bit_size + rx_pd0_start_bit) % 8 != 0 {
+                (rx_bit_size + rx_pd0_start_bit) / 8 + 1
             } else {
-                (rx_bit_size + rx_pdo_start_bit) / 8
+                (rx_bit_size + rx_pd0_start_bit) / 8
             };
-            let rx_pdo_stop_bit = if (rx_bit_sum + rx_bit_size) % 8 == 0 {
+            let rx_pd0_stop_bit = if (rx_bit_sum + rx_bit_size) % 8 == 0 {
                 7
             } else {
                 (rx_bit_sum + rx_bit_size) % 8 - 1
@@ -812,28 +806,28 @@ where
             let mut fmmu0_data = [0; FMMU_LENGTH];
             let mut fmmu0 = FMMU::new(&mut fmmu0_data).unwrap();
             fmmu0.set_logical_start_address(logical_address + rx_offset as u32);
-            fmmu0.set_length(rx_pdo_length);
-            fmmu0.set_logical_start_bit(rx_pdo_start_bit as u8);
-            fmmu0.set_logical_stop_bit(rx_pdo_stop_bit as u8);
+            fmmu0.set_length(rx_pd0_length);
+            fmmu0.set_logical_start_bit(rx_pd0_start_bit as u8);
+            fmmu0.set_logical_stop_bit(rx_pd0_stop_bit as u8);
             fmmu0.set_physical_start_address(SM2_START_ADDRESS);
             fmmu0.set_write_access(true);
             fmmu0.set_read_access(false);
             fmmu0.set_active(true);
-            slave.set_rx_pdo_start_offset(rx_offset as usize);
-            slave.set_rx_pdo_length(rx_pdo_length as usize);
-            slave.set_rx_pdo_start_bit(rx_pdo_start_bit as usize);
-            slave.set_rx_pdo_stop_bit(rx_pdo_stop_bit as usize);
+            slave.set_rx_pd0_start_offset(rx_offset as usize);
+            slave.set_rx_pd0_length(rx_pd0_length as usize);
+            slave.set_rx_pd0_start_bit(rx_pd0_start_bit as usize);
+            slave.set_rx_pd0_stop_bit(rx_pd0_stop_bit as usize);
             rx_bit_sum += rx_bit_size;
 
-            let tx_bit_size = slave.tx_pdo_bit_size();
+            let tx_bit_size = slave.tx_pd0_bit_size();
             let tx_offset = tx_bit_sum / 8 + rx_bit_sum / 8;
-            let tx_pdo_start_bit = tx_bit_sum % 8;
-            let tx_pdo_length = if (tx_bit_size + tx_pdo_start_bit) % 8 != 0 {
-                (tx_bit_size + tx_pdo_start_bit) / 8 + 1
+            let tx_pd0_start_bit = tx_bit_sum % 8;
+            let tx_pd0_length = if (tx_bit_size + tx_pd0_start_bit) % 8 != 0 {
+                (tx_bit_size + tx_pd0_start_bit) / 8 + 1
             } else {
-                (tx_bit_size + tx_pdo_start_bit) / 8
+                (tx_bit_size + tx_pd0_start_bit) / 8
             };
-            let tx_pdo_stop_bit = if (tx_bit_sum + tx_bit_size) % 8 == 0 {
+            let tx_pd0_stop_bit = if (tx_bit_sum + tx_bit_size) % 8 == 0 {
                 7
             } else {
                 (tx_bit_sum + tx_bit_size) % 8 - 1
@@ -841,17 +835,17 @@ where
             let mut fmmu1_data = [0; FMMU_LENGTH];
             let mut fmmu1 = FMMU::new(&mut fmmu1_data).unwrap();
             fmmu1.set_logical_start_address(logical_address + tx_offset as u32);
-            fmmu1.set_length(tx_pdo_length);
-            fmmu1.set_logical_start_bit(tx_pdo_start_bit as u8);
-            fmmu1.set_logical_stop_bit(tx_pdo_stop_bit as u8);
+            fmmu1.set_length(tx_pd0_length);
+            fmmu1.set_logical_start_bit(tx_pd0_start_bit as u8);
+            fmmu1.set_logical_stop_bit(tx_pd0_stop_bit as u8);
             fmmu1.set_physical_start_address(SM3_START_ADDRESS);
             fmmu1.set_read_access(true);
             fmmu1.set_write_access(false);
             fmmu1.set_active(true);
-            slave.set_tx_pdo_start_offset(tx_offset as usize);
-            slave.set_tx_pdo_length(tx_pdo_length as usize);
-            slave.set_tx_pdo_start_bit(tx_pdo_start_bit as usize);
-            slave.set_tx_pdo_stop_bit(tx_pdo_stop_bit as usize);
+            slave.set_tx_pd0_start_offset(tx_offset as usize);
+            slave.set_tx_pd0_length(tx_pd0_length as usize);
+            slave.set_tx_pd0_start_bit(tx_pd0_start_bit as usize);
+            slave.set_tx_pd0_stop_bit(tx_pd0_stop_bit as usize);
 
             self.packet
                 .add_apwr(get_ap_adp(slave_number as u16), fmmu0_register, &fmmu0_data)?;
@@ -867,22 +861,22 @@ where
         Ok(())
     }
 
-    fn pdo_mapping(&mut self) -> Result<(), Error> {
+    fn pd0_mapping(&mut self) -> Result<(), Error> {
         let slave_count = self.slave_count as usize;
-        const max_entry: usize = if MAX_RXPDO_ENTRY > MAX_TXPDO_ENTRY {
+        const MAX_ENTRY: usize = if MAX_RXPDO_ENTRY > MAX_TXPDO_ENTRY {
             MAX_RXPDO_ENTRY
         } else {
             MAX_TXPDO_ENTRY
         };
-        let mut data_buffer = [0_u32; max_entry];
+        let mut data_buffer = [0_u32; MAX_ENTRY];
 
         for i in 0..slave_count {
-            let num_rx_entry = self.slaves[i].rx_pdo_mapping().len();
+            let num_rx_entry = self.slaves[i].rx_pd0_mapping().len();
             self.write_sdo(i as u16, RXPDO_MAPPING_INDEX, 0, &[0])?; //一度サブインデックス0をクリアすること
-            for (j, entry) in self.slaves[i].rx_pdo_mapping().iter().enumerate() {
+            for (j, entry) in self.slaves[i].rx_pd0_mapping().iter().enumerate() {
                 let mut data: u32 = 0;
                 data |= (entry.address() as u32) << 16;
-                data |= entry.size_bits() as u32;
+                data |= entry.bit_length() as u32;
                 data_buffer[j] = data;
             }
             for j in 0..num_rx_entry {
@@ -895,12 +889,12 @@ where
             }
             self.write_sdo(i as u16, RXPDO_MAPPING_INDEX, 0, &[num_rx_entry as u8])?;
 
-            let num_tx_entry = self.slaves[i].tx_pdo_mapping().len();
+            let num_tx_entry = self.slaves[i].tx_pd0_mapping().len();
             self.write_sdo(i as u16, TXPDO_MAPPING_INDEX, 0, &[0])?; //一度サブインデックス0をクリアすること
-            for (j, entry) in self.slaves[i].tx_pdo_mapping().iter().enumerate() {
+            for (j, entry) in self.slaves[i].tx_pd0_mapping().iter().enumerate() {
                 let mut data: u32 = 0;
                 data |= (entry.address() as u32) << 16;
-                data |= entry.size_bits() as u32;
+                data |= entry.bit_length() as u32;
                 data_buffer[j] = data;
             }
             for j in 0..num_tx_entry {

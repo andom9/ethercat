@@ -107,9 +107,9 @@ fn set_dc_offset_and_delay<
     clear_buffer(recv_buffer);
     receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, slave_count, DC_RECV_TIMEOUT_NS)?;
 
-    let mut port0_local_times = [0; SLAVE_MAX];
-    let mut port1_local_times = [0; SLAVE_MAX];
-    let mut esc_local_time = [0; SLAVE_MAX];
+    let mut port0_local_times = [0; MAX_SLAVES];
+    let mut port1_local_times = [0; MAX_SLAVES];
+    let mut esc_local_time = [0; MAX_SLAVES];
     for _ in 0..16 {
         for i in 0..slave_count {
             {
@@ -121,7 +121,7 @@ fn set_dc_offset_and_delay<
                 receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, DC_RECV_TIMEOUT_NS)?;
                 let packet = EtherCATFrame::new(&recv_buffer)?;
                 let offset = packet
-                    .dlpdu_payload_offsets()
+                    .dlpd0u_payload_offsets()
                     .next()
                     .ok_or(Error::SmallBuffer)?;
                 //port0
@@ -151,7 +151,7 @@ fn set_dc_offset_and_delay<
                 receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, DC_RECV_TIMEOUT_NS)?;
                 let packet = EtherCATFrame::new(&recv_buffer)?;
                 let offset = packet
-                    .dlpdu_payload_offsets()
+                    .dlpd0u_payload_offsets()
                     .next()
                     .ok_or(Error::SmallBuffer)?;
                 let local_time_esc = u64::from_le_bytes([

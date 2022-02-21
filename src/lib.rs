@@ -10,6 +10,11 @@ pub mod master;
 pub(crate) mod sdo;
 pub mod slave_device;
 pub(crate) mod util;
+pub mod config;
 
 pub use al_state::AlState;
 pub use error::Error;
+
+
+// TODO: プロセスデータとメールボックスをそれぞれソケットのように扱って、
+//       受け取ったパケットをディスパッチする。

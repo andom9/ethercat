@@ -41,29 +41,29 @@ fn simple_test(interf_name: &str) {
         //master
         //.slave_mut(index)
         //.unwrap()
-        //.push_rx_pdo_entry(PDOEntry::new(0, 8).unwrap())
+        //.push_rx_pd0_entry(PDOEntry::new(0, 8).unwrap())
         //.unwrap();
         //master
         //    .slave_mut(index)
         //    .unwrap()
-        //    .push_rx_pdo_entry(PDOEntry::new(0x6040, 16).unwrap())
+        //    .push_rx_pd0_entry(PDOEntry::new(0x6040, 16).unwrap())
         //    .unwrap();
         //*master
         //    .slave_mut(index)
         //    .unwrap()
-        //    .rx_pdo_entry_mut(1)
+        //    .rx_pd0_entry_mut(1)
         //    .unwrap()
         //    .data_mut() = ControlWord::ShutDown.as_le_bytes();
 
         master
             .slave_mut(index)
             .unwrap()
-            .push_rx_pdo_entry(PDOEntry::new(0x6060, 8).unwrap())
+            .push_rx_pd0_entry(PDOEntry::new(0x6060, 8).unwrap())
             .unwrap();
         *master
             .slave_mut(index)
             .unwrap()
-            .rx_pdo_entry_mut(0)
+            .rx_pd0_entry_mut(0)
             .unwrap()
             .data_mut() = [8, 0, 0, 0];
 
@@ -71,17 +71,17 @@ fn simple_test(interf_name: &str) {
         //master
         //.slave_mut(index)
         //.unwrap()
-        //.push_tx_pdo_entry(PDOEntry::new(0, 32).unwrap())
+        //.push_tx_pd0_entry(PDOEntry::new(0, 32).unwrap())
         //.unwrap();
         //master
         //    .slave_mut(index)
         //    .unwrap()
-        //    .push_tx_pdo_entry(PDOEntry::new(0x6040, 16).unwrap())
+        //    .push_tx_pd0_entry(PDOEntry::new(0x6040, 16).unwrap())
         //    .unwrap();
         master
             .slave_mut(index)
             .unwrap()
-            .push_tx_pdo_entry(PDOEntry::new(0x6060, 8).unwrap())
+            .push_tx_pd0_entry(PDOEntry::new(0x6060, 8).unwrap())
             .unwrap();
 
         //軌跡制御モードにする
@@ -118,14 +118,14 @@ fn simple_test(interf_name: &str) {
             *master
                 .slave_mut(0)
                 .unwrap()
-                .rx_pdo_entry_mut(0)
+                .rx_pd0_entry_mut(0)
                 .unwrap()
                 .data_mut() = [8, 0, 0, 0];
         } else {
             *master
                 .slave_mut(0)
                 .unwrap()
-                .rx_pdo_entry_mut(0)
+                .rx_pd0_entry_mut(0)
                 .unwrap()
                 .data_mut() = [0, 0, 0, 0];
         }

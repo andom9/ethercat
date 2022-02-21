@@ -17,7 +17,7 @@
 //        //self.send_packet_with_error_read()?;
 //        //let res = EtherCATFrame::new(self.recieve_packet_with_error_check()?.to_owned())?;
 //        //let payload_offset = res
-//        //    .dlpdu_payload_offsets()
+//        //    .dlpd0u_payload_offsets()
 //        //    .next()
 //        //    .ok_or(Error::SmallBuffer)?;
 //        //let permit_eeprom_access = (res
@@ -49,7 +49,7 @@
 //        self.add_aprd_all_slave(eeprom_control_register, &[0])?;
 //        self.send_packet_with_error_read()?;
 //        let res = EtherCATFrame::new(self.recieve_packet_with_error_check(1000_000_000)?)?;
-//        for (i, payload_offset) in res.dlpdu_payload_offsets().enumerate() {
+//        for (i, payload_offset) in res.dlpd0u_payload_offsets().enumerate() {
 //            if i + 1 > slave_count {
 //                break;
 //            }
@@ -75,7 +75,7 @@
 //        self.add_apwr_all_slave(eeprom_data_register, &[0; 2])?;
 //        self.send_packet_with_error_read()?;
 //        let res = EtherCATFrame::new(self.recieve_packet_with_error_check(1000_000_000)?)?;
-//        for (payload_offset, slave) in res.dlpdu_payload_offsets().zip(self.slaves.iter_mut()) {
+//        for (payload_offset, slave) in res.dlpd0u_payload_offsets().zip(self.slaves.iter_mut()) {
 //            let low = *res
 //                .packet()
 //                .get(payload_offset)
@@ -96,7 +96,7 @@
 //        self.add_apwr_all_slave(eeprom_data_register, &[0; 2])?;
 //        self.send_packet_with_error_read()?;
 //        let res = EtherCATFrame::new(self.recieve_packet_with_error_check(1000_000_000)?)?;
-//        for (payload_offset, slave) in res.dlpdu_payload_offsets().zip(self.slaves.iter_mut()) {
+//        for (payload_offset, slave) in res.dlpd0u_payload_offsets().zip(self.slaves.iter_mut()) {
 //            let low = *res
 //                .packet()
 //                .get(payload_offset)
@@ -130,7 +130,7 @@
 //        self.send_packet_with_error_read()?;
 //        let res = EtherCATFrame::new(self.recieve_packet_with_error_check(1000_000_000)?)?;
 //        let payload_offset = res
-//            .dlpdu_payload_offsets()
+//            .dlpd0u_payload_offsets()
 //            .next()
 //            .ok_or(Error::SmallBuffer)?;
 //        let is_busy = (res

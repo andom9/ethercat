@@ -100,7 +100,7 @@ fn read_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherC
     receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, AL_RECV_TIMEOUT_NS)?;
     let recieve_packet = EtherCATFrame::new(recv_buffer)?;
     let offset = recieve_packet
-        .dlpdu_payload_offsets()
+        .dlpd0u_payload_offsets()
         .next()
         .ok_or(Error::SmallBuffer)?;
     let data = recieve_packet

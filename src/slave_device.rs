@@ -2,8 +2,8 @@ use crate::AlState;
 use bit_field::BitField;
 use heapless::Vec;
 
-pub const MAX_RXPDO_ENTRY: usize = 16;
-pub const MAX_TXPDO_ENTRY: usize = 16;
+pub(crate) const MAX_RXPDO_ENTRY: usize = 16;
+pub(crate) const MAX_TXPDO_ENTRY: usize = 16;
 
 // PDOの入力しかないやつもある
 // →片方だけにも対応する。
@@ -40,17 +40,17 @@ pub struct SlaveDevice {
 
     // settings
     number: u16,
-    assigned_id: u16, // write 0x0010 0x0011
-    rx_pdo_mapping: heapless::Vec<PDOEntry, MAX_RXPDO_ENTRY>,
-    tx_pdo_mapping: heapless::Vec<PDOEntry, MAX_TXPDO_ENTRY>,
-    rx_pdo_start_offset: usize,
-    rx_pdo_length: usize,
-    rx_pdo_start_bit: usize,
-    rx_pdo_stop_bit: usize,
-    tx_pdo_start_offset: usize,
-    tx_pdo_length: usize,
-    tx_pdo_start_bit: usize,
-    tx_pdo_stop_bit: usize,
+    station_address: u16, // write 0x0010 0x0011
+    rx_pd0_mapping: heapless::Vec<PDOEntry, MAX_RXPDO_ENTRY>,
+    tx_pd0_mapping: heapless::Vec<PDOEntry, MAX_TXPDO_ENTRY>,
+    rx_pd0_start_offset: usize,
+    rx_pd0_length: usize,
+    rx_pd0_start_bit: usize,
+    rx_pd0_stop_bit: usize,
+    tx_pd0_start_offset: usize,
+    tx_pd0_length: usize,
+    tx_pd0_start_bit: usize,
+    tx_pd0_stop_bit: usize,
 
     // info
     vender_id: u16,    // read EEPROM 0x0008 or CoE 0x1018.01
@@ -67,7 +67,7 @@ pub struct SlaveDevice {
     sm_mbox_out: Option<SyncManager>,
     sm_mbox_in: Option<SyncManager>,
 
-    coe: Option<MailBoxCoE>,
+    coe: Option<CoE>,
     foe: Option<()>,
 
     dc: Option<DistributedClock>, // read 0x0008.2 モードはどうやって調べる？
@@ -101,124 +101,124 @@ impl SlaveDevice {
         };
     }
 
-    pub fn rx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.rx_pdo_mapping
+    pub fn rx_pd0_mapping<'a>(&'a self) -> &'a [PDOEntry] {
+        &self.rx_pd0_mapping
     }
 
-    pub fn rx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.rx_pdo_mapping
+    pub fn rx_pd0_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
+        &mut self.rx_pd0_mapping
     }
 
-    pub fn tx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.tx_pdo_mapping
+    pub fn tx_pd0_mapping<'a>(&'a self) -> &'a [PDOEntry] {
+        &self.tx_pd0_mapping
     }
 
-    pub fn tx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.tx_pdo_mapping
+    pub fn tx_pd0_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
+        &mut self.tx_pd0_mapping
     }
 
-    pub fn rx_pdo_bit_size(&self) -> u16 {
+    pub(crate) fn rx_pd0_bit_size(&self) -> u16 {
         let mut size = 0;
-        for entry in &self.rx_pdo_mapping {
-            size += entry.size_bits();
+        for entry in &self.rx_pd0_mapping {
+            size += entry.bit_length();
         }
         size
     }
 
-    pub fn tx_pdo_bit_size(&self) -> u16 {
+    pub(crate) fn tx_pd0_bit_size(&self) -> u16 {
         let mut size = 0;
-        for entry in &self.tx_pdo_mapping {
-            size += entry.size_bits();
+        for entry in &self.tx_pd0_mapping {
+            size += entry.bit_length();
         }
         size
     }
 
-    pub fn rx_pdo_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.rx_pdo_mapping.get(index)
+    pub fn rx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
+        self.rx_pd0_mapping.get(index)
     }
 
-    pub fn tx_pdo_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.tx_pdo_mapping.get(index)
+    pub fn tx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
+        self.tx_pd0_mapping.get(index)
     }
 
-    pub fn rx_pdo_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.rx_pdo_mapping.get_mut(index)
+    pub fn rx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
+        self.rx_pd0_mapping.get_mut(index)
     }
 
-    pub fn tx_pdo_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.tx_pdo_mapping.get_mut(index)
+    pub fn tx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
+        self.tx_pd0_mapping.get_mut(index)
     }
 
-    pub fn push_rx_pdo_entry(&mut self, pdo_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.rx_pdo_mapping.push(pdo_entry)
+    pub fn push_rx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
+        self.rx_pd0_mapping.push(pd0_entry)
     }
 
-    pub fn push_tx_pdo_entry(&mut self, pdo_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.tx_pdo_mapping.push(pdo_entry)
+    pub fn push_tx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
+        self.tx_pd0_mapping.push(pd0_entry)
     }
 
-    pub fn rx_pdo_start_offset(&self) -> usize {
-        self.rx_pdo_start_offset
+    pub(crate) fn rx_pd0_start_offset(&self) -> usize {
+        self.rx_pd0_start_offset
     }
 
-    pub(crate) fn set_rx_pdo_start_offset(&mut self, offset: usize) {
-        self.rx_pdo_start_offset = offset;
+    pub(crate) fn set_rx_pd0_start_offset(&mut self, offset: usize) {
+        self.rx_pd0_start_offset = offset;
     }
 
-    pub fn rx_pdo_length(&self) -> usize {
-        self.rx_pdo_length
+    pub(crate) fn rx_pd0_length(&self) -> usize {
+        self.rx_pd0_length
     }
 
-    pub(crate) fn set_rx_pdo_length(&mut self, length: usize) {
-        self.rx_pdo_length = length;
+    pub(crate) fn set_rx_pd0_length(&mut self, length: usize) {
+        self.rx_pd0_length = length;
     }
 
-    pub fn rx_pdo_start_bit(&self) -> usize {
-        self.rx_pdo_start_bit
+    pub(crate) fn rx_pd0_start_bit(&self) -> usize {
+        self.rx_pd0_start_bit
     }
 
-    pub fn set_rx_pdo_start_bit(&mut self, start_bit: usize) {
-        self.rx_pdo_start_bit = start_bit;
+    pub(crate) fn set_rx_pd0_start_bit(&mut self, start_bit: usize) {
+        self.rx_pd0_start_bit = start_bit;
     }
 
-    pub fn rx_pdo_stop_bit(&self) -> usize {
-        self.rx_pdo_stop_bit
+    pub(crate) fn rx_pd0_stop_bit(&self) -> usize {
+        self.rx_pd0_stop_bit
     }
 
-    pub fn set_rx_pdo_stop_bit(&mut self, stop_bit: usize) {
-        self.rx_pdo_stop_bit = stop_bit;
+    pub(crate) fn set_rx_pd0_stop_bit(&mut self, stop_bit: usize) {
+        self.rx_pd0_stop_bit = stop_bit;
     }
 
-    pub fn tx_pdo_start_offset(&self) -> usize {
-        self.tx_pdo_start_offset
+    pub(crate) fn tx_pd0_start_offset(&self) -> usize {
+        self.tx_pd0_start_offset
     }
 
-    pub(crate) fn set_tx_pdo_start_offset(&mut self, offset: usize) {
-        self.tx_pdo_start_offset = offset;
+    pub(crate) fn set_tx_pd0_start_offset(&mut self, offset: usize) {
+        self.tx_pd0_start_offset = offset;
     }
 
-    pub fn tx_pdo_length(&self) -> usize {
-        self.tx_pdo_length
+    pub(crate) fn tx_pd0_length(&self) -> usize {
+        self.tx_pd0_length
     }
 
-    pub(crate) fn set_tx_pdo_length(&mut self, length: usize) {
-        self.tx_pdo_length = length;
+    pub(crate) fn set_tx_pd0_length(&mut self, length: usize) {
+        self.tx_pd0_length = length;
     }
 
-    pub fn tx_pdo_start_bit(&self) -> usize {
-        self.tx_pdo_start_bit
+    pub(crate) fn tx_pd0_start_bit(&self) -> usize {
+        self.tx_pd0_start_bit
     }
 
-    pub fn set_tx_pdo_start_bit(&mut self, start_bit: usize) {
-        self.tx_pdo_start_bit = start_bit;
+    pub(crate) fn set_tx_pd0_start_bit(&mut self, start_bit: usize) {
+        self.tx_pd0_start_bit = start_bit;
     }
 
-    pub fn tx_pdo_stop_bit(&self) -> usize {
-        self.tx_pdo_stop_bit
+    pub(crate) fn tx_pd0_stop_bit(&self) -> usize {
+        self.tx_pd0_stop_bit
     }
 
-    pub fn set_tx_pdo_stop_bit(&mut self, stop_bit: usize) {
-        self.tx_pdo_stop_bit = stop_bit;
+    pub(crate) fn set_tx_pd0_stop_bit(&mut self, stop_bit: usize) {
+        self.tx_pd0_stop_bit = stop_bit;
     }
 }
 
@@ -235,9 +235,9 @@ pub struct SyncManager {
 }
 
 #[derive(Debug, Clone)]
-pub struct MailBoxCoE {
-    pdo_assign: bool,
-    pdo_config: bool,
+pub struct CoE {
+    pd0_assign: bool,
+    pd0_config: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -246,7 +246,7 @@ pub struct DistributedClock {
 }
 
 impl DistributedClock {
-    pub fn is_cycle_operation_active(&self) -> bool {
+    pub fn is_cyclic_operation_active(&self) -> bool {
         self.assign_activate.get_bit(0)
     }
 
@@ -262,18 +262,18 @@ impl DistributedClock {
 #[derive(Debug, Clone)]
 pub struct PDOEntry {
     address: u16,
-    size_bits: u16,
+    bit_length: u16,
     data: [u8; 4],
 }
 
 impl PDOEntry {
-    pub fn new(address: u16, size_bits: u16) -> Option<Self> {
-        if size_bits > 4 * 8 {
+    pub fn new(address: u16, bit_length: u16) -> Option<Self> {
+        if bit_length > 4 * 8 {
             return None;
         }
         Some(Self {
             address,
-            size_bits,
+            bit_length,
             data: [0; 4],
         })
     }
@@ -282,8 +282,8 @@ impl PDOEntry {
         self.address
     }
 
-    pub fn size_bits(&self) -> u16 {
-        self.size_bits
+    pub fn bit_length(&self) -> u16 {
+        self.bit_length
     }
 
     pub fn data<'a>(&'a self) -> &'a [u8; 4] {
@@ -300,7 +300,7 @@ impl Default for SlaveDevice {
         Self {
             al_state: AlState::Init,
             number: 0,
-            assigned_id: 0,
+            station_address: 0,
             vender_id: 0,
             product_code: 0,
             revision_no: 0,
@@ -314,16 +314,16 @@ impl Default for SlaveDevice {
             coe: None,
             foe: None,
             dc: None,
-            rx_pdo_mapping: Vec::default(),
-            tx_pdo_mapping: Vec::default(),
-            rx_pdo_start_offset: 0,
-            rx_pdo_length: 0,
-            rx_pdo_start_bit: 0,
-            rx_pdo_stop_bit: 0,
-            tx_pdo_start_offset: 0,
-            tx_pdo_length: 0,
-            tx_pdo_start_bit: 0,
-            tx_pdo_stop_bit: 0,
+            rx_pd0_mapping: Vec::default(),
+            tx_pd0_mapping: Vec::default(),
+            rx_pd0_start_offset: 0,
+            rx_pd0_length: 0,
+            rx_pd0_start_bit: 0,
+            rx_pd0_stop_bit: 0,
+            tx_pd0_start_offset: 0,
+            tx_pd0_length: 0,
+            tx_pd0_start_bit: 0,
+            tx_pd0_stop_bit: 0,
             mailbox_count: 1,
         }
     }

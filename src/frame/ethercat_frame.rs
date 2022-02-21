@@ -50,12 +50,12 @@ impl<B: AsRef<[u8]>> EtherCATFrame<B> {
     }
 
     #[inline]
-    pub fn dlpdu_header_offsets(&self) -> EtherCATPDUOffsets<&B> {
+    pub fn dlpd0u_header_offsets(&self) -> EtherCATPDUOffsets<&B> {
         EtherCATPDUOffsets::new(&self.buffer, self.free_offset, 0)
     }
 
     #[inline]
-    pub fn dlpdu_payload_offsets(&self) -> EtherCATPDUOffsets<&B> {
+    pub fn dlpd0u_payload_offsets(&self) -> EtherCATPDUOffsets<&B> {
         EtherCATPDUOffsets::new(&self.buffer, self.free_offset, EtherCATPDU_HEADER_LENGTH)
     }
 }
@@ -96,31 +96,31 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
             //dbg!(data_len);
             return Err(Error::LargeData);
         }
-        let dlpdu_len = data_len + EtherCATPDU_HEADER_LENGTH + WKC_LENGTH;
-        if dlpdu_len > self.buffer.as_ref().len() - self.free_offset {
+        let dlpd0u_len = data_len + EtherCATPDU_HEADER_LENGTH + WKC_LENGTH;
+        if dlpd0u_len > self.buffer.as_ref().len() - self.free_offset {
             return Err(Error::SmallBuffer);
         }
         {
             //最後のEtherCATPDUを変更
-            if let Some(pre_dlpdu_offset) = self.dlpdu_header_offsets().last() {
-                //dbg!(pre_dlpdu_offset);
-                let mut pre_dlpdu_frame =
-                    EtherCATPDU::new(&mut self.buffer.as_mut()[pre_dlpdu_offset..])
+            if let Some(pre_dlpd0u_offset) = self.dlpd0u_header_offsets().last() {
+                //dbg!(pre_dlpd0u_offset);
+                let mut pre_dlpd0u_frame =
+                    EtherCATPDU::new(&mut self.buffer.as_mut()[pre_dlpd0u_offset..])
                         .ok_or(Error::SmallBuffer)?;
-                pre_dlpdu_frame.set_has_next(true);
+                pre_dlpd0u_frame.set_has_next(true);
             }
         }
         {
-            let mut dlpdu_frame = EtherCATPDU::new(&mut self.buffer.as_mut()[self.free_offset..])
+            let mut dlpd0u_frame = EtherCATPDU::new(&mut self.buffer.as_mut()[self.free_offset..])
                 .ok_or(Error::SmallBuffer)?;
-            dlpdu_frame.set_command_type(command as u8);
-            dlpdu_frame.set_adp(adp);
-            dlpdu_frame.set_ado(ado);
-            dlpdu_frame.set_index(self.index);
-            dlpdu_frame.set_is_circulated(false);
-            dlpdu_frame.set_has_next(false);
-            dlpdu_frame.set_irq(0);
-            dlpdu_frame.set_length(data_len as u16);
+            dlpd0u_frame.set_command_type(command as u8);
+            dlpd0u_frame.set_adp(adp);
+            dlpd0u_frame.set_ado(ado);
+            dlpd0u_frame.set_index(self.index);
+            dlpd0u_frame.set_is_circulated(false);
+            dlpd0u_frame.set_has_next(false);
+            dlpd0u_frame.set_irq(0);
+            dlpd0u_frame.set_length(data_len as u16);
         }
 
         for (i, d) in data.iter().enumerate() {
@@ -138,13 +138,13 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
                 EtherCATHeader::new(&mut self.buffer.as_mut()[ETHERNET_HEADER_LENGTH..])
                     .ok_or(Error::SmallBuffer)?;
             let ec_frame_len = ethercat_frame.length();
-            let datagrams_length = ec_frame_len as usize + dlpdu_len;
+            let datagrams_length = ec_frame_len as usize + dlpd0u_len;
             if datagrams_length > 1498 {
                 return Err(Error::LargeData);
             }
             ethercat_frame.set_length(datagrams_length as u16);
         }
-        self.free_offset += dlpdu_len;
+        self.free_offset += dlpd0u_len;
 
         Ok(())
     }
@@ -277,8 +277,8 @@ impl<B: AsRef<[u8]>> Iterator for EtherCATPDUOffsets<B> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        let dlpdu = EtherCATPDU::new(&self.buffer.as_ref()[self.offset..])?;
-        let len = dlpdu.length();
+        let dlpd0u = EtherCATPDU::new(&self.buffer.as_ref()[self.offset..])?;
+        let len = dlpd0u.length();
         if self.offset < self.length {
             let b = self.offset;
             self.offset += EtherCATPDU_HEADER_LENGTH + len as usize + WKC_LENGTH;

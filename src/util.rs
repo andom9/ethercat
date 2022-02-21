@@ -95,11 +95,11 @@ pub(crate) fn slave_count<
         }
         let ec_frame_recv = EtherCATFrame::new(recv_buffer.as_mut())?;
         let slave_count_i = {
-            let dlpdu = EtherCATPDU::new(
+            let dlpd0u = EtherCATPDU::new(
                 &ec_frame_recv.packet()[(ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH)..],
             )
             .ok_or(Error::SmallBuffer)?;
-            dlpdu.wkc().ok_or(Error::SmallBuffer)?
+            dlpd0u.wkc().ok_or(Error::SmallBuffer)?
         };
         slave_count = slave_count.max(slave_count_i);
     }
@@ -113,10 +113,10 @@ pub(crate) fn slave_count<
 // wkcが正しいかどうか確認する。ただし、送信時のwkcは0であること。
 pub(crate) fn check_wkc(recv_packet: &[u8], num_slaves: u16) -> Result<(), Error> {
     let recv_packet = EtherCATFrame::new(recv_packet)?;
-    for offset in recv_packet.dlpdu_header_offsets() {
-        let dlpdu_packet = EtherCATPDU::new_unchecked(&recv_packet.packet()[offset..]);
-        let command = CommandType::new(dlpdu_packet.command_type()).ok_or(Error::InvalidCommand)?;
-        let wkc = dlpdu_packet.wkc().ok_or(Error::SmallBuffer)?;
+    for offset in recv_packet.dlpd0u_header_offsets() {
+        let dlpd0u_packet = EtherCATPDU::new_unchecked(&recv_packet.packet()[offset..]);
+        let command = CommandType::new(dlpd0u_packet.command_type()).ok_or(Error::InvalidCommand)?;
+        let wkc = dlpd0u_packet.wkc().ok_or(Error::SmallBuffer)?;
         match command {
             CommandType::NOP => continue,
             CommandType::APRD | CommandType::APWR | CommandType::FPRD | CommandType::FPWR => {
