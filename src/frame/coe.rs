@@ -3,14 +3,14 @@ use bitfield::*;
 pub const COE_HEADER_LENGTH: usize = 2;
 
 bitfield! {
-    pub struct CANOpenHeader([u8]);
+    pub struct CANOpenPDU([u8]);
     u16;
     pub number, set_number: 8, 0;
     u8;
     pub service_type, set_service_type: 15, 12;
 }
 
-impl<T: AsRef<[u8]>> CANOpenHeader<T> {
+impl<T: AsRef<[u8]>> CANOpenPDU<T> {
     pub fn new(buf: T) -> Option<Self> {
         let packet = Self(buf);
         if packet.is_buffer_range_ok() {

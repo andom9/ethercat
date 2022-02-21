@@ -2,7 +2,7 @@ use bitfield::*;
 
 pub const ETHERNET_HEADER_LENGTH: usize = 14;
 pub const ETHERCAT_HEADER_LENGTH: usize = 2;
-pub const DLPDU_HEADER_LENGTH: usize = 10;
+pub const EtherCATPDU_HEADER_LENGTH: usize = 10;
 pub const MAILBOX_HEADER_LENGTH: usize = 6;
 pub const WKC_LENGTH: usize = 2;
 pub const ETHERCAT_TYPE: u16 = 0x88A4;
@@ -71,7 +71,7 @@ impl<T: AsRef<[u8]>> EtherCATHeader<T> {
 }
 
 bitfield! {
-    pub struct DLPDUHeader([u8]);
+    pub struct EtherCATPDU([u8]);
     u8;
     pub command_type, set_command_type: 7, 0;
     pub index, set_index: 15, 8;
@@ -86,7 +86,7 @@ bitfield! {
     pub irq, set_irq: 64+15, 64;
 }
 
-impl<T: AsRef<[u8]>> DLPDUHeader<T> {
+impl<T: AsRef<[u8]>> EtherCATPDU<T> {
     pub fn new(buf: T) -> Option<Self> {
         let packet = Self(buf);
         if packet.is_buffer_range_ok() {
@@ -101,19 +101,19 @@ impl<T: AsRef<[u8]>> DLPDUHeader<T> {
     }
 
     pub fn is_buffer_range_ok(&self) -> bool {
-        self.0.as_ref().get(DLPDU_HEADER_LENGTH - 1).is_some()
+        self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH - 1).is_some()
     }
 
     pub fn wkc(&self) -> Option<u16> {
         let len = self.length() as usize;
-        let low = self.0.as_ref().get(DLPDU_HEADER_LENGTH + len)?;
-        let high = self.0.as_ref().get(DLPDU_HEADER_LENGTH + len + 1)?;
+        let low = self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH + len)?;
+        let high = self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH + len + 1)?;
         Some(((*high as u16) << 8) | (*low as u16))
     }
 }
 
 bitfield! {
-    pub struct MailboxHeader([u8]);
+    pub struct MailboxPDU([u8]);
     u16;
     pub length, set_length: 15, 0;
     pub address, set_address: 31, 16;
@@ -123,7 +123,7 @@ bitfield! {
     pub count, set_count: 46, 44;
 }
 
-impl<T: AsRef<[u8]>> MailboxHeader<T> {
+impl<T: AsRef<[u8]>> MailboxPDU<T> {
     pub fn new(buf: T) -> Option<Self> {
         let packet = Self(buf);
         if packet.is_buffer_range_ok() {

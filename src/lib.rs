@@ -1,17 +1,15 @@
 #![no_std]
-
-pub mod al_state;
+pub(crate) mod al_state;
 pub mod arch;
-pub mod cycletime;
 pub(crate) mod dc;
-pub mod error;
+pub(crate) mod eeprom;
+mod error;
+pub(crate) mod frame;
 pub(crate) mod mailbox;
 pub mod master;
-pub(crate) mod packet;
-pub mod sdo;
-pub mod util;
+pub(crate) mod sdo;
+pub mod slave_device;
+pub(crate) mod util;
 
-pub use al_state::*;
-pub use cycletime::*;
-pub use error::*;
-pub use master::*;
+pub use al_state::AlState;
+pub use error::Error;

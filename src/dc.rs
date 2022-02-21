@@ -1,20 +1,25 @@
 use crate::arch::*;
-use crate::packet::ethercat_util::*;
+use crate::error::*;
+use crate::frame::ethercat_frame::*;
+use crate::master::*;
 use crate::util::*;
-use crate::*;
 
 const DC_RECV_TIMEOUT_NS: u64 = 1000_000;
 
 // NOTE: ポート0がIN、ポート1がOUTとし、ライントポロジーとする。
 // NOTE: すべてのスレーブがDCに対応しているとする。
 // TODO: 上記を一般化する。
-pub(crate) fn config_dc<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+pub(crate) fn config_dc<
+    B: AsRef<[u8]> + AsMut<[u8]>,
+    R: RawPacketInterface,
+    E: EtherCATSystemTime,
+>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
     num_drift_iter: usize,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     set_dc_master_control::<_, _, E>(ethdev, ec_packet, recv_buffer, slave_count)?;
 
     set_dc_cycle_deactivation::<_, _, E>(ethdev, ec_packet, recv_buffer, slave_count)?;
@@ -28,12 +33,12 @@ pub(crate) fn config_dc<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: 
     Ok(())
 }
 
-fn clear_dc<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+fn clear_dc<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCATSystemTime>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     let register = 0x0910;
     init_ec_packet(ec_packet);
     ec_packet.add_bwr(0, register, &[0; 32])?;
@@ -47,13 +52,13 @@ fn clear_dc<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoc
 fn set_dc_cycle_deactivation<
     B: AsRef<[u8]> + AsMut<[u8]>,
     R: RawPacketInterface,
-    E: EtherCatEpoch,
+    E: EtherCATSystemTime,
 >(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     let register = 0x0981;
     init_ec_packet(ec_packet);
     ec_packet.add_bwr(0, register, &[0])?;
@@ -64,12 +69,16 @@ fn set_dc_cycle_deactivation<
     Ok(())
 }
 
-fn set_dc_master_control<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+fn set_dc_master_control<
+    B: AsRef<[u8]> + AsMut<[u8]>,
+    R: RawPacketInterface,
+    E: EtherCATSystemTime,
+>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     let register = 0x0980;
     init_ec_packet(ec_packet);
     ec_packet.add_bwr(0, register, &[0])?;
@@ -83,13 +92,13 @@ fn set_dc_master_control<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E:
 fn set_dc_offset_and_delay<
     B: AsRef<[u8]> + AsMut<[u8]>,
     R: RawPacketInterface,
-    E: EtherCatEpoch,
+    E: EtherCATSystemTime,
 >(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     // フレームの到着したローカルタイムをラッチする。
     init_ec_packet(ec_packet);
     ec_packet.add_bwr(0, 0x0900, &[0])?;
@@ -110,11 +119,11 @@ fn set_dc_offset_and_delay<
                 send_ec_packet(ethdev, ec_packet)?;
                 clear_buffer(recv_buffer);
                 receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, DC_RECV_TIMEOUT_NS)?;
-                let packet = EtherCATPacketUtil::new(&recv_buffer)?;
+                let packet = EtherCATFrame::new(&recv_buffer)?;
                 let offset = packet
                     .dlpdu_payload_offsets()
                     .next()
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 //port0
                 let local_time_port0 = u32::from_le_bytes([
                     packet.packet()[offset],
@@ -140,11 +149,11 @@ fn set_dc_offset_and_delay<
                 send_ec_packet(ethdev, ec_packet)?;
                 clear_buffer(recv_buffer);
                 receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, DC_RECV_TIMEOUT_NS)?;
-                let packet = EtherCATPacketUtil::new(&recv_buffer)?;
+                let packet = EtherCATFrame::new(&recv_buffer)?;
                 let offset = packet
                     .dlpdu_payload_offsets()
                     .next()
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 let local_time_esc = u64::from_le_bytes([
                     packet.packet()[offset],
                     packet.packet()[offset + 1],
@@ -210,13 +219,13 @@ fn set_dc_offset_and_delay<
     Ok(())
 }
 
-fn set_dc_drift<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+fn set_dc_drift<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCATSystemTime>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_count: u16,
     num_iter: usize,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     for _ in 0..num_iter {
         init_ec_packet(ec_packet);
         ec_packet.add_armw(0, 0x0910, &[0; 8])?;

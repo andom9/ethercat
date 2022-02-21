@@ -1,16 +1,12 @@
 use crate::al_state::AlState;
-use crate::packet::coe::AbortCode;
-use crate::packet::ethercat::MailboxErrorDetail;
+use crate::frame::coe::AbortCode;
+use crate::frame::ethercat::MailboxErrorDetail;
 
+// TODO: 整理する
 #[derive(Debug, Clone)]
-pub enum PacketError {
+pub enum Error {
     LargeData,
     SmallBuffer,
-}
-
-#[derive(Debug, Clone)]
-pub enum EtherCATError {
-    PacketError(PacketError),
     WkcNeq(u16, u16),
     RxError(u8),
     UnexpectedPacket,
@@ -18,7 +14,7 @@ pub enum EtherCATError {
     ALStateTransfer(u16, AlState),
     ALStateTimeout(u64, AlState),
     TooManySlave(usize),
-    Unimplemented(UnimplementedKind),
+    UnimplementedFeature,
     NotFoundSlaves,
     NotExistSlave(u16),
     CannotAccessEEPROM,
@@ -35,24 +31,9 @@ pub enum EtherCATError {
     MailboxDisable,
     MailboxTimeout(u64),
     UnexpectedAlState(AlState, AlState),
-    NotRecieveEtherCATPacket,
+    NotRecieveEtherCATFrame,
     InvalidCommand,
     MaxMailboxLength,
     UnableToRecievePacket,
     UnableToSendPacket,
-}
-
-#[derive(Debug, Clone)]
-pub enum UnimplementedKind {
-    NoDCSlave,
-    NoLRWSlave,
-    FixedFMMU,
-    Topology,
-    UnsupportedBus(u16, u8, u8),
-}
-
-impl From<PacketError> for EtherCATError {
-    fn from(packet_error: PacketError) -> Self {
-        Self::PacketError(packet_error)
-    }
 }

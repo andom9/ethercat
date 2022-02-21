@@ -1,17 +1,21 @@
 use crate::arch::*;
 use crate::error::*;
+use crate::frame::coe::*;
+use crate::frame::ethercat::*;
+use crate::frame::ethercat_frame::*;
 use crate::mailbox::*;
-use crate::packet::coe::*;
-use crate::packet::ethercat::*;
-use crate::packet::ethercat_util::*;
 use heapless;
 
 pub const SDO_MAX_DATA_LENGTH: usize =
     512 - MAILBOX_HEADER_LENGTH - COE_HEADER_LENGTH - SDO_HEADER_LENGTH;
 
-pub(crate) fn write_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+pub(crate) fn write_sdo<
+    B: AsRef<[u8]> + AsMut<[u8]>,
+    R: RawPacketInterface,
+    E: EtherCATSystemTime,
+>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_number: u16,
     station_addr: u16,
@@ -20,14 +24,14 @@ pub(crate) fn write_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: 
     mailbox_timeout_millis: u64,
     sdo_index: u16,
     sdo_sub_index: u8,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     const SIZE: usize = 512 - MAILBOX_HEADER_LENGTH;
     let mut buffer = heapless::Vec::<_, SIZE>::from_slice(
         &[0; COE_HEADER_LENGTH + SDO_HEADER_LENGTH + SDO_DATA_LENGTH],
     )
     .unwrap(); //[0; 512 - MAILBOX_HEADER_LENGTH];
     {
-        let mut canopen = CANOpenHeader::new(&mut buffer).ok_or(PacketError::SmallBuffer)?;
+        let mut canopen = CANOpenPDU::new(&mut buffer).ok_or(Error::SmallBuffer)?;
         canopen.set_service_type(CANOpenServiceType::SDOReq as u8);
     }
 
@@ -80,9 +84,13 @@ pub(crate) fn write_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: 
     Ok(())
 }
 
-pub(crate) fn read_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+pub(crate) fn read_sdo<
+    B: AsRef<[u8]> + AsMut<[u8]>,
+    R: RawPacketInterface,
+    E: EtherCATSystemTime,
+>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_number: u16,
     station_addr: u16,
@@ -90,10 +98,10 @@ pub(crate) fn read_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: E
     mailbox_timeout_millis: u64,
     sdo_index: u16,
     sdo_sub_index: u8,
-) -> Result<heapless::Vec<u8, SDO_MAX_DATA_LENGTH>, EtherCATError> {
+) -> Result<heapless::Vec<u8, SDO_MAX_DATA_LENGTH>, Error> {
     let mut buffer = [0; COE_HEADER_LENGTH + SDO_HEADER_LENGTH + SDO_DATA_LENGTH];
     {
-        let mut canopen = CANOpenHeader::new(&mut buffer).ok_or(PacketError::SmallBuffer)?;
+        let mut canopen = CANOpenPDU::new(&mut buffer).ok_or(Error::SmallBuffer)?;
         canopen.set_service_type(CANOpenServiceType::SDOReq as u8);
     }
 
@@ -117,23 +125,21 @@ pub(crate) fn read_sdo<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: E
     check_sdo_res(recv_buffer)
 }
 
-fn check_sdo_res(
-    sdo_recv_buffer: &[u8],
-) -> Result<heapless::Vec<u8, SDO_MAX_DATA_LENGTH>, EtherCATError> {
-    let res_packet = EtherCATPacketUtil::new(sdo_recv_buffer)?;
+fn check_sdo_res(sdo_recv_buffer: &[u8]) -> Result<heapless::Vec<u8, SDO_MAX_DATA_LENGTH>, Error> {
+    let res_packet = EtherCATFrame::new(sdo_recv_buffer)?;
     let mut buffer: heapless::Vec<u8, SDO_MAX_DATA_LENGTH> = heapless::Vec::new();
 
     let payload_offset = res_packet
         .dlpdu_payload_offsets()
         .next()
-        .ok_or(PacketError::SmallBuffer)?;
+        .ok_or(Error::SmallBuffer)?;
     //TODO: 初めに全体の長さチェックをする。
 
     {
-        let mailbox = MailboxHeader::new(&sdo_recv_buffer[payload_offset..])
-            .ok_or(PacketError::SmallBuffer)?;
+        let mailbox =
+            MailboxPDU::new(&sdo_recv_buffer[payload_offset..]).ok_or(Error::SmallBuffer)?;
         if mailbox.mailbox_type() != MailboxType::CoE as u8 {
-            return Err(EtherCATError::UnexpectedMailbox(mailbox.mailbox_type()));
+            return Err(Error::UnexpectedMailbox(mailbox.mailbox_type()));
         }
     }
 
@@ -141,7 +147,7 @@ fn check_sdo_res(
         let sdo = SDO::new(
             &sdo_recv_buffer[payload_offset + MAILBOX_HEADER_LENGTH + COE_HEADER_LENGTH..],
         )
-        .ok_or(PacketError::SmallBuffer)?;
+        .ok_or(Error::SmallBuffer)?;
         let command = sdo.command();
         if command == SDOCommand::Abort as u8 {
             let mut abort_code = 0_u32;
@@ -158,13 +164,13 @@ fn check_sdo_res(
                     continue;
                 }
             }
-            Err(EtherCATError::MailboxAbort(abort_code.into()))
+            Err(Error::MailboxAbort(abort_code.into()))
         } else if command == SDOCommand::DownRes as u8 {
             Ok(buffer)
         } else if command == SDOCommand::UpExpRes1 as u8 {
             let d = sdo_recv_buffer
                 .get(payload_offset + MAILBOX_HEADER_LENGTH + COE_HEADER_LENGTH + SDO_HEADER_LENGTH)
-                .ok_or(PacketError::SmallBuffer)?;
+                .ok_or(Error::SmallBuffer)?;
             buffer.push(*d).unwrap();
             Ok(buffer)
         } else if command == SDOCommand::UpExpRes2 as u8 {
@@ -177,7 +183,7 @@ fn check_sdo_res(
                             + SDO_HEADER_LENGTH
                             + j,
                     )
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 buffer.push(*d).unwrap();
             }
             Ok(buffer)
@@ -191,7 +197,7 @@ fn check_sdo_res(
                             + SDO_HEADER_LENGTH
                             + j,
                     )
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 buffer.push(*d).unwrap();
             }
             Ok(buffer)
@@ -205,7 +211,7 @@ fn check_sdo_res(
                             + SDO_HEADER_LENGTH
                             + j,
                     )
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 buffer.push(*d).unwrap();
             }
             Ok(buffer)
@@ -220,12 +226,12 @@ fn check_sdo_res(
                             + SDO_HEADER_LENGTH
                             + j,
                     )
-                    .ok_or(PacketError::SmallBuffer)?;
+                    .ok_or(Error::SmallBuffer)?;
                 buffer.push(*d).unwrap();
             }
             Ok(buffer)
         } else {
-            Err(EtherCATError::UnexpectedMailbox(command))
+            Err(Error::UnexpectedMailbox(command))
         }
     }
 }

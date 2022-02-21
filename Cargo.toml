@@ -2,14 +2,14 @@
 name = "ethercat-master"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT OR Apache-2.0"
+description = "EtherCAT Master"
 
 [dependencies]
-bitfield = { git="https://github.com/dzamlo/rust-bitfield", rev = "5a517f8" }
-heapless = "0.7.3"
-bit_field = "0.10.1"
 log = "0.4.14"
+heapless = "0.7.3"
+bitfield = { git="https://github.com/dzamlo/rust-bitfield", rev = "5a517f8" }
+bit_field = "0.10.1"
 
 [dev-dependencies]
 pnet = "0.29.0"

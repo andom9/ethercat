@@ -1,17 +1,31 @@
 use core::panic;
 
-use ethercat_master::al_state::*;
 use ethercat_master::arch::*;
-use ethercat_master::cycletime::CycleTime;
-use ethercat_master::error::*;
 use ethercat_master::master::*;
+use ethercat_master::slave_device::*;
+use ethercat_master::{AlState, Error};
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
+use std::env;
 
 fn main() {
-    std::env::set_var("RUST_LOG", "info");
+    env::set_var("RUST_LOG", "info");
     env_logger::init();
 
-    let interf_name = "\\Device\\NPF_{4F7F2B88-EAEE-4E35-A8F3-328567EED630}";
+    let args: Vec<String> = env::args().collect();
+
+    if let Some(name) = args.get(1) {
+        simple_test(&name);
+    } else {
+        println!("Specify the name of network interface as an argument from the following.");
+        for (i, interface) in datalink::interfaces().iter().enumerate() {
+            println!("{}:", i);
+            println!("    Description: {}", interface.description);
+            println!("    Name: {}", interface.name);
+        }
+    }
+}
+
+fn simple_test(interf_name: &str) {
     let raw_socket = RawSocket::open(interf_name);
     let mut master = EtherCATMaster::<_, Clock>::new(raw_socket);
     master.init_slaves().unwrap();
@@ -78,7 +92,7 @@ fn main() {
         //dbg!(ControlWord::ShutDown.as_le_bytes());
     }
 
-    let cycle_time = CycleTime::T2Millis;
+    let cycle_time = 2_000_000;
     //マスターの起動
     let sync0_pulse_start_time = master.start_safe_operation(cycle_time).unwrap();
     master.change_al_states(AlState::Operational).unwrap();
@@ -94,7 +108,7 @@ fn main() {
             Ok(new_now_time) => new_now_time,
             Err(e) => {
                 println!("{:?}", e);
-                if let EtherCATError::WkcNeq(_, _) = e {
+                if let Error::WkcNeq(_, _) = e {
                     panic!();
                 }
                 now_time
@@ -144,7 +158,7 @@ fn main() {
 
 struct Clock {}
 
-impl EtherCatEpoch for Clock {
+impl EtherCATSystemTime for Clock {
     fn system_time_from_2000_1_1_as_nanos() -> u64 {
         let systemtime = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -181,16 +195,15 @@ impl RawPacketInterface for RawSocket {
             .send_to(packet, None)
             .map(|res| res.is_ok())
             .unwrap_or(false)
-        
     }
     fn recv(&mut self, rx_buffer: &mut [u8]) -> Option<usize> {
         match self.rx.next() {
             Err(_e) => None,
             Ok(packet) => {
                 let mut len = 0;
-                for (buf, recv) in rx_buffer.iter_mut().zip(packet.into_iter()){
+                for (buf, recv) in rx_buffer.iter_mut().zip(packet.into_iter()) {
                     *buf = *recv;
-                    len +=1;
+                    len += 1;
                 }
                 Some(len)
             }

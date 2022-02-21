@@ -1,7 +1,7 @@
 use crate::arch::*;
-use crate::packet::ethercat_util::*;
+use crate::error::*;
+use crate::frame::ethercat_frame::*;
 use crate::util::*;
-use crate::*;
 
 const AL_RECV_TIMEOUT_NS: u64 = 1000_000_000;
 
@@ -38,15 +38,15 @@ impl From<u16> for AlState {
 pub(crate) fn change_al_state<
     B: AsRef<[u8]> + AsMut<[u8]>,
     R: RawPacketInterface,
-    E: EtherCatEpoch,
+    E: EtherCATSystemTime,
 >(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_numbers: &[u16],
     state: AlState,
     timeout_ns: u64,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     for slave_number in slave_numbers {
         request_al_states::<_, _, E>(ethdev, ec_packet, recv_buffer, *slave_number, state)?;
     }
@@ -63,13 +63,13 @@ pub(crate) fn change_al_state<
     Ok(())
 }
 
-fn request_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+fn request_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCATSystemTime>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_number: u16,
     state: AlState,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     let al_control_register = 0x0120;
     //let data = [(state as u8) | 0b1_0000];
     let data = [state as u8];
@@ -82,13 +82,13 @@ fn request_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: Eth
     receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, AL_RECV_TIMEOUT_NS)
 }
 
-fn read_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCatEpoch>(
+fn read_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherCATSystemTime>(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_number: u16,
     check_error_code: bool,
-) -> Result<AlState, EtherCATError> {
+) -> Result<AlState, Error> {
     let register = 0x0130;
     let data = [0; 6];
 
@@ -98,28 +98,28 @@ fn read_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherC
 
     clear_buffer(recv_buffer);
     receive_packet_with_wkc_check::<_, E>(ethdev, recv_buffer, 1, AL_RECV_TIMEOUT_NS)?;
-    let recieve_packet = EtherCATPacketUtil::new(recv_buffer)?;
+    let recieve_packet = EtherCATFrame::new(recv_buffer)?;
     let offset = recieve_packet
         .dlpdu_payload_offsets()
         .next()
-        .ok_or(PacketError::SmallBuffer)?;
+        .ok_or(Error::SmallBuffer)?;
     let data = recieve_packet
         .packet()
         .get(offset)
-        .ok_or(PacketError::SmallBuffer)?;
+        .ok_or(Error::SmallBuffer)?;
     let slave_state = data & 0b0000_1111;
 
     if check_error_code && (data & 0b1_0000) != 0 {
         let low = recieve_packet
             .packet()
             .get(offset + 4)
-            .ok_or(PacketError::SmallBuffer)?;
+            .ok_or(Error::SmallBuffer)?;
         let high = recieve_packet
             .packet()
             .get(offset + 5)
-            .ok_or(PacketError::SmallBuffer)?;
+            .ok_or(Error::SmallBuffer)?;
         let error_code = ((*high as u16) << 8) | (*low as u16);
-        return Err(EtherCATError::ALStateTransfer(
+        return Err(Error::ALStateTransfer(
             error_code,
             AlState::from(slave_state as u16),
         ));
@@ -131,15 +131,15 @@ fn read_al_states<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface, E: EtherC
 fn wait_al_state_transition<
     B: AsRef<[u8]> + AsMut<[u8]>,
     R: RawPacketInterface,
-    E: EtherCatEpoch,
+    E: EtherCATSystemTime,
 >(
     ethdev: &mut R,
-    ec_packet: &mut EtherCATPacketUtil<B>,
+    ec_packet: &mut EtherCATFrame<B>,
     recv_buffer: &mut [u8],
     slave_number: u16,
     state: AlState,
     timeout_ns: u64,
-) -> Result<(), EtherCATError> {
+) -> Result<(), Error> {
     let start_time = E::system_time_from_2000_1_1_as_nanos();
     while (read_al_states::<_, _, E>(ethdev, ec_packet, recv_buffer, slave_number, false)?) != state
     {
@@ -149,7 +149,7 @@ fn wait_al_state_transition<
             {
                 break;
             }
-            return Err(EtherCATError::ALStateTimeout(timeout_ns, state));
+            return Err(Error::ALStateTimeout(timeout_ns, state));
         }
     }
     Ok(())
