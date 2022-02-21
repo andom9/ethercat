@@ -1,12 +1,11 @@
 use crate::arch::*;
 use crate::error::*;
-use crate::frame::ethercat::*;
-use crate::frame::ethercat_frame::*;
 use crate::master::*;
+use crate::packet::ethercat::*;
+use crate::packet::ethercat_frame::*;
 use crate::util::*;
 
 //MEMO: Mailbox Counterはどう決めるのがベストか？
-
 const MB_RECV_TIMEOUT_NS: u64 = 1000_000_000;
 
 pub(crate) fn mailbox<

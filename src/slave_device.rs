@@ -41,8 +41,8 @@ pub struct SlaveDevice {
     // settings
     number: u16,
     station_address: u16, // write 0x0010 0x0011
-    rx_pd0_mapping: heapless::Vec<PDOEntry, MAX_RXPDO_ENTRY>,
-    tx_pd0_mapping: heapless::Vec<PDOEntry, MAX_TXPDO_ENTRY>,
+    rx_pdo_mapping: heapless::Vec<PDOEntry, MAX_RXPDO_ENTRY>,
+    tx_pdo_mapping: heapless::Vec<PDOEntry, MAX_TXPDO_ENTRY>,
     rx_pd0_start_offset: usize,
     rx_pd0_length: usize,
     rx_pd0_start_bit: usize,
@@ -74,8 +74,8 @@ pub struct SlaveDevice {
 }
 
 impl SlaveDevice {
-    pub fn new(number: u16) -> Self{
-        Self{
+    pub fn new(number: u16) -> Self {
+        Self {
             number,
             ..Default::default()
         }
@@ -101,25 +101,25 @@ impl SlaveDevice {
         };
     }
 
-    pub fn rx_pd0_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.rx_pd0_mapping
+    pub fn rx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
+        &self.rx_pdo_mapping
     }
 
-    pub fn rx_pd0_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.rx_pd0_mapping
+    pub fn rx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
+        &mut self.rx_pdo_mapping
     }
 
-    pub fn tx_pd0_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.tx_pd0_mapping
+    pub fn tx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
+        &self.tx_pdo_mapping
     }
 
-    pub fn tx_pd0_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.tx_pd0_mapping
+    pub fn tx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
+        &mut self.tx_pdo_mapping
     }
 
     pub(crate) fn rx_pd0_bit_size(&self) -> u16 {
         let mut size = 0;
-        for entry in &self.rx_pd0_mapping {
+        for entry in &self.rx_pdo_mapping {
             size += entry.bit_length();
         }
         size
@@ -127,34 +127,34 @@ impl SlaveDevice {
 
     pub(crate) fn tx_pd0_bit_size(&self) -> u16 {
         let mut size = 0;
-        for entry in &self.tx_pd0_mapping {
+        for entry in &self.tx_pdo_mapping {
             size += entry.bit_length();
         }
         size
     }
 
     pub fn rx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.rx_pd0_mapping.get(index)
+        self.rx_pdo_mapping.get(index)
     }
 
     pub fn tx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.tx_pd0_mapping.get(index)
+        self.tx_pdo_mapping.get(index)
     }
 
     pub fn rx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.rx_pd0_mapping.get_mut(index)
+        self.rx_pdo_mapping.get_mut(index)
     }
 
     pub fn tx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.tx_pd0_mapping.get_mut(index)
+        self.tx_pdo_mapping.get_mut(index)
     }
 
     pub fn push_rx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.rx_pd0_mapping.push(pd0_entry)
+        self.rx_pdo_mapping.push(pd0_entry)
     }
 
     pub fn push_tx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.tx_pd0_mapping.push(pd0_entry)
+        self.tx_pdo_mapping.push(pd0_entry)
     }
 
     pub(crate) fn rx_pd0_start_offset(&self) -> usize {
@@ -314,8 +314,8 @@ impl Default for SlaveDevice {
             coe: None,
             foe: None,
             dc: None,
-            rx_pd0_mapping: Vec::default(),
-            tx_pd0_mapping: Vec::default(),
+            rx_pdo_mapping: Vec::default(),
+            tx_pdo_mapping: Vec::default(),
             rx_pd0_start_offset: 0,
             rx_pd0_length: 0,
             rx_pd0_start_bit: 0,

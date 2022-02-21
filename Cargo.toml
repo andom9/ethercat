@@ -6,10 +6,11 @@ license = "MIT OR Apache-2.0"
 description = "EtherCAT Master"
 
 [dependencies]
-log = "0.4.14"
-heapless = "0.7.3"
+log = "0.4"
+heapless = "0.7"
 bitfield = { git="https://github.com/dzamlo/rust-bitfield", rev = "5a517f8" }
-bit_field = "0.10.1"
+bit_field = "0.10"
+smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4"] }
 
 [dev-dependencies]
 pnet = "0.29.0"

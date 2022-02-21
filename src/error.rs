@@ -1,6 +1,6 @@
 use crate::al_state::AlState;
-use crate::frame::coe::AbortCode;
-use crate::frame::ethercat::MailboxErrorDetail;
+use crate::packet::coe::AbortCode;
+use crate::packet::ethercat::MailboxErrorDetail;
 
 // TODO: 整理する
 #[derive(Debug, Clone)]

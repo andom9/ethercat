@@ -2,8 +2,8 @@ use crate::al_state::*;
 use crate::arch::*;
 use crate::dc::config_dc;
 use crate::error::*;
-use crate::frame::ethercat::*;
-use crate::frame::ethercat_frame::*;
+use crate::packet::ethercat::*;
+use crate::packet::ethercat_frame::*;
 use crate::sdo::*;
 use crate::slave_device::*;
 use crate::util::*;
@@ -18,10 +18,10 @@ const FRAME_MAX_SIZE_WITHOUT_FCS: usize = 1500;
 pub const MAX_SLAVES: usize = 16;
 
 const MAX_RXPDO_BUFFER_SIZE: usize = 10;
-pub(crate)const SM0_START_ADDRESS: u16 = 0x1800; //Mailbox(リクエスト)の先頭アドレス0x1000～0x2FFFF
-pub(crate)const SM1_START_ADDRESS: u16 = 0x1C00; //Mailbox(レスポンス)の先頭アドレス0x1000～0x2FFFF
-pub(crate)const SM2_START_ADDRESS: u16 = 0x1100; //Rxプロセスデータの先頭アドレス0x1000～0x2FFFF
-pub(crate)const SM3_START_ADDRESS: u16 = 0x1140; //Txプロセスデータの先頭アドレス0x1000～0x2FFFF
+pub(crate) const SM0_START_ADDRESS: u16 = 0x1800; //Mailbox(リクエスト)の先頭アドレス0x1000～0x2FFFF
+pub(crate) const SM1_START_ADDRESS: u16 = 0x1C00; //Mailbox(レスポンス)の先頭アドレス0x1000～0x2FFFF
+pub(crate) const SM2_START_ADDRESS: u16 = 0x1100; //Rxプロセスデータの先頭アドレス0x1000～0x2FFFF
+pub(crate) const SM3_START_ADDRESS: u16 = 0x1140; //Txプロセスデータの先頭アドレス0x1000～0x2FFFF
 const RXPDO_MAPPING_INDEX: u16 = 0x1702; //PDOのマッピング設定をするオブジェクトディクショナリのインデッ                                         //0x1601～0x1603, 0x1700～0x1703
 const TXPDO_MAPPING_INDEX: u16 = 0x1B03; //PDOのマッピング設定をするオブジェクトディクショナリのインデッ                                         //0x1A01～0x1A03, 0x1B00～0x1B03
 const LOGICAL_START_ADDRESS: u32 = 0x10000; //LRWの際に指定するアドレス
@@ -165,7 +165,7 @@ where
                                                    //dbg!(d);
         }
 
-        self.pd0_mapping()?;
+        self.pdo_mapping()?;
 
         //PreOptionalの初期化
 
@@ -202,7 +202,7 @@ where
         self.wait_sync_0_starting(2_000_000_000)?; //SYNC信号が始まったか確認
 
         //PDO SMとFMMUの設定
-        self.configure_pd0_sm()?;
+        self.configure_pdo_sm()?;
         self.configure_fmmu()?;
 
         //ウォッチドッグ無効
@@ -229,7 +229,7 @@ where
             let mut bitsum_per_slave = 0;
             let offset = slave.rx_pd0_start_offset();
             let start_bit = slave.rx_pd0_start_bit();
-            for pd0_entry in slave.rx_pd0_mapping() {
+            for pd0_entry in slave.rx_pdo_mapping() {
                 let bitsize = pd0_entry.bit_length() as usize;
                 let grobal_start_bit = offset * 8 + start_bit + bitsum_per_slave;
 
@@ -250,7 +250,7 @@ where
                 bitsum += bitsize;
                 bitsum_per_slave += bitsize;
             }
-            for pd0_entry_tx in slave.tx_pd0_mapping() {
+            for pd0_entry_tx in slave.tx_pdo_mapping() {
                 bitsum_tx += pd0_entry_tx.bit_length() as usize;
             }
         }
@@ -277,7 +277,7 @@ where
                     let start_bit = slave.tx_pd0_start_bit();
                     let grobal_start_bit = offset * 8 + start_bit; // + bitsum;
                     let mut bitsum = 0;
-                    for pd0_entry in slave.tx_pd0_mapping_mut() {
+                    for pd0_entry in slave.tx_pdo_mapping_mut() {
                         let bitsize = pd0_entry.bit_length() as usize;
                         let iter_num = if bitsize % 8 == 0 {
                             bitsize / 8
@@ -410,7 +410,7 @@ where
             }
             let error = self
                 .recieve_buffer
-                .get(offset + EtherCATPDU_HEADER_LENGTH)
+                .get(offset + ETHERCATPDU_HEADER_LENGTH)
                 .ok_or(Error::SmallBuffer)?;
             if *error != rx_error_count {
                 return Err(Error::RxError(*error));
@@ -721,7 +721,7 @@ where
         Ok(())
     }
 
-    fn configure_pd0_sm(&mut self) -> Result<(), Error> {
+    fn configure_pdo_sm(&mut self) -> Result<(), Error> {
         //TODO: PDOの長さは、2の倍数にする必要があるらしい。
         let sm2_register = 0x0810;
         let sm3_register = 0x0818;
@@ -861,7 +861,7 @@ where
         Ok(())
     }
 
-    fn pd0_mapping(&mut self) -> Result<(), Error> {
+    fn pdo_mapping(&mut self) -> Result<(), Error> {
         let slave_count = self.slave_count as usize;
         const MAX_ENTRY: usize = if MAX_RXPDO_ENTRY > MAX_TXPDO_ENTRY {
             MAX_RXPDO_ENTRY
@@ -871,9 +871,9 @@ where
         let mut data_buffer = [0_u32; MAX_ENTRY];
 
         for i in 0..slave_count {
-            let num_rx_entry = self.slaves[i].rx_pd0_mapping().len();
+            let num_rx_entry = self.slaves[i].rx_pdo_mapping().len();
             self.write_sdo(i as u16, RXPDO_MAPPING_INDEX, 0, &[0])?; //一度サブインデックス0をクリアすること
-            for (j, entry) in self.slaves[i].rx_pd0_mapping().iter().enumerate() {
+            for (j, entry) in self.slaves[i].rx_pdo_mapping().iter().enumerate() {
                 let mut data: u32 = 0;
                 data |= (entry.address() as u32) << 16;
                 data |= entry.bit_length() as u32;
@@ -889,9 +889,9 @@ where
             }
             self.write_sdo(i as u16, RXPDO_MAPPING_INDEX, 0, &[num_rx_entry as u8])?;
 
-            let num_tx_entry = self.slaves[i].tx_pd0_mapping().len();
+            let num_tx_entry = self.slaves[i].tx_pdo_mapping().len();
             self.write_sdo(i as u16, TXPDO_MAPPING_INDEX, 0, &[0])?; //一度サブインデックス0をクリアすること
-            for (j, entry) in self.slaves[i].tx_pd0_mapping().iter().enumerate() {
+            for (j, entry) in self.slaves[i].tx_pdo_mapping().iter().enumerate() {
                 let mut data: u32 = 0;
                 data |= (entry.address() as u32) << 16;
                 data |= entry.bit_length() as u32;

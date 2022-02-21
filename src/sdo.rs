@@ -1,9 +1,9 @@
 use crate::arch::*;
 use crate::error::*;
-use crate::frame::coe::*;
-use crate::frame::ethercat::*;
-use crate::frame::ethercat_frame::*;
 use crate::mailbox::*;
+use crate::packet::coe::*;
+use crate::packet::ethercat::*;
+use crate::packet::ethercat_frame::*;
 use heapless;
 
 pub const SDO_MAX_DATA_LENGTH: usize =

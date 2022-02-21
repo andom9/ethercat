@@ -1,6 +1,6 @@
 use crate::arch::*;
 use crate::error::*;
-use crate::frame::ethercat_frame::*;
+use crate::packet::ethercat_frame::*;
 use crate::util::*;
 
 const AL_RECV_TIMEOUT_NS: u64 = 1000_000_000;

@@ -1,7 +1,7 @@
 use crate::arch::*;
 use crate::error::*;
-use crate::frame::ethercat_frame::*;
 use crate::master::*;
+use crate::packet::ethercat_frame::*;
 use crate::util::*;
 
 const DC_RECV_TIMEOUT_NS: u64 = 1000_000;

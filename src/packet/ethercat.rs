@@ -2,7 +2,7 @@ use bitfield::*;
 
 pub const ETHERNET_HEADER_LENGTH: usize = 14;
 pub const ETHERCAT_HEADER_LENGTH: usize = 2;
-pub const EtherCATPDU_HEADER_LENGTH: usize = 10;
+pub const ETHERCATPDU_HEADER_LENGTH: usize = 10;
 pub const MAILBOX_HEADER_LENGTH: usize = 6;
 pub const WKC_LENGTH: usize = 2;
 pub const ETHERCAT_TYPE: u16 = 0x88A4;
@@ -26,9 +26,9 @@ impl<T: AsRef<[u8]>> EthernetHeader<T> {
         }
     }
 
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
+    //pub fn new_unchecked(buf: T) -> Self {
+    //    Self(buf)
+    //}
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(ETHERNET_HEADER_LENGTH - 1).is_some()
@@ -61,9 +61,9 @@ impl<T: AsRef<[u8]>> EtherCATHeader<T> {
         }
     }
 
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
+    //pub fn new_unchecked(buf: T) -> Self {
+    //    Self(buf)
+    //}
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(ETHERCAT_HEADER_LENGTH - 1).is_some()
@@ -101,13 +101,13 @@ impl<T: AsRef<[u8]>> EtherCATPDU<T> {
     }
 
     pub fn is_buffer_range_ok(&self) -> bool {
-        self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH - 1).is_some()
+        self.0.as_ref().get(ETHERCATPDU_HEADER_LENGTH - 1).is_some()
     }
 
     pub fn wkc(&self) -> Option<u16> {
         let len = self.length() as usize;
-        let low = self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH + len)?;
-        let high = self.0.as_ref().get(EtherCATPDU_HEADER_LENGTH + len + 1)?;
+        let low = self.0.as_ref().get(ETHERCATPDU_HEADER_LENGTH + len)?;
+        let high = self.0.as_ref().get(ETHERCATPDU_HEADER_LENGTH + len + 1)?;
         Some(((*high as u16) << 8) | (*low as u16))
     }
 }
@@ -133,9 +133,9 @@ impl<T: AsRef<[u8]>> MailboxPDU<T> {
         }
     }
 
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
+    //pub fn new_unchecked(buf: T) -> Self {
+    //    Self(buf)
+    //}
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(MAILBOX_HEADER_LENGTH - 1).is_some()
@@ -145,10 +145,8 @@ impl<T: AsRef<[u8]>> MailboxPDU<T> {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
 pub enum MailboxType {
     Error = 0,
-    EoE = 2,
-    CoE,
-    FoE,
-    SoE,
+    CoE = 3,
+    FoE = 4,
 }
 
 pub const MAILBOX_ERROR_LENGTH: usize = 4;
@@ -170,9 +168,9 @@ impl<T: AsRef<[u8]>> MailboxError<T> {
         }
     }
 
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
+    //pub fn new_unchecked(buf: T) -> Self {
+    //    Self(buf)
+    //}
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(MAILBOX_ERROR_LENGTH - 1).is_some()
@@ -209,9 +207,9 @@ impl<T: AsRef<[u8]>> FMMU<T> {
         }
     }
 
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
+    //pub fn new_unchecked(buf: T) -> Self {
+    //    Self(buf)
+    //}
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(FMMU_LENGTH - 1).is_some()

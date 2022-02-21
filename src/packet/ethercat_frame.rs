@@ -1,7 +1,7 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
+use super::ethercat::*;
 use crate::error::*;
-use crate::frame::ethercat::*;
 use crate::util::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -28,16 +28,16 @@ impl<B: AsRef<[u8]>> EtherCATFrame<B> {
         })
     }
 
-    pub fn new_unchecked(buffer: B) -> Self {
-        let header_length = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
-        let ec_packet = EtherCATHeader::new_unchecked(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..]);
-        let length = ec_packet.length();
-        Self {
-            buffer,
-            free_offset: header_length + length as usize,
-            index: 0,
-        }
-    }
+    //pub fn new_unchecked(buffer: B) -> Self {
+    //    let header_length = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
+    //    let ec_packet = EtherCATHeader::new_unchecked(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..]);
+    //    let length = ec_packet.length();
+    //    Self {
+    //        buffer,
+    //        free_offset: header_length + length as usize,
+    //        index: 0,
+    //    }
+    //}
 
     #[inline]
     pub fn packet<'a>(&'a self) -> &'a [u8] {
@@ -56,7 +56,7 @@ impl<B: AsRef<[u8]>> EtherCATFrame<B> {
 
     #[inline]
     pub fn dlpd0u_payload_offsets(&self) -> EtherCATPDUOffsets<&B> {
-        EtherCATPDUOffsets::new(&self.buffer, self.free_offset, EtherCATPDU_HEADER_LENGTH)
+        EtherCATPDUOffsets::new(&self.buffer, self.free_offset, ETHERCATPDU_HEADER_LENGTH)
     }
 }
 
@@ -96,7 +96,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
             //dbg!(data_len);
             return Err(Error::LargeData);
         }
-        let dlpd0u_len = data_len + EtherCATPDU_HEADER_LENGTH + WKC_LENGTH;
+        let dlpd0u_len = data_len + ETHERCATPDU_HEADER_LENGTH + WKC_LENGTH;
         if dlpd0u_len > self.buffer.as_ref().len() - self.free_offset {
             return Err(Error::SmallBuffer);
         }
@@ -124,13 +124,13 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
         }
 
         for (i, d) in data.iter().enumerate() {
-            self.buffer.as_mut()[self.free_offset + EtherCATPDU_HEADER_LENGTH + i] = *d;
+            self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + i] = *d;
         }
 
         {
             //wkcを0にする
-            self.buffer.as_mut()[self.free_offset + EtherCATPDU_HEADER_LENGTH + data_len] = 0;
-            self.buffer.as_mut()[self.free_offset + EtherCATPDU_HEADER_LENGTH + data_len + 1] = 0;
+            self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len] = 0;
+            self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len + 1] = 0;
         }
         {
             //EtherCatヘッダーのlengthフィールドを更新する。
@@ -281,7 +281,7 @@ impl<B: AsRef<[u8]>> Iterator for EtherCATPDUOffsets<B> {
         let len = dlpd0u.length();
         if self.offset < self.length {
             let b = self.offset;
-            self.offset += EtherCATPDU_HEADER_LENGTH + len as usize + WKC_LENGTH;
+            self.offset += ETHERCATPDU_HEADER_LENGTH + len as usize + WKC_LENGTH;
             Some(b + self.delta)
         } else {
             None

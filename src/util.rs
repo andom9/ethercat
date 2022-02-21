@@ -1,7 +1,7 @@
 use crate::arch::{EtherCATSystemTime, RawPacketInterface};
 use crate::error::*;
-use crate::frame::ethercat::*;
-use crate::frame::ethercat_frame::*;
+use crate::packet::ethercat::*;
+use crate::packet::ethercat_frame::*;
 
 #[inline]
 pub(crate) fn get_ap_adp(slave_number: u16) -> u16 {
@@ -16,7 +16,11 @@ pub(crate) fn send_ec_packet<B: AsRef<[u8]> + AsMut<[u8]>, R: RawPacketInterface
     ethdec: &mut R,
     packet: &mut EtherCATFrame<B>,
 ) -> Result<(), Error> {
-    let index = if packet.index == 0xFF { 0 } else { packet.index + 1 };
+    let index = if packet.index == 0xFF {
+        0
+    } else {
+        packet.index + 1
+    };
     if !ethdec.send(packet.packet()) {
         return Err(Error::UnableToSendPacket);
     }
@@ -115,7 +119,8 @@ pub(crate) fn check_wkc(recv_packet: &[u8], num_slaves: u16) -> Result<(), Error
     let recv_packet = EtherCATFrame::new(recv_packet)?;
     for offset in recv_packet.dlpd0u_header_offsets() {
         let dlpd0u_packet = EtherCATPDU::new_unchecked(&recv_packet.packet()[offset..]);
-        let command = CommandType::new(dlpd0u_packet.command_type()).ok_or(Error::InvalidCommand)?;
+        let command =
+            CommandType::new(dlpd0u_packet.command_type()).ok_or(Error::InvalidCommand)?;
         let wkc = dlpd0u_packet.wkc().ok_or(Error::SmallBuffer)?;
         match command {
             CommandType::NOP => continue,
