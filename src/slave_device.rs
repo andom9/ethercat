@@ -1,9 +1,5 @@
-use crate::AlState;
 use bit_field::BitField;
-use heapless::Vec;
-
-pub(crate) const MAX_RXPDO_ENTRY: usize = 16;
-pub(crate) const MAX_TXPDO_ENTRY: usize = 16;
+use core::ops::Range;
 
 // PDOの入力しかないやつもある
 // →片方だけにも対応する。
@@ -32,197 +28,69 @@ pub(crate) const MAX_TXPDO_ENTRY: usize = 16;
 // FMMUは両方あるか？なければプロセスデータは片方だけしかできない。
 // DCはあるか？なければ、DCの設定はできない（ただしリファレンスクロックにはできるはず）。
 
-#[derive(Debug, Clone)]
-pub struct SlaveDevice {
-    // current status
-    al_state: AlState,
-    mailbox_count: u8,
+#[derive(Debug, Clone, Default)]
+pub struct Slave {
+    pub(crate) vender_id: u16,    // read EEPROM 0x0008 or CoE 0x1018.01
+    pub(crate) product_code: u16, // read EEPROM 0x000A or CoE 1018.02
+    pub(crate) revision_no: u16,  // read EEPROM 0x000C or CoE 1018.03
 
-    // settings
-    number: u16,
-    station_address: u16, // write 0x0010 0x0011
-    rx_pdo_mapping: heapless::Vec<PDOEntry, MAX_RXPDO_ENTRY>,
-    tx_pdo_mapping: heapless::Vec<PDOEntry, MAX_TXPDO_ENTRY>,
-    rx_pd0_start_offset: usize,
-    rx_pd0_length: usize,
-    rx_pd0_start_bit: usize,
-    rx_pd0_stop_bit: usize,
-    tx_pd0_start_offset: usize,
-    tx_pd0_length: usize,
-    tx_pd0_start_bit: usize,
-    tx_pd0_stop_bit: usize,
+    pub(crate) al_state: AlState,
+    pub(crate) mailbox_count: u8,
+    pub(crate) station_address: u16,
 
-    // info
-    vender_id: u16,    // read EEPROM 0x0008 or CoE 0x1018.01
-    product_code: u16, // read EEPROM 0x000A or CoE 1018.02
-    revision_no: u16,  // read EEPROM 0x000C or CoE 1018.03
+    pub(crate) physics: [Option<Physics>; 4], // read 0x0E00
 
-    physics: Vec<Physics, 4>, // read 0x0E00
+    pub(crate) fmmu_out: Option<u8>,
+    pub(crate) fmmu_in: Option<u8>,
 
-    fmmu_out: Option<u8>,
-    fmmu_in: Option<u8>,
+    pub(crate) sm_pd_out: Option<SyncManager>,
+    pub(crate) sm_pd_in: Option<SyncManager>,
+    pub(crate) sm_mbox_out: Option<SyncManager>,
+    pub(crate) sm_mbox_in: Option<SyncManager>,
 
-    sm_out: Option<SyncManager>,
-    sm_in: Option<SyncManager>,
-    sm_mbox_out: Option<SyncManager>,
-    sm_mbox_in: Option<SyncManager>,
+    pub(crate) coe: Option<CoE>,
+    pub(crate) foe: Option<()>,
 
-    coe: Option<CoE>,
-    foe: Option<()>,
-
-    dc: Option<DistributedClock>, // read 0x0008.2 モードはどうやって調べる？
+    pub(crate) dc: Option<DistributedClock>,
 }
 
-impl SlaveDevice {
-    pub fn new(number: u16) -> Self {
-        Self {
-            number,
-            ..Default::default()
-        }
-    }
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
+pub enum AlState {
+    Init = 0x1,
+    PreOperational = 0x2,
+    Bootstrap = 0x3,
+    SafeOperational = 0x4,
+    Operational = 0x8,
+    Invalid,
+}
 
-    pub fn number(&self) -> u16 {
-        self.number
-    }
-
-    pub(crate) fn set_number(&mut self, number: u16) {
-        self.number = number;
-    }
-
-    pub fn mailbox_count(&self) -> u8 {
-        self.mailbox_count
-    }
-
-    pub(crate) fn increment_mailbox_count(&mut self) {
-        self.mailbox_count = if self.mailbox_count == 7 {
-            1
+impl From<u8> for AlState {
+    fn from(v: u8) -> Self {
+        if v == AlState::Init as u8 {
+            AlState::Init
+        } else if v == AlState::PreOperational as u8 {
+            AlState::PreOperational
+        } else if v == AlState::Bootstrap as u8 {
+            AlState::Bootstrap
+        } else if v == AlState::SafeOperational as u8 {
+            AlState::SafeOperational
+        } else if v == AlState::PreOperational as u8 {
+            AlState::PreOperational
+        } else if v == AlState::Operational as u8 {
+            AlState::Operational
         } else {
-            self.mailbox_count + 1
-        };
-    }
-
-    pub fn rx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.rx_pdo_mapping
-    }
-
-    pub fn rx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.rx_pdo_mapping
-    }
-
-    pub fn tx_pdo_mapping<'a>(&'a self) -> &'a [PDOEntry] {
-        &self.tx_pdo_mapping
-    }
-
-    pub fn tx_pdo_mapping_mut<'a>(&'a mut self) -> &'a mut [PDOEntry] {
-        &mut self.tx_pdo_mapping
-    }
-
-    pub(crate) fn rx_pd0_bit_size(&self) -> u16 {
-        let mut size = 0;
-        for entry in &self.rx_pdo_mapping {
-            size += entry.bit_length();
+            AlState::Invalid
         }
-        size
-    }
-
-    pub(crate) fn tx_pd0_bit_size(&self) -> u16 {
-        let mut size = 0;
-        for entry in &self.tx_pdo_mapping {
-            size += entry.bit_length();
-        }
-        size
-    }
-
-    pub fn rx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.rx_pdo_mapping.get(index)
-    }
-
-    pub fn tx_pd0_entry<'a>(&'a self, index: usize) -> Option<&'a PDOEntry> {
-        self.tx_pdo_mapping.get(index)
-    }
-
-    pub fn rx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.rx_pdo_mapping.get_mut(index)
-    }
-
-    pub fn tx_pd0_entry_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut PDOEntry> {
-        self.tx_pdo_mapping.get_mut(index)
-    }
-
-    pub fn push_rx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.rx_pdo_mapping.push(pd0_entry)
-    }
-
-    pub fn push_tx_pd0_entry(&mut self, pd0_entry: PDOEntry) -> Result<(), PDOEntry> {
-        self.tx_pdo_mapping.push(pd0_entry)
-    }
-
-    pub(crate) fn rx_pd0_start_offset(&self) -> usize {
-        self.rx_pd0_start_offset
-    }
-
-    pub(crate) fn set_rx_pd0_start_offset(&mut self, offset: usize) {
-        self.rx_pd0_start_offset = offset;
-    }
-
-    pub(crate) fn rx_pd0_length(&self) -> usize {
-        self.rx_pd0_length
-    }
-
-    pub(crate) fn set_rx_pd0_length(&mut self, length: usize) {
-        self.rx_pd0_length = length;
-    }
-
-    pub(crate) fn rx_pd0_start_bit(&self) -> usize {
-        self.rx_pd0_start_bit
-    }
-
-    pub(crate) fn set_rx_pd0_start_bit(&mut self, start_bit: usize) {
-        self.rx_pd0_start_bit = start_bit;
-    }
-
-    pub(crate) fn rx_pd0_stop_bit(&self) -> usize {
-        self.rx_pd0_stop_bit
-    }
-
-    pub(crate) fn set_rx_pd0_stop_bit(&mut self, stop_bit: usize) {
-        self.rx_pd0_stop_bit = stop_bit;
-    }
-
-    pub(crate) fn tx_pd0_start_offset(&self) -> usize {
-        self.tx_pd0_start_offset
-    }
-
-    pub(crate) fn set_tx_pd0_start_offset(&mut self, offset: usize) {
-        self.tx_pd0_start_offset = offset;
-    }
-
-    pub(crate) fn tx_pd0_length(&self) -> usize {
-        self.tx_pd0_length
-    }
-
-    pub(crate) fn set_tx_pd0_length(&mut self, length: usize) {
-        self.tx_pd0_length = length;
-    }
-
-    pub(crate) fn tx_pd0_start_bit(&self) -> usize {
-        self.tx_pd0_start_bit
-    }
-
-    pub(crate) fn set_tx_pd0_start_bit(&mut self, start_bit: usize) {
-        self.tx_pd0_start_bit = start_bit;
-    }
-
-    pub(crate) fn tx_pd0_stop_bit(&self) -> usize {
-        self.tx_pd0_stop_bit
-    }
-
-    pub(crate) fn set_tx_pd0_stop_bit(&mut self, stop_bit: usize) {
-        self.tx_pd0_stop_bit = stop_bit;
     }
 }
 
-#[derive(Debug, Clone)]
+impl Default for AlState {
+    fn default() -> Self {
+        AlState::Invalid
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Physics {
     MII,
     EBUS,
@@ -230,101 +98,29 @@ pub enum Physics {
 
 #[derive(Debug, Clone)]
 pub struct SyncManager {
-    default_size: Option<u16>, // read EEPROM 0x0018, 0x001A
-    start_address: u16,        // read EEPROM 0x0019, 0x001B
+    size: u16,          // read EEPROM 0x0018, 0x001A
+    start_address: u16, // read EEPROM 0x0019, 0x001B
 }
 
 #[derive(Debug, Clone)]
 pub struct CoE {
-    pd0_assign: bool,
-    pd0_config: bool,
+    pdo_assign: bool,
+    pdo_config: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct DistributedClock {
-    assign_activate: u16,
-}
-
-impl DistributedClock {
-    pub fn is_cyclic_operation_active(&self) -> bool {
-        self.assign_activate.get_bit(0)
-    }
-
-    pub fn is_sync0_output_active(&self) -> bool {
-        self.assign_activate.get_bit(1)
-    }
-
-    pub fn is_sync1_output_active(&self) -> bool {
-        self.assign_activate.get_bit(2)
-    }
+pub enum DistributedClock {
+    FreeRun,
+    Sync0Signal,
+    //Sync1Signal,
+    //SyncManagerEvent,
 }
 
 #[derive(Debug, Clone)]
 pub struct PDOEntry {
-    address: u16,
-    bit_length: u16,
-    data: [u8; 4],
-}
-
-impl PDOEntry {
-    pub fn new(address: u16, bit_length: u16) -> Option<Self> {
-        if bit_length > 4 * 8 {
-            return None;
-        }
-        Some(Self {
-            address,
-            bit_length,
-            data: [0; 4],
-        })
-    }
-
-    pub fn address(&self) -> u16 {
-        self.address
-    }
-
-    pub fn bit_length(&self) -> u16 {
-        self.bit_length
-    }
-
-    pub fn data<'a>(&'a self) -> &'a [u8; 4] {
-        &self.data
-    }
-
-    pub fn data_mut<'a>(&'a mut self) -> &'a mut [u8; 4] {
-        &mut self.data
-    }
-}
-
-impl Default for SlaveDevice {
-    fn default() -> Self {
-        Self {
-            al_state: AlState::Init,
-            number: 0,
-            station_address: 0,
-            vender_id: 0,
-            product_code: 0,
-            revision_no: 0,
-            physics: Vec::default(),
-            fmmu_in: None,
-            fmmu_out: None,
-            sm_in: None,
-            sm_out: None,
-            sm_mbox_in: None,
-            sm_mbox_out: None,
-            coe: None,
-            foe: None,
-            dc: None,
-            rx_pdo_mapping: Vec::default(),
-            tx_pdo_mapping: Vec::default(),
-            rx_pd0_start_offset: 0,
-            rx_pd0_length: 0,
-            rx_pd0_start_bit: 0,
-            rx_pd0_stop_bit: 0,
-            tx_pd0_start_offset: 0,
-            tx_pd0_length: 0,
-            tx_pd0_start_bit: 0,
-            tx_pd0_stop_bit: 0,
-            mailbox_count: 1,
-        }
-    }
+    station_address: u16,
+    logical_memory: Range<u16>,
+    index: u16,
+    sub_index: u8,
+    bit_length: u8,
 }

@@ -1,8 +1,7 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
 use super::ethercat::*;
-use crate::error::*;
-use crate::util::*;
+use log::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EtherCATFrame<B> {
@@ -12,32 +11,31 @@ pub struct EtherCATFrame<B> {
 }
 
 impl<B: AsRef<[u8]>> EtherCATFrame<B> {
-    pub fn new(buffer: B) -> Result<Self, Error> {
+    pub fn new(buffer: B) -> Option<Self> {
         let header_length = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
 
         if buffer.as_ref().len() < header_length {
-            return Err(Error::SmallBuffer);
+            return None;
         }
-        let ec_packet = EtherCATHeader::new(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..])
-            .ok_or(Error::SmallBuffer)?;
+        let ec_packet = EtherCATHeader::new(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..])?;
         let length = ec_packet.length();
-        Ok(Self {
+        Some(Self {
             buffer,
             free_offset: header_length + length as usize,
             index: 0,
         })
     }
 
-    //pub fn new_unchecked(buffer: B) -> Self {
-    //    let header_length = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
-    //    let ec_packet = EtherCATHeader::new_unchecked(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..]);
-    //    let length = ec_packet.length();
-    //    Self {
-    //        buffer,
-    //        free_offset: header_length + length as usize,
-    //        index: 0,
-    //    }
-    //}
+    pub fn new_unchecked(buffer: B) -> Self {
+        let header_length = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
+        let ec_packet = EtherCATHeader::new_unchecked(&buffer.as_ref()[ETHERNET_HEADER_LENGTH..]);
+        let length = ec_packet.length();
+        Self {
+            buffer,
+            free_offset: header_length + length as usize,
+            index: 0,
+        }
+    }
 
     #[inline]
     pub fn packet<'a>(&'a self) -> &'a [u8] {
@@ -45,25 +43,20 @@ impl<B: AsRef<[u8]>> EtherCATFrame<B> {
     }
 
     #[inline]
-    pub fn drop(self) -> B {
-        self.buffer
+    pub fn iter_dlpdu_offsets(&self) -> EtherCATPDUOffsets<&B> {
+        EtherCATPDUOffsets::new_for_ethercat_frame(&self.buffer, self.buffer.as_ref().len())
     }
 
     #[inline]
-    pub fn dlpd0u_header_offsets(&self) -> EtherCATPDUOffsets<&B> {
-        EtherCATPDUOffsets::new(&self.buffer, self.free_offset, 0)
-    }
-
-    #[inline]
-    pub fn dlpd0u_payload_offsets(&self) -> EtherCATPDUOffsets<&B> {
-        EtherCATPDUOffsets::new(&self.buffer, self.free_offset, ETHERCATPDU_HEADER_LENGTH)
+    pub fn iter_dlpdu<'a>(&'a self) -> EtherCATPDUs<'a> {
+        EtherCATPDUs::new_for_ethercat_frame(self.buffer.as_ref(), self.buffer.as_ref().len())
     }
 }
 
 impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
     pub fn init(&mut self) {
-        //self.buffer.as_mut().iter_mut().for_each(|b| *b = 0);
-        clear_buffer(self.buffer.as_mut());
+        self.buffer.as_mut().iter_mut().for_each(|d| *d = 0);
+
         {
             let mut ethernet_frame = EthernetHeader(&mut self.buffer);
             ethernet_frame.set_ethercat_default();
@@ -74,7 +67,6 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
             ethercat_frame.set_length(0);
             ethercat_frame.set_ethercat_type(1);
         }
-        //println!("{:?}", self.buffer.as_ref());
         self.free_offset = ETHERNET_HEADER_LENGTH + ETHERCAT_HEADER_LENGTH;
         self.index = 0;
     }
@@ -84,168 +76,58 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
         &mut self.buffer.as_mut()[..self.free_offset]
     }
 
-    fn add_command(
+    pub fn add_command(
         &mut self,
         command: CommandType,
         adp: u16,
         ado: u16,
         data: &[u8],
-    ) -> Result<(), Error> {
+        index: Option<u8>,
+    ) -> bool {
         let data_len = data.len();
-        if data_len > 1486 {
-            //dbg!(data_len);
-            return Err(Error::LargeData);
+        let dlpdu_len = data_len + ETHERCATPDU_HEADER_LENGTH + WKC_LENGTH;
+        if dlpdu_len > self.buffer.as_ref().len() - self.free_offset {
+            return false;
         }
-        let dlpd0u_len = data_len + ETHERCATPDU_HEADER_LENGTH + WKC_LENGTH;
-        if dlpd0u_len > self.buffer.as_ref().len() - self.free_offset {
-            return Err(Error::SmallBuffer);
-        }
-        {
-            //最後のEtherCATPDUを変更
-            if let Some(pre_dlpd0u_offset) = self.dlpd0u_header_offsets().last() {
-                //dbg!(pre_dlpd0u_offset);
-                let mut pre_dlpd0u_frame =
-                    EtherCATPDU::new(&mut self.buffer.as_mut()[pre_dlpd0u_offset..])
-                        .ok_or(Error::SmallBuffer)?;
-                pre_dlpd0u_frame.set_has_next(true);
+
+        //最後のEtherCATPDUを変更
+        if let Some(pre_dlpdu_offset) = self.iter_dlpdu_offsets().last() {
+            if let Some(mut pre_dlpdu_frame) =
+                EtherCATPDU::new(&mut self.buffer.as_mut()[pre_dlpdu_offset..])
+            {
+                pre_dlpdu_frame.set_has_next(true);
             }
         }
-        {
-            let mut dlpd0u_frame = EtherCATPDU::new(&mut self.buffer.as_mut()[self.free_offset..])
-                .ok_or(Error::SmallBuffer)?;
-            dlpd0u_frame.set_command_type(command as u8);
-            dlpd0u_frame.set_adp(adp);
-            dlpd0u_frame.set_ado(ado);
-            dlpd0u_frame.set_index(self.index);
-            dlpd0u_frame.set_is_circulated(false);
-            dlpd0u_frame.set_has_next(false);
-            dlpd0u_frame.set_irq(0);
-            dlpd0u_frame.set_length(data_len as u16);
-        }
+
+        let mut dlpdu_frame =
+            EtherCATPDU::new(&mut self.buffer.as_mut()[self.free_offset..]).unwrap();
+
+        dlpdu_frame.set_command_type(command as u8);
+        dlpdu_frame.set_adp(adp);
+        dlpdu_frame.set_ado(ado);
+        dlpdu_frame.set_index(index.unwrap_or(self.index));
+        dlpdu_frame.set_is_circulated(false);
+        dlpdu_frame.set_has_next(false);
+        dlpdu_frame.set_irq(0);
+        dlpdu_frame.set_length(data_len as u16);
 
         for (i, d) in data.iter().enumerate() {
             self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + i] = *d;
         }
 
-        {
-            //wkcを0にする
-            self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len] = 0;
-            self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len + 1] = 0;
-        }
-        {
-            //EtherCatヘッダーのlengthフィールドを更新する。
-            let mut ethercat_frame =
-                EtherCATHeader::new(&mut self.buffer.as_mut()[ETHERNET_HEADER_LENGTH..])
-                    .ok_or(Error::SmallBuffer)?;
-            let ec_frame_len = ethercat_frame.length();
-            let datagrams_length = ec_frame_len as usize + dlpd0u_len;
-            if datagrams_length > 1498 {
-                return Err(Error::LargeData);
-            }
-            ethercat_frame.set_length(datagrams_length as u16);
-        }
-        self.free_offset += dlpd0u_len;
+        //wkcを0にする
+        self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len] = 0;
+        self.buffer.as_mut()[self.free_offset + ETHERCATPDU_HEADER_LENGTH + data_len + 1] = 0;
 
-        Ok(())
-    }
+        //EtherCatヘッダーのlengthフィールドを更新する。
+        let mut ethercat_frame =
+            EtherCATHeader::new(&mut self.buffer.as_mut()[ETHERNET_HEADER_LENGTH..]).unwrap();
+        let ec_frame_len = ethercat_frame.length();
+        let datagrams_length = ec_frame_len as usize + dlpdu_len;
+        ethercat_frame.set_length(datagrams_length as u16);
 
-    #[inline]
-    pub fn add_aprd(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::APRD, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_fprd(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::FPRD, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_brd(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::BRD, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_lrd(&mut self, adr: u32, data: &[u8]) -> Result<(), Error> {
-        let (adp, ado) = divide_address(adr);
-        self.add_command(CommandType::LRD, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_apwr(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::APWR, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_fpwr(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::FPWR, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_bwr(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::BWR, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_lwr(&mut self, adr: u32, data: &[u8]) -> Result<(), Error> {
-        let (adp, ado) = divide_address(adr);
-        self.add_command(CommandType::LWR, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_aprw(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::APRW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_fprw(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::FPRW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_brw(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::BRW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_lrw(&mut self, adr: u32, data: &[u8]) -> Result<(), Error> {
-        let (adp, ado) = divide_address(adr);
-        self.add_command(CommandType::LRW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_armw(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::ARMW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_frmw(&mut self, adp: u16, ado: u16, data: &[u8]) -> Result<(), Error> {
-        self.add_command(CommandType::FRMW, adp, ado, data)
-    }
-
-    #[inline]
-    pub fn add_aprd_all_slave(
-        &mut self,
-        ado: u16,
-        data: &[u8],
-        num_slaves: u16,
-    ) -> Result<(), Error> {
-        for i in 0..num_slaves {
-            self.add_aprd(get_ap_adp(i), ado, data)?;
-        }
-        Ok(())
-    }
-
-    #[inline]
-    pub fn add_apwr_all_slave(
-        &mut self,
-        ado: u16,
-        data: &[u8],
-        num_slaves: u16,
-    ) -> Result<(), Error> {
-        for i in 0..num_slaves {
-            self.add_apwr(get_ap_adp(i), ado, data)?;
-        }
-        Ok(())
+        self.free_offset += dlpdu_len;
+        true
     }
 }
 
@@ -259,16 +141,19 @@ pub struct EtherCATPDUOffsets<B> {
     buffer: B,
     offset: usize,
     length: usize,
-    delta: usize,
 }
 
 impl<B: AsRef<[u8]>> EtherCATPDUOffsets<B> {
-    fn new(buffer: B, length: usize, delta: usize) -> Self {
+    fn new_for_ethercat_frame(buffer: B, length: usize) -> Self {
+        let offset = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
+        Self::new(buffer, length, offset)
+    }
+
+    pub fn new(buffer: B, length: usize, frame_header_size: usize) -> Self {
         Self {
             buffer,
             length,
-            offset: ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH,
-            delta,
+            offset: frame_header_size,
         }
     }
 }
@@ -277,12 +162,58 @@ impl<B: AsRef<[u8]>> Iterator for EtherCATPDUOffsets<B> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        let dlpd0u = EtherCATPDU::new(&self.buffer.as_ref()[self.offset..])?;
-        let len = dlpd0u.length();
+        let dlpdu = EtherCATPDU::new(&self.buffer.as_ref()[self.offset..])?;
+        let len = dlpdu.length();
+        if len == 0 {
+            return None;
+        }
         if self.offset < self.length {
             let b = self.offset;
             self.offset += ETHERCATPDU_HEADER_LENGTH + len as usize + WKC_LENGTH;
-            Some(b + self.delta)
+            Some(b)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct EtherCATPDUs<'a> {
+    buffer: &'a [u8],
+    offset: usize,
+    length: usize,
+}
+
+impl<'a> EtherCATPDUs<'a> {
+    fn new_for_ethercat_frame(buffer: &'a [u8], length: usize) -> Self {
+        let offset = ETHERCAT_HEADER_LENGTH + ETHERNET_HEADER_LENGTH;
+        Self::new(buffer, length, offset)
+    }
+
+    pub fn new(buffer: &'a [u8], length: usize, frame_header_size: usize) -> Self {
+        Self {
+            buffer,
+            length,
+            offset: frame_header_size,
+        }
+    }
+}
+
+impl<'a> Iterator for EtherCATPDUs<'a> {
+    type Item = EtherCATPDU<&'a [u8]>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buffer.as_ref().get(self.offset)?;
+        let dlpdu = EtherCATPDU::new(&self.buffer.as_ref()[self.offset..])?;
+        let len = dlpdu.length();
+        if len == 0 {
+            return None;
+        }
+        let start = self.offset;
+        if self.offset < self.length {
+            self.offset += ETHERCATPDU_HEADER_LENGTH + len as usize + WKC_LENGTH;
+            Some(EtherCATPDU::new_unchecked(
+                &self.buffer.as_ref()[start..self.offset],
+            ))
         } else {
             None
         }

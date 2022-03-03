@@ -3,6 +3,8 @@ use bitfield::*;
 pub const ETHERNET_HEADER_LENGTH: usize = 14;
 pub const ETHERCAT_HEADER_LENGTH: usize = 2;
 pub const ETHERCATPDU_HEADER_LENGTH: usize = 10;
+pub const DST_MAC: u64 = 0x06_06_06_06_06_06;
+pub const SRC_MAC: u64 = 0x01_01_01_01_01_01;
 pub const MAILBOX_HEADER_LENGTH: usize = 6;
 pub const WKC_LENGTH: usize = 2;
 pub const ETHERCAT_TYPE: u16 = 0x88A4;
@@ -26,9 +28,9 @@ impl<T: AsRef<[u8]>> EthernetHeader<T> {
         }
     }
 
-    //pub fn new_unchecked(buf: T) -> Self {
-    //    Self(buf)
-    //}
+    pub fn new_unchecked(buf: T) -> Self {
+        Self(buf)
+    }
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(ETHERNET_HEADER_LENGTH - 1).is_some()
@@ -61,9 +63,9 @@ impl<T: AsRef<[u8]>> EtherCATHeader<T> {
         }
     }
 
-    //pub fn new_unchecked(buf: T) -> Self {
-    //    Self(buf)
-    //}
+    pub fn new_unchecked(buf: T) -> Self {
+        Self(buf)
+    }
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(ETHERCAT_HEADER_LENGTH - 1).is_some()
@@ -102,6 +104,11 @@ impl<T: AsRef<[u8]>> EtherCATPDU<T> {
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(ETHERCATPDU_HEADER_LENGTH - 1).is_some()
+    }
+
+    pub fn data<'a>(&'a self) -> &'a [u8] {
+        &self.0.as_ref()
+            [ETHERCATPDU_HEADER_LENGTH..ETHERCATPDU_HEADER_LENGTH + self.length() as usize]
     }
 
     pub fn wkc(&self) -> Option<u16> {
@@ -261,27 +268,28 @@ pub enum CommandType {
     /// A slave increments the Address field. A slave writes data it has read to the EtherCAT datagram when the address received is zero, otherwise it writes data to the memory area.
     ARMW,
     FRMW,
+    Invalid,
 }
 
 impl CommandType {
-    pub fn new(value: u8) -> Option<Self> {
+    pub fn new(value: u8) -> Self {
         match value {
-            0 => Some(Self::NOP),
-            1 => Some(Self::APRD),
-            2 => Some(Self::APWR),
-            3 => Some(Self::APRW),
-            4 => Some(Self::FPRD),
-            5 => Some(Self::FPWR),
-            6 => Some(Self::FPRW),
-            7 => Some(Self::BRD),
-            8 => Some(Self::BWR),
-            9 => Some(Self::BRW),
-            10 => Some(Self::LRD),
-            11 => Some(Self::LWR),
-            12 => Some(Self::LRW),
-            13 => Some(Self::ARMW),
-            14 => Some(Self::FRMW),
-            _ => None,
+            0 => Self::NOP,
+            1 => Self::APRD,
+            2 => Self::APWR,
+            3 => Self::APRW,
+            4 => Self::FPRD,
+            5 => Self::FPWR,
+            6 => Self::FPRW,
+            7 => Self::BRD,
+            8 => Self::BWR,
+            9 => Self::BRW,
+            10 => Self::LRD,
+            11 => Self::LWR,
+            12 => Self::LRW,
+            13 => Self::ARMW,
+            14 => Self::FRMW,
+            _ => Self::Invalid,
         }
     }
 }

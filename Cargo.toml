@@ -10,7 +10,8 @@ log = "0.4"
 heapless = "0.7"
 bitfield = { git="https://github.com/dzamlo/rust-bitfield", rev = "5a517f8" }
 bit_field = "0.10"
-smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4"] }
+embedded-time = "0.12"
+smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4", "medium-ethernet","socket-raw"] }
 
 [dev-dependencies]
 pnet = "0.29.0"
