@@ -1,5 +1,5 @@
 use ethercat_master::arch::*;
-use ethercat_master::datalink::*;
+use ethercat_master::interface::*;
 use ethercat_master::packet::*;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;

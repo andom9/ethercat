@@ -1,4 +1,5 @@
 use bit_field::BitField;
+use crate::register::datalink::PortPhysics;
 use core::ops::Range;
 
 // PDOの入力しかないやつもある
@@ -38,15 +39,16 @@ pub struct Slave {
     pub(crate) mailbox_count: u8,
     pub(crate) station_address: u16,
 
-    pub(crate) physics: [Option<Physics>; 4], // read 0x0E00
+    pub(crate) physics: [Option<PortPhysics>; 4], // read 0x0E00
 
     pub(crate) fmmu_out: Option<u8>,
     pub(crate) fmmu_in: Option<u8>,
+    pub(crate) fmmu_mbox: Option<u8>,
 
-    pub(crate) sm_pd_out: Option<SyncManager>,
-    pub(crate) sm_pd_in: Option<SyncManager>,
-    pub(crate) sm_mbox_out: Option<SyncManager>,
-    pub(crate) sm_mbox_in: Option<SyncManager>,
+    pub(crate) sm_pd_out: Option<SyncManagerConfig>,
+    pub(crate) sm_pd_in: Option<SyncManagerConfig>,
+    pub(crate) sm_mbox_out: Option<SyncManagerConfig>,
+    pub(crate) sm_mbox_in: Option<SyncManagerConfig>,
 
     pub(crate) coe: Option<CoE>,
     pub(crate) foe: Option<()>,
@@ -90,14 +92,8 @@ impl Default for AlState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Physics {
-    MII,
-    EBUS,
-}
-
 #[derive(Debug, Clone)]
-pub struct SyncManager {
+pub struct SyncManagerConfig {
     size: u16,          // read EEPROM 0x0018, 0x001A
     start_address: u16, // read EEPROM 0x0019, 0x001B
 }

@@ -1,9 +1,10 @@
 use crate::arch::*;
-use crate::datalink::*;
 use crate::error::*;
-use crate::util::*;
+use crate::interface::*;
 use crate::packet::*;
 use crate::slave_device::*;
+use crate::util::*;
+use crate::register::datalink::PortPhysics;
 use bitfield::*;
 use heapless::Vec;
 
@@ -74,13 +75,13 @@ where
         iface.poll()?;
         let pdu = iface.consume_command().next().ok_or(Error::Dropped)?;
         check_wkc(&pdu, 1)?;
-        
+
         let slave_state = pdu.data()[0] & 0b0000_1111;
         let al_state = AlState::from(slave_state);
         Ok(al_state)
     }
 
-    fn read_port_physics(&mut self, slave_no: u16) -> Result<[Option<Physics>; 4], Error> {
+    fn read_port_physics(&mut self, slave_no: u16) -> Result<[Option<PortPhysics>; 4], Error> {
         let reg = 0x0E00;
         let Self { iface, .. } = self;
         iface.add_command(CommandType::APRD, get_ap_adp(slave_no), reg, &[0])?;
@@ -92,33 +93,33 @@ where
 
         // port 0
         if pdu.data()[0].bit(2) {
-            physics[0] = Some(Physics::MII);
+            physics[0] = Some(PortPhysics::MII);
         } else {
-            physics[0] = Some(Physics::EBUS);
+            physics[0] = Some(PortPhysics::EBUS);
         }
 
         // port 1
         if pdu.data()[0].bit(3) {
-            physics[1] = Some(Physics::MII);
+            physics[1] = Some(PortPhysics::MII);
         } else {
-            physics[1] = Some(Physics::EBUS);
+            physics[1] = Some(PortPhysics::EBUS);
         }
 
         // port 2
         if pdu.data()[0].bit(0) {
             if pdu.data()[0].bit(4) {
-                physics[2] = Some(Physics::MII);
+                physics[2] = Some(PortPhysics::MII);
             } else {
-                physics[2] = Some(Physics::EBUS);
+                physics[2] = Some(PortPhysics::EBUS);
             }
         }
 
         // port 3
         if pdu.data()[0].bit(1) {
             if pdu.data()[0].bit(5) {
-                physics[3] = Some(Physics::MII);
+                physics[3] = Some(PortPhysics::MII);
             } else {
-                physics[3] = Some(Physics::EBUS);
+                physics[3] = Some(PortPhysics::EBUS);
             }
         }
 
