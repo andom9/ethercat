@@ -1,5 +1,5 @@
-use bitfield::*;
 use bit_field::*;
+use bitfield::*;
 
 bitfield! {
     pub struct DLInfomation(MSB0 [u8]);
@@ -42,7 +42,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> DLInfomation<B> {
     pub const ADDRESS: u16 = 0x0000;
-    pub const SIZE: u8 = 10;
+    pub const SIZE: usize = 10;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -103,7 +103,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> FixedStationAddress<B> {
     pub const ADDRESS: u16 = 0x0010;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -127,7 +127,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> DLControl<B> {
     pub const ADDRESS: u16 = 0x0100;
-    pub const SIZE: u8 = 4;
+    pub const SIZE: usize = 4;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -159,7 +159,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> DLStatus<B> {
     pub const ADDRESS: u16 = 0x0110;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -184,7 +184,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> RxErrorCounter<B> {
     pub const ADDRESS: u16 = 0x0300;
-    pub const SIZE: u8 = 8;
+    pub const SIZE: usize = 8;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -202,7 +202,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> WatchDogDivider<B> {
     pub const ADDRESS: u16 = 0x0400;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -220,7 +220,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> DLUserWatchDog<B> {
     pub const ADDRESS: u16 = 0x0410;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -238,7 +238,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SyncManChannelWatchDog<B> {
     pub const ADDRESS: u16 = 0x0420;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -256,7 +256,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SyncManChannelWDStatus<B> {
     pub const ADDRESS: u16 = 0x0440;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -276,7 +276,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SIIAccess<B> {
     pub const ADDRESS: u16 = 0x0500;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -301,7 +301,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SIIControl<B> {
     pub const ADDRESS: u16 = 0x0502;
-    pub const SIZE: u8 = 2;
+    pub const SIZE: usize = 2;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -319,7 +319,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SIIAddress<B> {
     pub const ADDRESS: u16 = 0x0504;
-    pub const SIZE: u8 = 4;
+    pub const SIZE: usize = 4;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -337,7 +337,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> SIIData<B> {
     pub const ADDRESS: u16 = 0x0504;
-    pub const SIZE: u8 = 4;
+    pub const SIZE: usize = 4;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -367,7 +367,7 @@ impl<B: AsRef<[u8]>> FMMU<B> {
     pub const ADDRESS0: u16 = 0x0600;
     pub const ADDRESS1: u16 = 0x0610;
     pub const ADDRESS2: u16 = 0x0620;
-    pub const SIZE: u8 = 16;
+    pub const SIZE: usize = 16;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -403,7 +403,7 @@ impl<B: AsRef<[u8]>> SyncMan<B> {
     pub const ADDRESS1: u16 = 0x0808;
     pub const ADDRESS2: u16 = 0x0810;
     pub const ADDRESS3: u16 = 0x0818;
-    pub const SIZE: u8 = 8;
+    pub const SIZE: usize = 8;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -427,7 +427,7 @@ bitfield! {
 
 impl<B: AsRef<[u8]>> DCTransmission<B> {
     pub const ADDRESS: u16 = 0x0900;
-    pub const SIZE: u8 = 4;
+    pub const SIZE: usize = 4;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {

@@ -2,9 +2,9 @@ use crate::arch::*;
 use crate::error::*;
 use crate::interface::*;
 use crate::packet::*;
+use crate::register::datalink::PortPhysics;
 use crate::slave_device::*;
 use crate::util::*;
-use crate::register::datalink::PortPhysics;
 use bitfield::*;
 use heapless::Vec;
 

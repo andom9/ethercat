@@ -1,6 +1,7 @@
 use crate::arch::Device;
 use crate::error::*;
-use crate::packet::{ethercat::*, ethercat_frame::*};
+use crate::ethercat_frame::*;
+use crate::packet::ethercat::*;
 use log::*;
 
 #[derive(Debug)]

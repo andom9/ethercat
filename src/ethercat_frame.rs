@@ -1,6 +1,6 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
-use super::ethercat::*;
+use crate::packet::ethercat::*;
 use log::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]

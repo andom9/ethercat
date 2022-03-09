@@ -1,5 +1,5 @@
-use bit_field::BitField;
 use crate::register::datalink::PortPhysics;
+use bit_field::BitField;
 use core::ops::Range;
 
 // PDOの入力しかないやつもある
