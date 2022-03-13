@@ -10,10 +10,11 @@ const R7: u16 = 0x0140; //R
 const R8: u16 = 0x0150; //R
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct ALControl(MSB0 [u8]);
     pub u8, state, set_state: 3, 0;
     pub acknowledge, set_acknowledge: 4;
-    pub appl_specific, set_appl_specific: 8*2-1, 8*1;
+    pub u8, appl_specific, set_appl_specific: 8*2-1, 8*1;
 }
 
 impl<B: AsRef<[u8]>> ALControl<B> {
@@ -30,11 +31,12 @@ impl<B: AsRef<[u8]>> ALControl<B> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct ALStatus(MSB0 [u8]);
     pub u8, state, _: 3, 0;
     pub change_err, _: 4;
-    pub appl_specific, _: 8*2-1, 8*1;
-    pub al_status_code, _: 8*6-1, 8*4;
+    pub u8, appl_specific, _: 8*2-1, 8*1;
+    pub u16, al_status_code, _: 8*6-1, 8*4;
 }
 
 impl<B: AsRef<[u8]>> ALStatus<B> {
@@ -81,6 +83,7 @@ impl From<u8> for AlState {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct PDIControl(MSB0 [u8]);
     pub u8, pdi_type, _: 7, 0;
     pub strict_al_control, _: 8;
@@ -100,6 +103,7 @@ impl<B: AsRef<[u8]>> PDIControl<B> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct PDIConfig(MSB0 [u8]);
     pub u8, application_specific, _: 7, 0;
 }
@@ -118,6 +122,7 @@ impl<B: AsRef<[u8]>> PDIConfig<B> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct SyncConfig(MSB0 [u8]);
     pub u8, signal_conditioning_sync0, _: 1, 0;
     pub enbale_signal_sync0, _: 2;

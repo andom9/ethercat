@@ -1,3 +1,4 @@
+use crate::register::{application::*, datalink::*};
 use bitfield::*;
 
 pub const ETHERNET_HEADER_LENGTH: usize = 14;
@@ -106,7 +107,7 @@ impl<T: AsRef<[u8]>> EtherCATPDU<T> {
         self.0.as_ref().get(ETHERCATPDU_HEADER_LENGTH - 1).is_some()
     }
 
-    pub fn data<'a>(&'a self) -> &'a [u8] {
+    pub fn data(&self) -> &[u8] {
         &self.0.as_ref()
             [ETHERCATPDU_HEADER_LENGTH..ETHERCATPDU_HEADER_LENGTH + self.length() as usize]
     }

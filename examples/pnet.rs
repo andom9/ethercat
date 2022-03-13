@@ -83,7 +83,9 @@ fn simple_test(interf_name: &str) {
     let mut master = EtherCATInterface::new(device, &mut buf);
     for i in 0..1500 {
         println!("{}", i);
-        master.add_command(CommandType::BRD, 0, 0, &[0]).unwrap();
+        master
+            .add_command(CommandType::BRD, 0, 0, 1, |_| ())
+            .unwrap();
         master.poll().unwrap();
         for pdu in master.consume_command() {
             println!("command type: {:?}", CommandType::new(pdu.command_type()));

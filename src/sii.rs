@@ -1,11 +1,24 @@
 use crate::arch::*;
+use crate::error::CommonError;
 use crate::interface::*;
-use crate::slave_device::*;
-use crate::register::{datalink::*, application::*};
 use crate::packet::*;
+use crate::register::{application::*, datalink::*};
+use crate::slave_device::*;
 use crate::util::*;
-use crate::error::Error;
 
+#[derive(Debug, Clone)]
+pub enum SIIError {
+    Conmmon(CommonError),
+    PermittionDenied,
+    Busy,
+    NotReadOperation,
+}
+
+impl From<CommonError> for SIIError {
+    fn from(err: CommonError) -> Self {
+        Self::Conmmon(err)
+    }
+}
 
 // アプリケーションごとにエラーが欲しい。
 pub struct EEPROMReader<'a, 'b, D>
@@ -23,20 +36,27 @@ where
         Self { iface }
     }
 
-    pub fn is_granted(&mut self, slave: &Slave) -> Result<bool, Error>{
-        let station_address = slave.station_address;
-        let reg = SIIAccess::<&[u8]>::ADDRESS;
-        let mut data = [0_u8; SIIAccess::<&[u8]>::SIZE];
-        let datagram = SIIAccess(&mut data);
-        self.iface.add_command(CommandType::FPRD, station_address, reg, &data)?;
-        self.iface.poll()?;
-        let pdu = self.iface.consume_command().last().ok_or(Error::Dropped)?;
-        check_wkc(&pdu, 1)?;
-        let sii_access = SIIAccess(pdu.data());
-        Ok(!sii_access.owner() && !sii_access.access_pdi())
-    }
+    pub fn read(&mut self, address: u16, slave: &Slave) -> Result<u64, SIIError> {
+        let station_address = SlaveAddress::StationAddress(slave.station_address);
+        let sii_control = self.iface.read_sii_control(station_address)?;
+        
+        self.iface
+        .write_sii_control(station_address, Some(sii_control), |reg| {
+            reg.set_read_operation(true);
+            reg.set_write_operation(false);
+            reg.set_reload_operation(false);
+        })?;
 
-    pub fn read32(&mut self, address: u16, slave: &Slave) -> Result<u32, Error>{
+        let sii_control = self.iface.read_sii_control(station_address)?;
+        if !sii_control.read_operation(){
+            return Err(SIIError::NotReadOperation);
+        }
+
+        let is_busy = sii_control.busy();
+        if is_busy {
+            return Err(SIIError::Busy);
+        }
+
         todo!()
     }
 }

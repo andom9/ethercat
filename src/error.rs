@@ -6,6 +6,15 @@ pub enum Error {
     UnexpectedWKC(u16),
 }
 
+#[derive(Debug, Clone)]
+pub enum CommonError {
+    DeviceErrorTx,
+    DeviceErrorRx,
+    BufferExhausted,
+    Dropped,
+    UnexpectedWKC(u16),
+}
+
 // TODO: 整理する
 //#[derive(Debug, Clone)]
 //pub enum Error {
