@@ -14,7 +14,7 @@ This crate's goal is to provide a library that allows easy construction of a cla
 - Network Configuration
   - [ ] Online scanning
   - [ ] Compare Network Configration
-  - [ ] Read Access to EEPROM
+  - [x] Read Access to EEPROM
 - Mailbox Support
   - [ ] Support Mailbox
   - [ ] Mailbox Resilient Layer

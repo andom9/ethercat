@@ -3,10 +3,10 @@ use bitfield::*;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLInformation(MSB0 [u8]);
+    pub struct DLInformation([u8]);
     pub u8, ethercat_type, _: 8*1-1, 8*0;
     pub u8, revision, _: 8*2-1, 8*1;
-    pub u16, build_number, _: 8*2-1, 8*2;
+    pub u16, build_number, _: 8*4-1, 8*2;
     /// Number of supported FMMU entities
     pub u8, number_of_supported_fmmu_entities, _: 8*5-1, 8*4;
     /// Number of supported Sync Manager channels
@@ -98,7 +98,7 @@ pub enum PortPhysics {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct FixedStationAddress(MSB0 [u8]);
+    pub struct FixedStationAddress([u8]);
     pub u8, configured_station_address, set_configured_station_address: 8*1-1, 8*0;
     pub u8, configured_station_alias, set_configured_station_alias: 8*2-1, 8*1;
 }
@@ -118,7 +118,7 @@ impl<B: AsRef<[u8]>> FixedStationAddress<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLControl(MSB0 [u8]);
+    pub struct DLControl([u8]);
     pub forwarding_rule, set_forwarding_rule: 0;
     pub u8, loop_control_port0, set_loop_control_port0: 8*1+1, 8*1;
     pub u8, loop_control_port1, set_loop_control_port1: 8*1+3, 8*1+2;
@@ -143,7 +143,7 @@ impl<B: AsRef<[u8]>> DLControl<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLStatus(MSB0 [u8]);
+    pub struct DLStatus([u8]);
     pub pdi_operational, _: 0;
     pub dls_user_watch_dog_status, _: 1;
     pub extended_link_detection, _: 2;
@@ -176,7 +176,7 @@ impl<B: AsRef<[u8]>> DLStatus<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct RxErrorCounter(MSB0 [u8]);
+    pub struct RxErrorCounter([u8]);
     pub u8, frame_error_count_port0, set_frame_error_count_port0: 8*1-1, 8*0;
     pub u8, phy_error_count_port0, set_phy_error_count_port0: 8*2-1, 8*1;
     pub u8, frame_error_count_port1, set_frame_error_count_port1: 8*3-1, 8*2;
@@ -202,7 +202,7 @@ impl<B: AsRef<[u8]>> RxErrorCounter<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct WatchDogDivider(MSB0 [u8]);
+    pub struct WatchDogDivider([u8]);
     pub u8, watch_dog_divider, set_watch_dog_divider: 8*2-1, 8*0;
 }
 
@@ -221,7 +221,7 @@ impl<B: AsRef<[u8]>> WatchDogDivider<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLUserWatchDog(MSB0 [u8]);
+    pub struct DLUserWatchDog([u8]);
     pub u8, dls_user_watch_dog, set_dls_user_watch_dog: 8*2-1, 8*0;
 }
 
@@ -240,7 +240,7 @@ impl<B: AsRef<[u8]>> DLUserWatchDog<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SyncManagerChannelWatchDog(MSB0 [u8]);
+    pub struct SyncManagerChannelWatchDog([u8]);
     pub u8, sm_channel_watch_dog, set_sm_channel_watch_dog: 8*2-1, 8*0;
 }
 
@@ -259,7 +259,7 @@ impl<B: AsRef<[u8]>> SyncManagerChannelWatchDog<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SyncManagerChannelWDStatus(MSB0 [u8]);
+    pub struct SyncManagerChannelWDStatus([u8]);
     pub sm_channel_wd_status, set_sm_channel_wd_status: 0;
 }
 
@@ -278,7 +278,7 @@ impl<B: AsRef<[u8]>> SyncManagerChannelWDStatus<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIAccess(MSB0 [u8]);
+    pub struct SIIAccess([u8]);
     pub owner, set_owner: 0;
     pub reset_access, set_reset_access: 1;
     pub pdi_accessed, _: 8*1;
@@ -299,9 +299,10 @@ impl<B: AsRef<[u8]>> SIIAccess<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIControl(MSB0 [u8]);
-    pub read_size, _: 3;
-    pub address_algorithm, _: 4;
+    pub struct SIIControl([u8]);
+    pub enable_write_access, set_enable_write_access: 0;
+    pub read_size, _: 6;
+    pub address_algorithm, _: 7;
     pub read_operation, set_read_operation: 8;
     pub write_operation, set_write_operation: 8+1;
     pub reload_operation, set_reload_operation: 8+2;
@@ -326,7 +327,7 @@ impl<B: AsRef<[u8]>> SIIControl<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIAddress(MSB0 [u8]);
+    pub struct SIIAddress([u8]);
     pub u32, sii_address, set_sii_address: 8*4-1, 0;
 }
 
@@ -345,13 +346,13 @@ impl<B: AsRef<[u8]>> SIIAddress<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIData(MSB0 [u8]);
-    pub u32, sii_data, set_sii_data: 8*4-1, 0;
+    pub struct SIIData([u8]);
+    pub u64, sii_data, set_sii_data: 8*8-1, 0;
 }
 
 impl<B: AsRef<[u8]>> SIIData<B> {
     pub const ADDRESS: u16 = 0x0508;
-    pub const SIZE: usize = 4;
+    pub const SIZE: usize = 8;
 
     pub fn new(buf: B) -> Option<Self> {
         if buf.as_ref().len() < Self::SIZE.into() {
@@ -366,7 +367,7 @@ impl<B: AsRef<[u8]>> SIIData<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct FMMURegister(MSB0 [u8]);
+    pub struct FMMURegister([u8]);
     pub u32, logical_start_address, set_logical_start_address: 8*4-1, 8*0;
     pub u16, length, set_length: 8*6-1, 8*4;
     pub u8, logical_start_bit, set_logical_start_bit: 8*6+2, 8*6;
@@ -395,7 +396,7 @@ impl<B: AsRef<[u8]>> FMMURegister<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SyncManagerRegister(MSB0 [u8]);
+    pub struct SyncManagerRegister([u8]);
     pub u16, physical_start_address, set_physical_start_address: 8*2-1, 8*0;
     pub u16, length, set_length: 8*4-1, 8*2;
     pub u8, buffer_type, set_buffer_type: 8*4+1, 8*4;
@@ -432,7 +433,7 @@ impl<B: AsRef<[u8]>> SyncManagerRegister<B> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCTransmission(MSB0 [u8]);
+    pub struct DCTransmission([u8]);
     pub u32, receive_time_port0, set_receive_time_port0: 8*4-1, 8*0;
     pub u32, receive_time_port1, set_receive_time_port1: 8*8-1, 8*4;
     pub u32, receive_time_port2, set_receive_time_port2: 8*12-1, 8*8;

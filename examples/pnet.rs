@@ -1,6 +1,7 @@
 use ethercat_master::arch::*;
 use ethercat_master::interface::*;
 use ethercat_master::packet::*;
+use ethercat_master::sii::SlaveInformationInterface;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
 
@@ -81,18 +82,19 @@ fn simple_test(interf_name: &str) {
     let mut buf = [0; 1500];
     let device = PnetDevice::open(&interf_name);
     let mut master = EtherCATInterface::new(device, &mut buf);
-    for i in 0..1500 {
-        println!("{}", i);
-        master
-            .add_command(CommandType::BRD, 0, 0, 1, |_| ())
-            .unwrap();
-        master.poll().unwrap();
-        for pdu in master.consume_command() {
-            println!("command type: {:?}", CommandType::new(pdu.command_type()));
-            println!("adp: {:?}", pdu.adp());
-            println!("ado: {:?}", pdu.ado());
-            println!("data: {:?}", pdu.data());
-            println!("wkc: {:?}", pdu.wkc());
-        }
-    }
+    master
+        .add_command(CommandType::BRD, 0, 0, 1, |_| ())
+        .unwrap();
+    master.poll().unwrap();
+    let pdu = master.consume_command().next().unwrap();
+    println!("command type: {:?}", CommandType::new(pdu.command_type()));
+    println!("adp: {:?}", pdu.adp());
+    println!("ado: {:?}", pdu.ado());
+    println!("data: {:?}", pdu.data());
+    println!("wkc: {:?}", pdu.wkc());
+
+    let mut sii = SlaveInformationInterface::new(&mut master);
+    let (eeprom_data, size) = sii.read(SlaveAddress::SlaveNumber(0), 0x0008).unwrap();
+    println!("eeprom: {:x}", eeprom_data.sii_data());
+    println!("read_size: {}", size);
 }
