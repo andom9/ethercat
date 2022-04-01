@@ -41,18 +41,16 @@ bitfield! {
     pub is_special_fmmu_sm_configuration, _: 8*9+3;
 }
 
-impl<B: AsRef<[u8]>> DLInformation<B> {
+impl DLInformation<[u8; 10]> {
     pub const ADDRESS: u16 = 0x0000;
     pub const SIZE: usize = 10;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
+}
 
+impl<B: AsRef<[u8]>> DLInformation<B> {
     pub fn port0_type(&self) -> Option<PortPhysics> {
         let byte = self.0.as_ref()[7];
         match byte.get_bits(0..2) {
@@ -99,20 +97,16 @@ pub enum PortPhysics {
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct FixedStationAddress([u8]);
-    pub u8, configured_station_address, set_configured_station_address: 8*1-1, 8*0;
-    pub u8, configured_station_alias, set_configured_station_alias: 8*2-1, 8*1;
+    pub u16, configured_station_address, set_configured_station_address: 8*2-1, 8*0;
+    pub u16, configured_station_alias, _: 8*4-1, 8*2;
 }
 
-impl<B: AsRef<[u8]>> FixedStationAddress<B> {
+impl FixedStationAddress<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0010;
-    pub const SIZE: usize = 2;
+    pub const SIZE: usize = 4;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -128,16 +122,12 @@ bitfield! {
     pub enable_alias_address, set_enable_alias_address: 8*3;
 }
 
-impl<B: AsRef<[u8]>> DLControl<B> {
+impl DLControl<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0100;
     pub const SIZE: usize = 4;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -161,16 +151,12 @@ bitfield! {
     pub signal_detection_port3, _: 8*1 + 7;
 }
 
-impl<B: AsRef<[u8]>> DLStatus<B> {
+impl DLStatus<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0110;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -187,16 +173,12 @@ bitfield! {
     pub u8, phy_error_count_port3, set_phy_error_count_port3: 8*8-1, 8*7;
 }
 
-impl<B: AsRef<[u8]>> RxErrorCounter<B> {
+impl RxErrorCounter<[u8; 8]> {
     pub const ADDRESS: u16 = 0x0300;
     pub const SIZE: usize = 8;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -206,16 +188,12 @@ bitfield! {
     pub u8, watch_dog_divider, set_watch_dog_divider: 8*2-1, 8*0;
 }
 
-impl<B: AsRef<[u8]>> WatchDogDivider<B> {
+impl WatchDogDivider<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0400;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -225,16 +203,12 @@ bitfield! {
     pub u8, dls_user_watch_dog, set_dls_user_watch_dog: 8*2-1, 8*0;
 }
 
-impl<B: AsRef<[u8]>> DLUserWatchDog<B> {
+impl DLUserWatchDog<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0410;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -244,35 +218,27 @@ bitfield! {
     pub u8, sm_channel_watch_dog, set_sm_channel_watch_dog: 8*2-1, 8*0;
 }
 
-impl<B: AsRef<[u8]>> SyncManagerChannelWatchDog<B> {
+impl SyncManagerChannelWatchDog<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0420;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct SyncManagerChannelWDStatus([u8]);
-    pub sm_channel_wd_status, set_sm_channel_wd_status: 0;
+    pub sm_channel_wd_status, _: 0;
 }
 
-impl<B: AsRef<[u8]>> SyncManagerChannelWDStatus<B> {
+impl SyncManagerChannelWDStatus<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0440;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -284,16 +250,12 @@ bitfield! {
     pub pdi_accessed, _: 8*1;
 }
 
-impl<B: AsRef<[u8]>> SIIAccess<B> {
+impl SIIAccess<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0500;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -312,16 +274,12 @@ bitfield! {
     pub busy, _: 8+7;
 }
 
-impl<B: AsRef<[u8]>> SIIControl<B> {
+impl SIIControl<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0502;
     pub const SIZE: usize = 2;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -331,16 +289,12 @@ bitfield! {
     pub u32, sii_address, set_sii_address: 8*4-1, 0;
 }
 
-impl<B: AsRef<[u8]>> SIIAddress<B> {
+impl SIIAddress<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0504;
     pub const SIZE: usize = 4;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -350,16 +304,12 @@ bitfield! {
     pub u64, sii_data, set_sii_data: 8*8-1, 0;
 }
 
-impl<B: AsRef<[u8]>> SIIData<B> {
+impl SIIData<[u8; 8]> {
     pub const ADDRESS: u16 = 0x0508;
     pub const SIZE: usize = 8;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -379,18 +329,14 @@ bitfield! {
     pub enable, set_enable: 8*12;
 }
 
-impl<B: AsRef<[u8]>> FMMURegister<B> {
+impl FMMURegister<[u8; 16]> {
     pub const ADDRESS0: u16 = 0x0600;
     pub const ADDRESS1: u16 = 0x0610;
     pub const ADDRESS2: u16 = 0x0620;
     pub const SIZE: usize = 16;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
@@ -415,43 +361,77 @@ bitfield! {
     pub repeat_ack, _: 8*7+1;
 }
 
-impl<B: AsRef<[u8]>> SyncManagerRegister<B> {
+impl SyncManagerRegister<[u8; 8]> {
     pub const ADDRESS0: u16 = 0x0800;
     pub const ADDRESS1: u16 = 0x0808;
     pub const ADDRESS2: u16 = 0x0810;
     pub const ADDRESS3: u16 = 0x0818;
     pub const SIZE: usize = 8;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCTransmission([u8]);
+    pub struct DCRecieveTime([u8]);
     pub u32, receive_time_port0, set_receive_time_port0: 8*4-1, 8*0;
-    pub u32, receive_time_port1, set_receive_time_port1: 8*8-1, 8*4;
-    pub u32, receive_time_port2, set_receive_time_port2: 8*12-1, 8*8;
-    pub u32, receive_time_port3, set_receive_time_port3: 8*16-1, 8*12;
-    pub u64, local_system_time, set_local_system_time: 8*24-1, 8*16;
-    pub u64, system_time_offset, set_system_time_offset: 8*32-1, 8*24;
-    pub u32, system_time_transmission_delay, set_system_time_transmission_delay: 8*40-1, 8*32;
+    pub u32, receive_time_port0, set_receive_time_port0: 8*8-1, 8*4;
+    pub u32, receive_time_port0, set_receive_time_port0: 8*12-1, 8*8;
+    pub u32, receive_time_port0, set_receive_time_port0: 8*16-1, 8*12;
 }
 
-impl<B: AsRef<[u8]>> DCTransmission<B> {
+impl DCRecieveTime<[u8; 16]> {
     pub const ADDRESS: u16 = 0x0900;
+    pub const SIZE: usize = 16;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct DCSystemTime([u8]);
+    pub u64, local_system_time, set_local_system_time: 8*8-1, 0;
+}
+
+impl DCSystemTime<[u8; 8]> {
+    pub const ADDRESS: u16 = 0x0910;
+    pub const SIZE: usize = 8;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct DCSystemTimeOffset([u8]);
+    pub u64, system_time_offset, set_system_time_offset: 8*8-1, 0;
+}
+
+impl DCSystemTimeOffset<[u8; 8]> {
+    pub const ADDRESS: u16 = 0x0920;
+    pub const SIZE: usize = 8;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct DCSystemTimeTransmissionDelay([u8]);
+    pub u32, system_time_transmission_delay, set_system_time_transmission_delay: 8*4-1, 0;
+}
+
+impl DCSystemTimeTransmissionDelay<[u8; 4]> {
+    pub const ADDRESS: u16 = 0x0928;
     pub const SIZE: usize = 4;
 
-    pub fn new(buf: B) -> Option<Self> {
-        if buf.as_ref().len() < Self::SIZE.into() {
-            None
-        } else {
-            Some(Self(buf))
-        }
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }

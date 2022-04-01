@@ -1,9 +1,39 @@
+use embedded_hal::timer::CountDown;
 use ethercat_master::arch::*;
 use ethercat_master::interface::*;
 use ethercat_master::packet::*;
 use ethercat_master::sii::SlaveInformationInterface;
+use fugit::MicrosDurationU32;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
+use std::time::Instant;
+
+pub struct Timer(Instant, MicrosDurationU32);
+
+impl Timer {
+    fn new() -> Self {
+        Timer(Instant::now(), MicrosDurationU32::from_ticks(0))
+    }
+}
+
+impl CountDown for Timer {
+    type Time = MicrosDurationU32;
+    fn start<T>(&mut self, count: T)
+    where
+        T: Into<Self::Time>,
+    {
+        self.0 = Instant::now();
+        self.1 = count.into();
+    }
+
+    fn wait(&mut self) -> nb::Result<(), void::Void> {
+        if self.0.elapsed() > std::time::Duration::from_micros(self.1.to_micros() as u64) {
+            Ok(())
+        } else {
+            Err(nb::Error::WouldBlock)
+        }
+    }
+}
 
 struct PnetDevice {
     tx_buf: [u8; 1500],
@@ -79,13 +109,15 @@ fn main() {
 }
 
 fn simple_test(interf_name: &str) {
+    let timer = Timer::new();
     let mut buf = [0; 1500];
     let device = PnetDevice::open(&interf_name);
-    let mut master = EtherCATInterface::new(device, &mut buf);
+
+    let mut master = EtherCATInterface::new(device, timer, &mut buf);
     master
         .add_command(CommandType::BRD, 0, 0, 1, |_| ())
         .unwrap();
-    master.poll().unwrap();
+    master.poll(MicrosDurationU32::from_ticks(1000)).unwrap();
     let pdu = master.consume_command().next().unwrap();
     println!("command type: {:?}", CommandType::new(pdu.command_type()));
     println!("adp: {:?}", pdu.adp());

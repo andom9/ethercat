@@ -13,7 +13,7 @@ This crate's goal is to provide a library that allows easy construction of a cla
   - [ ] Cyclic PDO
 - Network Configuration
   - [ ] Online scanning
-  - [ ] Compare Network Configration
+  - [ ] Compare Network Configuration
   - [x] Read Access to EEPROM
 - Mailbox Support
   - [ ] Support Mailbox

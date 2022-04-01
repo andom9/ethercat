@@ -6,7 +6,7 @@ pub fn check_wkc<B: AsRef<[u8]>>(
     pdu: &EtherCATPDU<B>,
     expected_wkc: u16,
 ) -> Result<(), CommonError> {
-    let wkc = pdu.wkc().ok_or(CommonError::Dropped)?;
+    let wkc = pdu.wkc().ok_or(CommonError::PacketDropped)?;
     if wkc != expected_wkc {
         Err(CommonError::UnexpectedWKC(wkc))
     } else {

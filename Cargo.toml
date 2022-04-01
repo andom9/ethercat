@@ -1,6 +1,6 @@
 [package]
 name = "ethercat-master"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "EtherCAT Master"
@@ -10,9 +10,14 @@ log = "0.4"
 heapless = "0.7"
 bitfield = { git="https://github.com/dzamlo/rust-bitfield", rev = "5a517f8" }
 bit_field = "0.10"
-embedded-time = "0.12"
+
+fugit = "0.3.5"
+#embedded-hal = "=1.0.0-alpha.7"
+embedded-hal = "0.2.7"
+nb = "1"
 smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4", "medium-ethernet","socket-raw"] }
 
 [dev-dependencies]
 pnet = "0.29.0"
+void = "1"
 env_logger = "0.9.0"

@@ -1,17 +1,13 @@
-pub enum Error {
-    RxDeviceFailed,
-    TxDeviceFailed,
-    BufferExhausted,
-    Dropped,
-    UnexpectedWKC(u16),
-}
+use fugit::MicrosDurationU32;
 
 #[derive(Debug, Clone)]
 pub enum CommonError {
     DeviceErrorTx,
     DeviceErrorRx,
     BufferExhausted,
-    Dropped,
+    PacketDropped,
+    TimerError,
+    ReceiveTimeout,
     UnexpectedWKC(u16),
 }
 

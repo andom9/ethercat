@@ -323,9 +323,3 @@ impl From<u8> for MailboxErrorDetail {
         }
     }
 }
-
-//TODO
-pub enum AlStatusCode {
-    NoError = 0,
-    InvalidInputConfig = 0x001E,
-}
