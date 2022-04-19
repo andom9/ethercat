@@ -367,8 +367,8 @@ define_read_specific_register! {
     read_sync_pulse, SyncPulse, ADDRESS;
     read_interrupt_status, InterruptStatus, ADDRESS;
     read_cyclic_operation_start_time, CyclicOperationStartTime, ADDRESS;
-    read_sync0_start_time, Sync0CycleTime, ADDRESS;
-    read_sync1_start_time, Sync1CycleTime, ADDRESS;
+    read_sync0_cycle_time, Sync0CycleTime, ADDRESS;
+    read_sync1_cycle_time, Sync1CycleTime, ADDRESS;
     read_latch_edge, LatchEdge, ADDRESS;
     read_latch_event, LatchEvent, ADDRESS;
     read_latch0_positive_edge_value, Latch0PositiveEdgeValue, ADDRESS;
@@ -400,8 +400,8 @@ define_write_specific_register! {
     write_al_control, ALControl, ADDRESS;
     write_dc_activation, DCActivation, ADDRESS;
     write_cyclic_operation_start_time, CyclicOperationStartTime, ADDRESS;
-    write_sync0_start_time, Sync0CycleTime, ADDRESS;
-    write_sync1_start_time, Sync1CycleTime, ADDRESS;
+    write_sync0_cycle_time, Sync0CycleTime, ADDRESS;
+    write_sync1_cycle_time, Sync1CycleTime, ADDRESS;
     write_latch_edge, LatchEdge, ADDRESS;
     write_latch_event, LatchEvent, ADDRESS;
     write_latch0_positive_edge_value, Latch0PositiveEdgeValue, ADDRESS;

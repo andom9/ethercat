@@ -1,5 +1,5 @@
 use crate::register::datalink::PortPhysics;
-use heapless::{Deque, Vec};
+use heapless::Deque;
 
 // PDOの入力しかないやつもある
 // →片方だけにも対応する。
@@ -53,22 +53,6 @@ pub struct Identification {
     pub(crate) revision_number: u16,
 }
 
-//#[derive(Debug, Default)]
-//pub struct SlaveBuilder{
-//    configured_address: Option<u16>,
-//    position_address: Option<u16>,
-//    id: Option<Identification>,
-//    al_state: Option<AlState>,
-//    ports: Option<[Option<PortPhysics>; 4]>,
-//    fmmu_inputs_address: Option<u8>,
-//    fmmu_outputs_address: Option<u8>,
-//    fmmu_mailbox_address: Option<u8>,
-//    sm_process_data_out: Option<ProcessDataSyncManager>,
-//    sm_process_data_in: Option<ProcessDataSyncManager>,
-//    sm_mailbox_out: Option<MailboxSyncManager>,
-//    sm_mailbox_in: Option<MailboxSyncManager>,
-//}
-
 #[derive(Debug, Default)]
 pub struct Slave {
     pub(crate) error: Option<SlaveError>,
@@ -83,14 +67,20 @@ pub struct Slave {
 
     pub(crate) ports: [Option<PortPhysics>; 4], // read 0x0E00
 
-    pub(crate) fmmu_inputs_address: Option<u8>, //default 0x0600
-    pub(crate) fmmu_outputs_address: Option<u8>, //default 0x0610
-    pub(crate) fmmu_mailbox_address: Option<u8>, //default 0x0620
+    pub(crate) ram_size_kb: u8,
 
-    pub(crate) sm_process_data_out: Option<ProcessDataSyncManager>,
-    pub(crate) sm_process_data_in: Option<ProcessDataSyncManager>,
-    pub(crate) sm_mailbox_out: Option<MailboxSyncManager>,
+    pub(crate) fmmu0: Option<u8>,
+    pub(crate) fmmu1: Option<u8>,
+
+    pub(crate) number_of_sm: u8,
+    pub(crate) pdo_start_address: Option<u16>,
+    pub(crate) pdo_ram_size: u16,
+    pub(crate) rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
+    pub(crate) tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
     pub(crate) sm_mailbox_in: Option<MailboxSyncManager>,
+    pub(crate) sm_mailbox_out: Option<MailboxSyncManager>,
+    pub(crate) bootstrap_sm_mailbox_in: Option<MailboxSyncManager>,
+    pub(crate) bootstrap_sm_mailbox_out: Option<MailboxSyncManager>,
 
     pub(crate) support_dc: bool,
     pub(crate) is_dc_range_64bits: bool,
@@ -100,7 +90,8 @@ pub struct Slave {
 
     pub(crate) operation_mode: OperationMode,
 
-    pub(crate) foe: Option<()>,
+    pub(crate) has_coe: bool,
+    pub(crate) has_foe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
@@ -141,15 +132,15 @@ impl Default for AlState {
 
 #[derive(Debug, Clone)]
 pub struct MailboxSyncManager {
-    size: u16,
-    start_address: u16,
+    pub size: u16,
+    pub start_address: u16,
 }
 
-#[derive(Debug)]
-pub struct ProcessDataSyncManager {
-    start_address: u16,
-    pdo_mapping: &'static mut [PDOMapping],
-}
+//#[derive(Debug)]
+//pub struct ProcessDataSyncManager {
+//    start_address: u16,
+//    pdo_mapping: &'static mut [PDOMapping],
+//}
 
 #[derive(Debug, Clone)]
 pub enum OperationMode {
@@ -185,8 +176,8 @@ pub(crate) fn process_cyclic_data(datagram: &mut [u8], slaves: &mut [Slave]) {
     for i in 0..len {
         let slave = &mut slaves[i];
         //先にRxPDOを並べているとする
-        if let Some(ref mut sm_in) = slave.sm_process_data_in {
-            for pdo_mapping in sm_in.pdo_mapping.iter_mut() {
+        if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
+            for pdo_mapping in sm_in.iter_mut() {
                 for pdo in pdo_mapping.entries.iter_mut() {
                     let byte_length = pdo.byte_length as usize;
                     pdo.data
@@ -196,8 +187,8 @@ pub(crate) fn process_cyclic_data(datagram: &mut [u8], slaves: &mut [Slave]) {
             }
         }
         //RxPDOの後にTxPDOを並べているとする
-        if let Some(ref mut sm_out) = slave.sm_process_data_out {
-            for pdo_mapping in sm_out.pdo_mapping.iter_mut() {
+        if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
+            for pdo_mapping in sm_out.iter_mut() {
                 for pdo in pdo_mapping.entries.iter_mut() {
                     let byte_length = pdo.byte_length as usize;
                     datagram[offset..offset + byte_length].copy_from_slice(&pdo.data);
