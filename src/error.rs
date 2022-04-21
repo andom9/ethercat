@@ -6,7 +6,7 @@ pub enum CommonError {
     DeviceErrorRx,
     BufferExhausted,
     PacketDropped,
-    TimerError,
+    UnspcifiedTimerError,
     ReceiveTimeout,
     UnexpectedWKC(u16),
 }

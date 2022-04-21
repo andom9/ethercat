@@ -5,6 +5,8 @@ mod error;
 pub mod ethercat_frame;
 pub mod initializer;
 pub mod interface;
+pub mod mailbox;
+pub mod master;
 //pub mod network_config;
 pub mod packet;
 pub mod register;

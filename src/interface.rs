@@ -39,8 +39,13 @@ where
         }
     }
 
+    pub fn remaing_capacity(&self) -> usize{
+        self.buffer_size - self.data_size - ETHERCAT_HEADER_LENGTH - WKC_LENGTH
+    }
+
     pub fn add_command<F: FnOnce(&mut [u8])>(
         &mut self,
+        pdu_index: u8,
         command: CommandType,
         adp: u16,
         ado: u16,
@@ -63,6 +68,7 @@ where
 
         let mut header = [0; ETHERCATPDU_HEADER_LENGTH];
         let mut pdu = EtherCATPDU::new_unchecked(&mut header);
+        pdu.set_index(pdu_index);
         pdu.set_command_type(command as u8);
         pdu.set_adp(adp);
         pdu.set_ado(ado);
@@ -96,7 +102,7 @@ where
         match self.receive(recv_timeout) {
             RxRes::Ok => (),
             RxRes::DeviceError => return Err(CommonError::DeviceErrorRx),
-            RxRes::TimerError => return Err(CommonError::TimerError),
+            //RxRes::TimerError => return Err(CommonError::TimerError),
             RxRes::Timeout => return Err(CommonError::ReceiveTimeout),
         }
         Ok(())
@@ -231,12 +237,16 @@ where
         //timeout: I,
     ) -> Result<EtherCATPDU<&[u8]>, CommonError> {
         match slave_address {
-            SlaveAddress::StationAddress(adr) => {
-                self.add_command(CommandType::FPRD, adr, register_address, size, |buf| {
-                    buf.iter_mut().for_each(|b| *b = 0)
-                })?
-            }
+            SlaveAddress::StationAddress(adr) => self.add_command(
+                u8::MAX,
+                CommandType::FPRD,
+                adr,
+                register_address,
+                size,
+                |buf| buf.iter_mut().for_each(|b| *b = 0),
+            )?,
             SlaveAddress::SlaveNumber(adr) => self.add_command(
+                u8::MAX,
                 CommandType::APRD,
                 get_ap_adp(adr),
                 register_address,
@@ -263,6 +273,7 @@ where
     ) -> Result<EtherCATPDU<&[u8]>, CommonError> {
         match slave_address {
             SlaveAddress::StationAddress(adr) => self.add_command(
+                u8::MAX,
                 CommandType::FPWR,
                 adr,
                 register_address,
@@ -270,6 +281,7 @@ where
                 buffer_writer,
             )?,
             SlaveAddress::SlaveNumber(adr) => self.add_command(
+                u8::MAX,
                 CommandType::APWR,
                 get_ap_adp(adr),
                 register_address,

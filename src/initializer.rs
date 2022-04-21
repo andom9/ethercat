@@ -79,7 +79,8 @@ where
     pub fn count_slaves(&mut self) -> Result<u16, InitError> {
         let mut wkc = 0;
         loop {
-            self.iface.add_command(CommandType::BRD, 0, 0, 1, |_| ())?;
+            self.iface
+                .add_command(u8::MAX, CommandType::BRD, 0, 0, 1, |_| ())?;
             self.iface.poll(MicrosDurationU32::from_ticks(1000))?;
             let pdu = self
                 .iface
@@ -157,7 +158,7 @@ where
         // INIT状態にする
         // 一応ループポートの設定の後にしている。
         let mut al_transfer = ALStateTransfer::new(self.iface, self.timer);
-        al_transfer.to_init_state(SlaveAddress::SlaveNumber(slave_number))?;
+        al_transfer.change_al_state(SlaveAddress::SlaveNumber(slave_number), AlState::Init)?;
         slave.al_state = AlState::Init;
 
         // エラーカウンタをリセットする。
@@ -195,7 +196,7 @@ where
             }
             match self.timer.wait() {
                 Ok(_) => return Err(InitError::FailedToLoadEEPROM),
-                Err(nb::Error::Other(_)) => return Err(InitError::Common(CommonError::TimerError)),
+                Err(nb::Error::Other(_)) => return Err(InitError::Common(CommonError::UnspcifiedTimerError)),
                 Err(nb::Error::WouldBlock) => (),
             }
         }
@@ -350,8 +351,7 @@ where
         //プロセスデータ用のスタートアドレスを決める。
         //ただしプロセスデータに対応しているとは限らない。
         //NOTE: COEを前提とする。
-        if slave.number_of_sm >= 3 && slave.has_coe
-        {
+        if slave.number_of_sm >= 3 && slave.has_coe {
             let sm_address0 = slave.sm_mailbox_in.unwrap().start_address;
             let sm_size0 = slave.sm_mailbox_in.unwrap().size;
             let sm_address1 = slave.sm_mailbox_out.unwrap().start_address;
@@ -385,8 +385,8 @@ where
             let mut sm = SyncManagerRegister::new();
             sm.set_physical_start_address(sm_in.start_address);
             sm.set_length(sm_in.size);
-            sm.set_buffer_type(0b10);//mailbox
-            sm.set_direction(1);//slave read access
+            sm.set_buffer_type(0b10); //mailbox
+            sm.set_direction(1); //slave read access
             sm.set_dls_user_event_enable(true);
             sm.set_watchdog_enable(true);
             sm.set_channel_enable(true);
@@ -398,8 +398,8 @@ where
             let mut sm = SyncManagerRegister::new();
             sm.set_physical_start_address(sm_out.start_address);
             sm.set_length(sm_out.size);
-            sm.set_buffer_type(0b10);//mailbox
-            sm.set_direction(0);//slave write access
+            sm.set_buffer_type(0b10); //mailbox
+            sm.set_direction(0); //slave write access
             sm.set_dls_user_event_enable(true);
             sm.set_watchdog_enable(true);
             sm.set_channel_enable(true);

@@ -51,33 +51,40 @@ where
         Ok(al_state)
     }
 
-    pub fn to_init_state(
+    pub fn change_al_state(
         &mut self,
         slave_address: SlaveAddress,
+        al_state: AlState,
     ) -> Result<(), AlStateTransitionError> {
-        let al_state = self.al_state(slave_address)?;
-        if let AlState::Init = al_state {
+        let current_al_state = self.al_state(slave_address)?;
+        if al_state == current_al_state {
             return Ok(());
         }
 
-        let timeout = BACK_TO_INIT_TIMEOUT_DEFAULT_MS;
+        let timeout = match (current_al_state, al_state) {
+            (AlState::PreOperational, AlState::SafeOperational)
+            | (AlState::SafeOperational, AlState::Operational) => SAFEOP_OP_TIMEOUT_DEFAULT_MS,
+            (_, AlState::PreOperational) | (_, AlState::Bootstrap) => PREOP_TIMEOUT_DEFAULT_MS,
+            (_, AlState::Init) => BACK_TO_INIT_TIMEOUT_DEFAULT_MS,
+            (_, AlState::SafeOperational) => BACK_TO_SAFEOP_TIMEOUT_DEFAULT_MS,
+        };
 
         let mut al_control = ALControl::new();
-        al_control.set_state(AlState::Init as u8);
+        al_control.set_state(al_state as u8);
         self.iface
             .write_al_control(slave_address, Some(al_control))?;
         self.timer
             .start(MillisDurationU32::from_ticks(timeout).convert());
         loop {
-            let al_status = self.iface.read_al_status(slave_address)?;
-            let al_state = AlState::from(al_status.state());
-            if let AlState::Init = al_state {
+            let current_al_status = self.iface.read_al_status(slave_address)?;
+            let current_al_state = AlState::from(current_al_status.state());
+            if al_state == current_al_state {
                 return Ok(());
             }
             match self.timer.wait() {
                 Ok(_) => return Err(AlStateTransitionError::TimeoutMs(timeout)),
                 Err(nb::Error::Other(_)) => {
-                    return Err(AlStateTransitionError::Common(CommonError::TimerError))
+                    return Err(AlStateTransitionError::Common(CommonError::UnspcifiedTimerError))
                 }
                 Err(nb::Error::WouldBlock) => (),
             }
