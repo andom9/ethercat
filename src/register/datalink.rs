@@ -185,7 +185,7 @@ impl RxErrorCounter<[u8; 8]> {
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct WatchDogDivider([u8]);
-    pub u8, watch_dog_divider, set_watch_dog_divider: 8*2-1, 8*0;
+    pub u16, watch_dog_divider, set_watch_dog_divider: 8*2-1, 8*0;
 }
 
 impl WatchDogDivider<[u8; 2]> {
@@ -200,7 +200,7 @@ impl WatchDogDivider<[u8; 2]> {
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct DLUserWatchDog([u8]);
-    pub u8, dls_user_watch_dog, set_dls_user_watch_dog: 8*2-1, 8*0;
+    pub u16, dls_user_watch_dog, set_dls_user_watch_dog: 8*2-1, 8*0;
 }
 
 impl DLUserWatchDog<[u8; 2]> {
@@ -215,7 +215,7 @@ impl DLUserWatchDog<[u8; 2]> {
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct SyncManagerChannelWatchDog([u8]);
-    pub u8, sm_channel_watch_dog, set_sm_channel_watch_dog: 8*2-1, 8*0;
+    pub u16, sm_channel_watch_dog, set_sm_channel_watch_dog: 8*2-1, 8*0;
 }
 
 impl SyncManagerChannelWatchDog<[u8; 2]> {
@@ -377,9 +377,9 @@ bitfield! {
     #[derive(Debug, Clone)]
     pub struct DCRecieveTime([u8]);
     pub u32, receive_time_port0, set_receive_time_port0: 8*4-1, 8*0;
-    pub u32, receive_time_port0, set_receive_time_port0: 8*8-1, 8*4;
-    pub u32, receive_time_port0, set_receive_time_port0: 8*12-1, 8*8;
-    pub u32, receive_time_port0, set_receive_time_port0: 8*16-1, 8*12;
+    pub u32, receive_time_port1, set_receive_time_port1: 8*8-1, 8*4;
+    pub u32, receive_time_port2, set_receive_time_port2: 8*12-1, 8*8;
+    pub u32, receive_time_port3, set_receive_time_port3: 8*16-1, 8*12;
 }
 
 impl DCRecieveTime<[u8; 16]> {

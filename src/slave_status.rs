@@ -65,22 +65,24 @@ pub struct Slave {
 
     pub(crate) mailbox_count: u8,
 
+    pub(crate) linked_ports: [bool; 4],
     pub(crate) ports: [Option<PortPhysics>; 4], // read 0x0E00
 
     pub(crate) ram_size_kb: u8,
 
-    pub(crate) fmmu0: Option<u8>,
-    pub(crate) fmmu1: Option<u8>,
+    pub(crate) fmmu0: Option<u16>,
+    pub(crate) fmmu1: Option<u16>,
 
     pub(crate) number_of_sm: u8,
     pub(crate) pdo_start_address: Option<u16>,
     pub(crate) pdo_ram_size: u16,
     pub(crate) rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
     pub(crate) tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
-    pub(crate) sm_mailbox_in: Option<MailboxSyncManager>,
-    pub(crate) sm_mailbox_out: Option<MailboxSyncManager>,
-    pub(crate) bootstrap_sm_mailbox_in: Option<MailboxSyncManager>,
-    pub(crate) bootstrap_sm_mailbox_out: Option<MailboxSyncManager>,
+
+    pub(crate) sm_mailbox_rx: Option<MailboxSyncManager>,
+    pub(crate) sm_mailbox_tx: Option<MailboxSyncManager>,
+    //pub(crate) bootstrap_sm_mailbox_in: Option<MailboxSyncManager>,
+    //pub(crate) bootstrap_sm_mailbox_out: Option<MailboxSyncManager>,
 
     pub(crate) support_dc: bool,
     pub(crate) is_dc_range_64bits: bool,
@@ -91,7 +93,7 @@ pub struct Slave {
     pub(crate) operation_mode: OperationMode,
 
     pub(crate) has_coe: bool,
-    pub(crate) has_foe: bool,
+    //pub(crate) has_foe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]

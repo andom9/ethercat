@@ -1,4 +1,3 @@
-use crate::register::{application::*, datalink::*};
 use bitfield::*;
 
 pub const ETHERNET_HEADER_LENGTH: usize = 14;

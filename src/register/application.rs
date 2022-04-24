@@ -1,11 +1,11 @@
 use bitfield::*;
 
 const R1: u16 = 0x0120; //RW
-const R2: u16 = 0x0121; //RW
+                        //const R2: u16 = 0x0121; //RW
 const R3: u16 = 0x0130; //R
-const R4: u16 = 0x0131; //R
-const R5: u16 = 0x0132; //R
-const R6: u16 = 0x0134; //R
+                        //const R4: u16 = 0x0131; //R
+                        //const R5: u16 = 0x0132; //R
+                        //const R6: u16 = 0x0134; //R
 const R7: u16 = 0x0140; //R
 const R8: u16 = 0x0150; //R
 

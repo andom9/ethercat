@@ -1,5 +1,3 @@
-use fugit::MicrosDurationU32;
-
 #[derive(Debug, Clone)]
 pub enum CommonError {
     DeviceErrorTx,

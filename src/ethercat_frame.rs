@@ -1,7 +1,6 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
 use crate::packet::ethercat::*;
-use log::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EtherCATFrame<B> {
@@ -129,11 +128,6 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCATFrame<B> {
         self.free_offset += dlpdu_len;
         true
     }
-}
-
-#[inline]
-fn divide_address(adr: u32) -> (u16, u16) {
-    ((adr & 0x0000_ffff) as u16, (adr >> 16) as u16)
 }
 
 #[derive(Debug)]

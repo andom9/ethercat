@@ -22,5 +22,13 @@ pub fn get_ap_adp(slave_number: u16) -> u16 {
     }
 }
 
+pub const fn const_max(a: usize, b: usize) -> usize {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
 // TODO: リードレジスターマクロを作る。
 // TODO: ライトレジスターマクロを作る。
