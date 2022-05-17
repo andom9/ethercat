@@ -138,6 +138,7 @@ dependencies = [
  "embedded-hal",
  "env_logger",
  "fugit",
+ "hash32 0.3.0",
  "heapless",
  "log",
  "nb 1.0.0",
@@ -180,13 +181,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2baa98978c170759522ad6ebb567aeb29a62e1867551f39ae2e5b749fbd5cc21"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "heapless"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d076121838e03f862871315477528debffdb7462fb229216ecef91b1a3eb31eb"
 dependencies = [
  "atomic-polyfill",
- "hash32",
+ "hash32 0.2.1",
  "spin",
  "stable_deref_trait",
 ]

@@ -1,105 +1,101 @@
-//use crate::al_state_transfer::*;
-use crate::al_state_transfer::ALStateTransfer;
-use crate::arch::*;
-use crate::error::*;
-use crate::interface::*;
-use crate::packet::*;
-use crate::register::datalink::*;
-use crate::sii::SIIReader;
-use crate::sii::*;
-use crate::slave_status::*;
-use bit_field::BitField;
+use crate::arch::Device;
+use crate::cyclic::al_state_transfer::*;
+use crate::cyclic::network_initilizer::*;
+use crate::cyclic::sii::*;
+use crate::cyclic::*;
+use crate::error::CommonError;
+use crate::interface::Command;
+use crate::network::*;
 use embedded_hal::timer::*;
 use fugit::*;
 
-pub trait Cyclic {
-    fn next_transmission_data(&mut self) -> Option<(Command, &[u8])>;
-    fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool;
-}
-
-#[derive(Debug)]
-pub enum CyclicProcessingUnit<'a, T>
+enum CyclicUnit<'a, T, const N: usize>
 where
     T: CountDown<Time = MicrosDurationU32>,
 {
     SIIReader(SIIReader<'a, T>),
-    AlState(ALStateTransfer<'a, T>),
+    ALStateTransfer(ALStateTransfer<'a, T>),
+    NetworkInitilizer(NetworkInitilizer<'a, T, N>),
 }
 
-impl<'a, T> Cyclic for CyclicProcessingUnit<'a, T>
+impl<'a, T, const N: usize> Cyclic for CyclicUnit<'a, T, N>
 where
     T: CountDown<Time = MicrosDurationU32>,
 {
-    fn next_transmission_data(&mut self) -> Option<(Command, &[u8])> {
-        match self {
-            Self::SIIReader(unit) => unit.next_transmission_data(),
-            Self::AlState(unit) => unit.next_transmission_data(),
-        }
+    fn next_command(&mut self) -> Option<(Command, &[u8])> {
+        todo!()
     }
-
     fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool {
-        match self {
-            Self::SIIReader(unit) => unit.recieve_and_process(command, data, wkc),
-            Self::AlState(unit) => unit.recieve_and_process(command, data, wkc),
-        }
+        todo!()
     }
 }
 
-#[derive(Debug)]
-pub struct EtherCATMaster<'a, D, T, C>
+pub struct EtherCatMaster<'a, D, T, const N: usize>
 where
     D: Device,
     T: CountDown<Time = MicrosDurationU32>,
-    C: Cyclic,
 {
-    iface: &'a mut EtherCATInterface<'a, D, T>,
-    units: &'a mut [C],
-    //units_len: usize,
+    cyclic: CyclicProcess<'a, D, T, CyclicUnit<'a, T, N>, 4>,
+    network_initilizer_handle: UnitHandle,
+    network: Option<EtherCATNetwork<N>>,
+    sii_reader_handle: UnitHandle,
+    al_state_transfer_handle: UnitHandle,
 }
 
-impl<'a, D, T, C> EtherCATMaster<'a, D, T, C>
+impl<'a, D, T, const N: usize> EtherCatMaster<'a, D, T, N>
 where
     D: Device,
     T: CountDown<Time = MicrosDurationU32>,
-    C: Cyclic,
 {
-    pub fn enqueue(&mut self) -> Result<bool, CommonError> {
-        let mut complete = true;
-        for (i, unit) in self.units.iter_mut().enumerate() {
-            if let Some((command, data)) = unit.next_transmission_data() {
-                let len = data.len();
-                if self.iface.remaing_capacity() < len {
-                    complete = false;
-                    break;
-                }
-                let _ = self.iface.add_command(i as u8, command, len, |buf| {
-                    for (b, d) in buf.iter_mut().zip(data) {
-                        *b = *d;
-                    }
-                })?;
-            }
-        }
-        Ok(complete)
-    }
-
-    pub fn send_and_recieve<I: Into<MicrosDurationU32>>(
+    pub fn poll<I: Into<MicrosDurationU32> + Clone>(
         &mut self,
-        timeout: I,
-    ) -> Result<bool, CommonError> {
-        let mut is_ok = true;
-        self.iface.poll(timeout)?;
-        let pdus = self.iface.consume_command();
-        for pdu in pdus {
-            let index = pdu.index() as usize;
-            if let Some(unit) = self.units.get_mut(index) {
-                let wkc = pdu.wkc().unwrap_or_default();
-                let command =
-                    Command::new(CommandType::new(pdu.command_type()), pdu.adp(), pdu.ado());
-                if !unit.recieve_and_process(command, pdu.data(), wkc) {
-                    is_ok = false;
-                }
-            }
+        recv_timeout: I,
+    ) -> Result<(), CommonError> {
+        self.cyclic.poll(recv_timeout)
+    }
+
+    pub fn start_init(&mut self) {
+        let unit = self.network_initilizer();
+        unit.start();
+        self.network = None;
+    }
+
+    pub fn wait_init(&mut self) -> nb::Result<(), NetworkInitError> {
+        let unit = self.network_initilizer();
+        let network = unit.wait()?;
+        if let Some(network) = network{
+            self.network = Some(network);
         }
-        Ok(is_ok)
+        Ok(())
+    }
+
+    fn network_initilizer(&mut self) -> &mut NetworkInitilizer<'a, T, N> {
+        let network_initilizer = self
+            .cyclic
+            .unit_mut(self.network_initilizer_handle)
+            .unwrap();
+        if let CyclicUnit::NetworkInitilizer(ref mut unit) = network_initilizer {
+            unit
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn sii_reader(&mut self) -> &mut SIIReader<'a, T> {
+        let sii_reader = self.cyclic.unit_mut(self.sii_reader_handle).unwrap();
+        if let CyclicUnit::SIIReader(ref mut unit) = sii_reader {
+            unit
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn al_state_transfer(&mut self) -> &mut ALStateTransfer<'a, T> {
+        let al_state_transfer = self.cyclic.unit_mut(self.al_state_transfer_handle).unwrap();
+        if let CyclicUnit::ALStateTransfer(ref mut unit) = al_state_transfer {
+            unit
+        } else {
+            unreachable!()
+        }
     }
 }

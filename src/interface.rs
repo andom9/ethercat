@@ -2,7 +2,6 @@ use crate::arch::Device;
 use crate::error::CommonError;
 use crate::ethercat_frame::*;
 use crate::packet::ethercat::*;
-use crate::register::{application::*, datalink::*};
 use crate::util::*;
 use embedded_hal::timer::CountDown;
 use fugit::MicrosDurationU32;
@@ -28,7 +27,7 @@ impl Command {
 
     pub fn new_read(slave_address: SlaveAddress, ado: u16) -> Self {
         let (c_type, adp) = match slave_address {
-            SlaveAddress::SlaveNumber(adp) => (CommandType::APRD, adp),
+            SlaveAddress::SlaveNumber(adp) => (CommandType::APRD, get_ap_adp(adp)),
             SlaveAddress::StationAddress(adp) => (CommandType::FPRD, adp),
         };
         Command { c_type, adp, ado }
@@ -36,7 +35,7 @@ impl Command {
 
     pub fn new_write(slave_address: SlaveAddress, ado: u16) -> Self {
         let (c_type, adp) = match slave_address {
-            SlaveAddress::SlaveNumber(adp) => (CommandType::APWR, adp),
+            SlaveAddress::SlaveNumber(adp) => (CommandType::APWR, get_ap_adp(adp)),
             SlaveAddress::StationAddress(adp) => (CommandType::FPWR, adp),
         };
         Command { c_type, adp, ado }
@@ -246,11 +245,6 @@ where
         assert_eq!(data_size, self.data_size);
         RxRes::Ok
     }
-
-    //pub fn delay_us(&mut self, time: u32){
-    //    self.timer.start(MicrosDurationU32::from_ticks(time));
-    //    nb::block!(self.timer.wait())
-    //}
 }
 
 enum RxRes {

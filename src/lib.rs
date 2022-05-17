@@ -1,19 +1,15 @@
 #![no_std]
-pub(crate) mod util;
-
-pub mod al_state_transfer;
 pub mod arch;
+pub mod cyclic;
 mod error;
-pub mod initializer;
+pub mod ethercat_frame;
 pub mod interface;
 pub mod master;
-pub mod sii;
-//pub mod mailbox;
-
-pub mod ethercat_frame;
+pub mod network;
 pub mod packet;
 pub mod register;
-pub mod slave_status;
+pub mod slave;
+pub(crate) mod util;
 
 pub const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 pub const MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS: u32 = 2000;
