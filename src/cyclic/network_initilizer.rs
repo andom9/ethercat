@@ -1,5 +1,5 @@
 use crate::cyclic::Cyclic;
-use crate::cyclic::{al_state_transfer::*, sii::*, slave_initializer::*};
+use crate::cyclic::{al_state_transfer::*, sii_reader::*, slave_initializer::*};
 use crate::error::*;
 use crate::interface::*;
 use crate::network::*;
@@ -12,6 +12,8 @@ use embedded_hal::timer::*;
 use fugit::*;
 use heapless::Vec;
 use nb;
+
+use super::EtherCATSystemTime;
 
 #[derive(Debug, Clone)]
 pub enum NetworkInitError {
@@ -43,42 +45,33 @@ enum NetworkInitilizerState {
 }
 
 #[derive(Debug)]
-pub struct NetworkInitilizer<'a, T, const N: usize>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    timer: Option<&'a mut T>,
-    initilizer: Option<SlaveInitilizer<'a, T>>,
+pub struct NetworkInitilizer {
+    initilizer: SlaveInitilizer,
     state: NetworkInitilizerState,
     command: Command,
     buffer: [u8; buffer_size()],
-    network: Option<EtherCATNetwork<N>>,
+    num_slaves: u16,
 }
 
-impl<'a, T, const N: usize> NetworkInitilizer<'a, T, N>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    pub fn new(timer: &'a mut T) -> Self {
+impl NetworkInitilizer {
+    pub fn new() -> Self {
         Self {
-            timer: Some(timer),
-            initilizer: None,
+            initilizer: SlaveInitilizer::new(),
             state: NetworkInitilizerState::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
-            network: None,
+            num_slaves: 0,
         }
     }
 
     pub fn start(&mut self) {
-        if let Some(initilizer) = core::mem::take(&mut self.initilizer) {
-            self.timer = Some(initilizer.take_timer());
-        }
+        //if let Some(initilizer) = core::mem::take(&mut self.initilizer) {
+        //    self.timer = Some(initilizer.take_timer());
+        //}
         self.buffer.fill(0);
         self.command = Command::default();
 
         self.state = NetworkInitilizerState::CountSlaves;
-        self.network = Some(EtherCATNetwork::new());
     }
 
     //pub fn reset(&mut self){
@@ -99,12 +92,13 @@ where
     //    }
     //}
 
-    pub fn wait(&mut self) -> nb::Result<Option<EtherCATNetwork<N>>, NetworkInitError> {
+    pub fn wait(&mut self) -> nb::Result<(), NetworkInitError> {
         if let NetworkInitilizerState::Error(err) = &self.state {
             Err(nb::Error::Other(err.clone()))
         } else {
             if let NetworkInitilizerState::Complete = self.state {
-                Ok(core::mem::take(&mut self.network))
+                Ok(())
+                //Ok(core::mem::take(&mut self.network))
             } else {
                 Err(nb::Error::WouldBlock)
             }
@@ -112,11 +106,12 @@ where
     }
 }
 
-impl<'a, T, const N: usize> Cyclic for NetworkInitilizer<'a, T, N>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    fn next_command(&mut self) -> Option<(Command, &[u8])> {
+impl Cyclic for NetworkInitilizer {
+    fn next_command(
+        &mut self,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> Option<(Command, &[u8])> {
         let command_and_data = match &self.state {
             NetworkInitilizerState::Idle => None,
             NetworkInitilizerState::Error(_) => None,
@@ -126,15 +121,14 @@ where
                 Some((command, &self.buffer[..1]))
             }
             NetworkInitilizerState::StartInitSlaves(count) => {
-                let timer = core::mem::take(&mut self.timer).unwrap();
-                self.initilizer = Some(SlaveInitilizer::new(timer));
-                let initilizer = self.initilizer.as_mut().unwrap();
-                initilizer.start(*count);
-                initilizer.next_command()
+                //let timer = core::mem::take(&mut self.timer).unwrap();
+                //self.initilizer = Some(SlaveInitilizer::new(timer));
+                //let initilizer = self.initilizer.as_mut().unwrap();
+                self.initilizer.start(*count);
+                self.initilizer.next_command(desc, sys_time)
             }
             NetworkInitilizerState::WaitInitSlaves(_) => {
-                let initilizer = self.initilizer.as_mut().unwrap();
-                initilizer.next_command()
+                self.initilizer.next_command(desc, sys_time)
             }
             NetworkInitilizerState::Complete => None,
         };
@@ -144,7 +138,14 @@ where
         command_and_data
     }
 
-    fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool {
+    fn recieve_and_process(
+        &mut self,
+        command: Command,
+        data: &[u8],
+        wkc: u16,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> bool {
         if command != self.command {
             self.state =
                 NetworkInitilizerState::Error(NetworkInitError::Common(CommonError::PacketDropped));
@@ -154,38 +155,40 @@ where
             NetworkInitilizerState::Idle => {}
             NetworkInitilizerState::Error(_) => {}
             NetworkInitilizerState::CountSlaves => {
-                let mut is_error = false;
-                for _ in 0..wkc {
-                    if let Err(_) = self.network.as_mut().unwrap().push_slave(Slave::default()) {
-                        self.state = NetworkInitilizerState::Error(NetworkInitError::TooManySlaves);
-                        is_error = true;
-                    }
-                }
+                self.num_slaves = wkc;
+                desc.clear();
                 if wkc <= 0 {
-                    self.state = NetworkInitilizerState::Idle;
-                } else if !is_error {
+                    self.state = NetworkInitilizerState::Complete;
+                } else {
                     self.state = NetworkInitilizerState::StartInitSlaves(0);
                 }
             }
             NetworkInitilizerState::StartInitSlaves(count) => {
-                let initilizer = self.initilizer.as_mut().unwrap();
-                initilizer.recieve_and_process(command, data, wkc);
+                self.initilizer
+                    .recieve_and_process(command, data, wkc, desc, sys_time);
                 self.state = NetworkInitilizerState::WaitInitSlaves(*count);
-                
             }
             NetworkInitilizerState::WaitInitSlaves(count) => {
-                let initilizer = self.initilizer.as_mut().unwrap();
-                initilizer.recieve_and_process(command, data, wkc);
-                match initilizer.wait() {
-                    Ok(info) => {
-                        let slave = self.network.as_mut().unwrap().slave_mut(*count).unwrap();
-                        slave.info = info.clone();
-                        if *count + 1 < self.network.as_ref().unwrap().len() as u16 {
-                            self.state = NetworkInitilizerState::StartInitSlaves(*count + 1);
+                self.initilizer
+                    .recieve_and_process(command, data, wkc, desc, sys_time);
+                match self.initilizer.wait() {
+                    Ok(Some(slave)) => {
+                        //if let Some(existed_slave) = desc.slave_mut(*count){
+                        //    *existed_slave = slave;
+                        //}else{
+                        if desc.push_slave(slave).is_err() {
+                            self.state =
+                                NetworkInitilizerState::Error(NetworkInitError::TooManySlaves);
                         } else {
-                            self.state = NetworkInitilizerState::Complete;
+                            if *count + 1 < self.num_slaves {
+                                self.state = NetworkInitilizerState::StartInitSlaves(*count + 1);
+                            } else {
+                                self.state = NetworkInitilizerState::Complete;
+                            }
                         }
+                        //}
                     }
+                    Ok(None) => unreachable!(),
                     Err(nb::Error::WouldBlock) => {}
                     Err(nb::Error::Other(err)) => {
                         self.state = NetworkInitilizerState::Error(err.into());

@@ -1,21 +1,37 @@
 pub mod al_state_transfer;
-pub mod sii;
-pub mod slave_initializer;
-pub mod network_initilizer;
 pub mod dc_initilizer;
+pub mod network_initilizer;
+pub mod sii_reader;
+pub mod slave_initializer;
 
 use crate::arch::*;
 use crate::error::*;
 use crate::interface::Command;
 use crate::interface::*;
+use crate::network::*;
 use crate::packet::*;
 use embedded_hal::timer::*;
 use fugit::*;
 use heapless::Vec;
 
+///EtherCAT system time is expressed in nanoseconds elapsed since January 1, 2000.
+#[derive(Debug, Clone, Copy)]
+pub struct EtherCATSystemTime(pub u64);
+
 pub trait Cyclic {
-    fn next_command(&mut self) -> Option<(Command, &[u8])>;
-    fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool;
+    fn next_command(
+        &mut self,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> Option<(Command, &[u8])>;
+    fn recieve_and_process(
+        &mut self,
+        command: Command,
+        data: &[u8],
+        wkc: u16,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> bool;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,11 +72,13 @@ where
 
     pub fn poll<I: Into<MicrosDurationU32> + Clone>(
         &mut self,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
         recv_timeout: I,
     ) -> Result<(), CommonError> {
         loop {
-            let is_all_commands_enqueued = self.enqueue_commands()?;
-            self.process(recv_timeout.clone())?;
+            let is_all_commands_enqueued = self.enqueue_commands(desc, sys_time)?;
+            self.process(desc, sys_time, recv_timeout.clone())?;
             if is_all_commands_enqueued {
                 break;
             }
@@ -68,10 +86,14 @@ where
         Ok(())
     }
 
-    fn enqueue_commands(&mut self) -> Result<bool, CommonError> {
+    fn enqueue_commands(
+        &mut self,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> Result<bool, CommonError> {
         let mut complete = true;
         for (i, unit) in self.units.iter_mut().enumerate() {
-            if let Some((command, data)) = unit.next_command() {
+            if let Some((command, data)) = unit.next_command(desc, sys_time) {
                 let len = data.len();
                 if self.iface.remaing_capacity() < len {
                     complete = false;
@@ -87,7 +109,12 @@ where
         Ok(complete)
     }
 
-    fn process<I: Into<MicrosDurationU32>>(&mut self, timeout: I) -> Result<(), CommonError> {
+    fn process<I: Into<MicrosDurationU32>>(
+        &mut self,
+        desc: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+        timeout: I,
+    ) -> Result<(), CommonError> {
         self.iface.poll(timeout)?;
         let pdus = self.iface.consume_command();
         for pdu in pdus {
@@ -96,7 +123,7 @@ where
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
                     Command::new(CommandType::new(pdu.command_type()), pdu.adp(), pdu.ado());
-                unit.recieve_and_process(command, pdu.data(), wkc);
+                unit.recieve_and_process(command, pdu.data(), wkc, desc, sys_time);
             }
         }
         Ok(())

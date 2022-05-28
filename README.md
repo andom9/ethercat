@@ -6,7 +6,7 @@ This crate's goal is to provide a library that allows easy construction of a cla
 #### Class B EtherCAT Master Requirements
 - Basic Features
   - [ ] Slaves with Device Emulation
-  - [ ] EtherCAT State Machine
+  - [x] EtherCAT State Machine
   - [ ] Error Handling
   - [x] EtherCAT Frame Types
 - Process Data Exchange

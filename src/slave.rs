@@ -1,4 +1,5 @@
 use crate::register::datalink::PortPhysics;
+use core::cell::RefCell;
 use heapless::Deque;
 
 #[derive(Debug, Clone)]
@@ -28,40 +29,54 @@ pub struct SlaveID {
 
 #[derive(Debug, Default)]
 pub struct Slave {
-    pub(crate) info: SlaveInfo,
-    pub(crate) error: Option<SlaveError>,
-    pub(crate) error_history: Deque<SlaveError, 10>,
-    pub(crate) al_state: AlState,
-    pub(crate) mailbox_count: u8,
-    pub(crate) rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
-    pub(crate) tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
-    pub(crate) operation_mode: OperationMode,
-    pub(crate) linked_ports: [bool; 4],
+    pub info: SlaveInfo,
+    pub error: Option<SlaveError>,
+    pub al_state: AlState,
+    pub mailbox_count: u8,
+    pub rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
+    pub tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
+
+    pub linked_ports: [bool; 4],
+
+    // for DC init
+    pub(crate) dc_context: RefCell<DCContext>,
+}
+
+#[derive(Debug, Default)]
+pub struct DCContext {
+    pub parent_port: Option<(u16, u8)>,
+    pub current_port: u8,
+    pub recieved_port_time: [u32; 4],
+    pub delay: u32,
+    pub recieved_time: u64,
+    pub offset: u64,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
-    pub(crate) id: SlaveID,
+    pub id: SlaveID,
     //pub(crate) configured_address: u16,
-    pub(crate) ports: [Option<PortPhysics>; 4],
-    pub(crate) ram_size_kb: u8,
+    pub ports: [Option<PortPhysics>; 4],
+    pub ram_size_kb: u8,
 
-    pub(crate) number_of_fmmu: u8,
-    pub(crate) number_of_sm: u8,
+    pub number_of_fmmu: u8,
+    pub number_of_sm: u8,
 
-    pub(crate) pdo_start_address: Option<u16>,
-    pub(crate) pdo_ram_size: u16,
+    pub pdo_start_address: Option<u16>,
+    pub pdo_ram_size: u16,
 
-    pub(crate) sm_mailbox_rx: Option<MailboxSyncManager>,
-    pub(crate) sm_mailbox_tx: Option<MailboxSyncManager>,
+    pub sm0: Option<SyncManager>, //sm0
+    pub sm1: Option<SyncManager>, //sm1
+    pub sm2: Option<SyncManager>, //sm1
+    pub sm3: Option<SyncManager>, //sm1
 
-    pub(crate) support_dc: bool,
-    pub(crate) is_dc_range_64bits: bool,
-    pub(crate) support_fmmu_bit_operation: bool,
-    pub(crate) support_lrw: bool,
-    pub(crate) support_rw: bool,
+    pub support_dc: bool,
+    pub is_dc_range_64bits: bool,
+    pub support_fmmu_bit_operation: bool,
+    pub support_lrw: bool,
+    pub support_rw: bool,
 
-    pub(crate) has_coe: bool,
+    pub support_coe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
@@ -98,6 +113,14 @@ impl Default for AlState {
     fn default() -> Self {
         AlState::Invalid
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum SyncManager {
+    MailboxRx(MailboxSyncManager),
+    MailboxTx(MailboxSyncManager),
+    ProcessDataRx,
+    ProcessDataTx,
 }
 
 #[derive(Debug, Clone)]

@@ -260,6 +260,15 @@ pub enum SlaveAddress {
     SlaveNumber(u16),
 }
 
+impl SlaveAddress {
+    pub fn get_ado(&self) -> u16 {
+        match self {
+            Self::StationAddress(addr) => *addr,
+            Self::SlaveNumber(pos) => *pos,
+        }
+    }
+}
+
 impl Default for SlaveAddress {
     fn default() -> Self {
         SlaveAddress::SlaveNumber(0)

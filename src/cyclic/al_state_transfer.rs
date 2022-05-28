@@ -1,6 +1,7 @@
 use crate::cyclic::Cyclic;
 use crate::error::*;
 use crate::interface::*;
+use crate::network::*;
 use crate::register::application::*;
 use crate::slave::*;
 use crate::util::*;
@@ -8,6 +9,9 @@ use crate::*;
 use embedded_hal::timer::CountDown;
 use fugit::*;
 use nb;
+
+use super::EtherCATSystemTime;
+//const TIMEOUT_MS: u32 = 200;
 
 #[derive(Debug, Clone)]
 pub enum AlStateTransitionError {
@@ -34,30 +38,25 @@ enum TransferState {
 }
 
 #[derive(Debug)]
-pub struct ALStateTransfer<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    timer: &'a mut T,
+pub struct ALStateTransfer {
+    //timer: &'a mut T,
+    timer_start: EtherCATSystemTime,
     state: TransferState,
     slave_address: SlaveAddress,
-    target_al: AlState,
+    target_al: Option<AlState>,
     command: Command,
     buffer: [u8; buffer_size()],
     current_al_state: Option<AlState>,
     timeout_ms: u32,
 }
 
-impl<'a, T> ALStateTransfer<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    pub fn new(timer: &'a mut T) -> Self {
+impl ALStateTransfer {
+    pub fn new() -> Self {
         Self {
-            timer,
+            timer_start: EtherCATSystemTime(0),
             state: TransferState::Idle,
             slave_address: SlaveAddress::SlaveNumber(0),
-            target_al: AlState::Init,
+            target_al: None,
             command: Command::default(),
             buffer: [0; buffer_size()],
             current_al_state: None,
@@ -65,7 +64,7 @@ where
         }
     }
 
-    pub fn start(&mut self, slave_address: SlaveAddress, target_al_state: AlState) {
+    pub fn start(&mut self, slave_address: SlaveAddress, target_al_state: Option<AlState>) {
         self.slave_address = slave_address;
         self.target_al = target_al_state;
         self.state = TransferState::Read;
@@ -122,16 +121,17 @@ where
     //    }
     //}
 
-    pub(crate) fn take_timer(self) -> &'a mut T {
-        self.timer
-    }
+    //pub(crate) fn take_timer(self) -> &'a mut T {
+    //    self.timer
+    //}
 }
 
-impl<'a, T> Cyclic for ALStateTransfer<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    fn next_command(&mut self) -> Option<(Command, &[u8])> {
+impl Cyclic for ALStateTransfer {
+    fn next_command(
+        &mut self,
+        _: &mut NetworkDescription,
+        _: EtherCATSystemTime,
+    ) -> Option<(Command, &[u8])> {
         match self.state {
             TransferState::Idle => None,
             TransferState::Error(_) => None,
@@ -143,9 +143,10 @@ where
             TransferState::Request => {
                 self.buffer.fill(0);
                 let mut al_control = ALControl(self.buffer);
-                al_control.set_state(self.target_al as u8);
+                let target_al = self.target_al.unwrap();
+                al_control.set_state(target_al as u8);
                 self.command = Command::new_write(self.slave_address, ALControl::ADDRESS);
-                self.timeout_ms = match (self.current_al_state.unwrap(), self.target_al) {
+                self.timeout_ms = match (self.current_al_state.unwrap(), target_al) {
                     (AlState::PreOperational, AlState::SafeOperational)
                     | (_, AlState::Operational) => SAFEOP_OP_TIMEOUT_DEFAULT_MS,
                     (_, AlState::PreOperational) | (_, AlState::Bootstrap) => {
@@ -166,7 +167,14 @@ where
         }
     }
 
-    fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool {
+    fn recieve_and_process(
+        &mut self,
+        command: Command,
+        data: &[u8],
+        wkc: u16,
+        _: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> bool {
         if command != self.command {
             self.state =
                 TransferState::Error(AlStateTransitionError::Common(CommonError::PacketDropped));
@@ -184,41 +192,41 @@ where
                 let al_status = ALStatus(data);
                 let al_state = AlState::from(al_status.state());
                 self.current_al_state = Some(al_state);
-                if self.target_al == al_state {
-                    self.state = TransferState::Complete;
-                } else if al_state == AlState::Invalid {
-                    self.state = TransferState::Error(AlStateTransitionError::InvalidALState);
+                if let Some(target_al) = self.target_al {
+                    if target_al == al_state {
+                        self.state = TransferState::Complete;
+                    } else if al_state == AlState::Invalid {
+                        self.state = TransferState::Error(AlStateTransitionError::InvalidALState);
+                    } else {
+                        self.state = TransferState::Request;
+                    }
                 } else {
-                    self.state = TransferState::Request;
+                    self.state = TransferState::Complete;
                 }
             }
             TransferState::Request => {
-                self.timer
-                    //.as_mut()
-                    //.unwrap()
-                    .start(MicrosDurationU32::from_ticks(self.timeout_ms * 1000));
+                //self.timer
+                //.as_mut()
+                //.unwrap()
+                //    .start(MicrosDurationU32::from_ticks(self.timeout_ms * 1000));
+                self.timer_start = sys_time;
                 self.state = TransferState::Poll;
             }
             TransferState::Poll => {
                 let al_status = ALStatus(data);
                 let al_state = AlState::from(al_status.state());
                 self.current_al_state = Some(al_state);
-                if self.target_al == al_state {
+                if self.target_al.unwrap() == al_state {
                     self.state = TransferState::Complete;
                 } else if al_state == AlState::Invalid {
                     self.state = TransferState::Error(AlStateTransitionError::InvalidALState);
                 } else {
-                    match self.timer.wait() {
-                        Ok(_) => {
-                            self.state = TransferState::Error(AlStateTransitionError::TimeoutMs(
-                                self.timeout_ms,
-                            ))
-                        }
-                        Err(nb::Error::Other(_)) => {
-                            self.state =
-                                TransferState::Error(CommonError::UnspcifiedTimerError.into())
-                        }
-                        Err(nb::Error::WouldBlock) => (),
+                    if self.timer_start.0 < sys_time.0
+                        && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
+                    {
+                        self.state = TransferState::Error(AlStateTransitionError::TimeoutMs(
+                            self.timeout_ms,
+                        ));
                     }
                 }
             }

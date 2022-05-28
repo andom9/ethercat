@@ -1,126 +1,177 @@
 use crate::slave::*;
-use heapless::{FnvIndexMap, Vec};
+
+pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
+//const SLAVE_SIZE: usize = core::mem::size_of::<Option<Slave>>();
+//pub const EMPTY_SLAVE_PORT_CONTEXT: Option<SlavePort> = None;
+//pub const EMPTY_SLAVE_DC_CONTEXT: Option<SlaveDC> = None;
 
 #[derive(Debug)]
-pub struct EtherCATNetwork<const N: usize> {
-    slaves: Vec<Slave, N>,
-    //pdo_buffer: &'static mut [u8],
+pub struct NetworkDescription<'a> {
+    slaves: &'a mut [Option<Slave>],
+    push_count: usize,
+    max_push: usize,
 }
 
-impl<const N: usize> EtherCATNetwork<N> {
-    pub fn new() -> Self {
+impl<'a> NetworkDescription<'a> {
+    //pub fn new(context_buf: &mut [u8]) -> Self{
+    //    let len = context_buf.len();
+    //    let max_num_slaves = len/(SLAVE_SIZE+SLAVE_DC_SIZE);
+    //    let (slave_buf, rest) = context_buf.split_at_mut(max_num_slaves*SLAVE_SIZE);
+    //    let (dc_buf, _) = rest.split_at_mut(max_num_slaves*SLAVE_DC_SIZE);
+    //
+    //    let (slave_buf, dc_buf) = unsafe{
+    //        (
+    //        core::mem::transmute::<&mut[u8],&mut[Option<Slave>]>(slave_buf),
+    //        core::mem::transmute::<&mut[u8],&mut[Option<SlaveDC>]>(dc_buf))
+    //    };
+    //    slave_buf.iter_mut().for_each(|b|*b=None);
+    //    dc_buf.iter_mut().for_each(|b|*b=None);
+    //
+    //    Self{
+    //        slaves: slave_buf,
+    //        slave_dcs: dc_buf,
+    //        push_count: 0,
+    //        max_push: max_num_slaves,
+    //    }
+    //}
+
+    pub fn new(slave_buf: &'a mut [Option<Slave>]) -> Self {
+        let len1 = slave_buf.iter_mut().map(|buf| *buf = None).count();
         Self {
-            slaves: Vec::default(),
-            //pdo_buffer,
+            slaves: slave_buf,
+            push_count: 0,
+            max_push: len1,
         }
     }
 
-    pub fn clear(&mut self) {
-        self.slaves.clear()
+    pub(crate) fn clear(&mut self) {
+        self.slaves.iter_mut().for_each(|buf| *buf = None);
+        self.push_count = 0;
     }
 
-    pub fn push_slave(&mut self, slave: Slave) -> Result<(), Slave> {
-        self.slaves.push(slave)
+    pub(crate) fn push_slave(&mut self, slave: Slave) -> Result<(), Slave> {
+        if self.slaves.len() <= self.push_count {
+            Err(slave)
+        } else {
+            self.slaves[self.push_count] = Some(slave);
+            self.push_count += 1;
+            Ok(())
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.slaves.len()
+        self.push_count
     }
 
-    pub fn slave(&self, position: u16) -> Option<&Slave> {
-        self.slaves.get(position as usize)
+    pub(crate) fn slave(&self, position: u16) -> Option<&Slave> {
+        if (position as usize) < self.push_count {
+            self.slaves[position as usize].as_ref()
+        } else {
+            None
+        }
     }
 
-    pub fn slave_mut(&mut self, position: u16) -> Option<&mut Slave> {
-        self.slaves.get_mut(position as usize)
+    pub(crate) fn slave_mut(&mut self, position: u16) -> Option<&mut Slave> {
+        if (position as usize) < self.push_count {
+            self.slaves[position as usize].as_mut()
+        } else {
+            None
+        }
     }
 
-    pub fn recieved_ports(&self) -> RecievedPorts<N> {
-        RecievedPorts::new(&self.slaves)
+    pub(crate) fn slaves(&self) -> &[Option<Slave>] {
+        self.slaves
+        //&self.slaves.iter().filter_map(|s|s.is_some())
     }
 
-    pub fn read_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
-        read_write_pdo_buffer(pdo_buffer, &mut self.slaves);
+    pub(crate) fn recieved_ports(&self) -> RecievedPorts {
+        let Self { slaves, .. } = self;
+        RecievedPorts::new(&slaves)
+    }
+
+    pub(crate) fn read_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
+        let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
+        read_write_pdo_buffer(pdo_buffer, iter);
     }
 }
 
-struct SlavePortInfo {
-    linked_ports: [bool; 4],
-    current_port: usize,
+#[derive(Debug)]
+pub struct RecievedPorts<'a> {
+    slaves: &'a [Option<Slave>],
+    position: u16,
+    length: usize,
 }
 
-pub struct RecievedPorts<const N: usize> {
-    slaves_port: Vec<SlavePortInfo, N>,
-    position: usize,
-}
-
-impl<const N: usize> RecievedPorts<N> {
-    fn new(slaves: &Vec<Slave, N>) -> Self {
-        let mut slaves_port = Vec::default();
-        for slave in slaves {
+impl<'a> RecievedPorts<'a> {
+    fn new(slaves: &'a [Option<Slave>]) -> Self {
+        let mut length = 0;
+        for slave in slaves.iter().filter_map(|s| s.as_ref()) {
             let current_port = slave.linked_ports.iter().position(|p| *p).unwrap_or(4);
-            let _ = slaves_port.push(SlavePortInfo {
-                linked_ports: slave.linked_ports,
-                current_port,
-            });
+            let mut dc = slave.dc_context.borrow_mut();
+            dc.current_port = current_port as u8;
+            length += 1;
         }
 
         Self {
-            slaves_port,
+            slaves,
             position: 0,
+            length,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct RecievedPort {
-    pub position: usize,
-    pub port: usize,
+    pub position: u16,
+    pub port: u8,
 }
 
-impl<const N: usize> Iterator for RecievedPorts<N> {
+impl<'a> Iterator for RecievedPorts<'a> {
     type Item = RecievedPort;
     fn next(&mut self) -> Option<Self::Item> {
-        let posision_tmp = self.position;
-        let current_port_tmp = self.slaves_port[self.position].current_port;
+        loop {
+            let posision_tmp = self.position;
+            let slave = self.slaves[self.position as usize].as_ref().unwrap();
+            let mut dc = slave.dc_context.borrow_mut();
 
-        let linked_ports = self.slaves_port[self.position].linked_ports;
-        if let Some(next_port) = linked_ports
-            .iter()
-            .enumerate()
-            .position(|(port_num, has_port)| *has_port && port_num > current_port_tmp)
-        {
-            self.slaves_port[self.position].current_port = next_port;
-            self.position += 1;
-        } else {
-            self.slaves_port[self.position].current_port = 4;
-            if let Some((ancestor_position, _ancestor_port)) = self
-                .slaves_port
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, port)| port.current_port < 4)
+            let current_port_tmp = dc.current_port;
+
+            let linked_ports = slave.linked_ports;
+            if let Some(next_port) =
+                linked_ports
+                    .iter()
+                    .enumerate()
+                    .position(|(port_num, has_port)| {
+                        *has_port && (current_port_tmp as usize) < port_num
+                    })
             {
-                self.position = ancestor_position;
+                dc.current_port = next_port as u8;
+                self.position += 1;
+            } else {
+                dc.current_port = 4;
+                if 1 <= self.position {
+                    self.position -= 1;
+                } else {
+                    break;
+                }
+            }
+            if (posision_tmp as usize) < self.length && current_port_tmp < 4 {
+                return Some(RecievedPort {
+                    port: current_port_tmp,
+                    position: posision_tmp,
+                });
             }
         }
-
-        if posision_tmp < self.slaves_port.len() && current_port_tmp < 4 {
-            Some(RecievedPort {
-                port: current_port_tmp,
-                position: posision_tmp,
-            })
-        } else {
-            None
-        }
+        None
     }
 }
 
-pub(crate) fn read_write_pdo_buffer(pdo_buffer: &mut [u8], slaves: &mut [Slave]) {
+pub(crate) fn read_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
+    pdo_buffer: &mut [u8],
+    slaves: S,
+) {
     let mut offset = 0;
-    let len = slaves.len();
-    for i in 0..len {
-        let slave = &mut slaves[i];
+    for slave in slaves {
         //先にRxPDOを並べているとする
         if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
             for pdo_mapping in sm_in.iter_mut() {

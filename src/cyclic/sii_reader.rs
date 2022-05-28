@@ -1,10 +1,13 @@
 use crate::cyclic::Cyclic;
 use crate::error::CommonError;
 use crate::interface::*;
+use crate::network::*;
 use crate::register::datalink::*;
 use crate::util::*;
 use embedded_hal::timer::CountDown;
 use fugit::MicrosDurationU32;
+
+use super::EtherCATSystemTime;
 
 const TIMEOUT_MS: u32 = 100;
 
@@ -35,8 +38,9 @@ enum SIIState {
     CheckOwnership,
     SetAddress,
     SetReadOperation,
-    Poll,
+    Wait,
     Read,
+    ResetOwnership,
     Complete,
 }
 
@@ -47,11 +51,8 @@ impl Default for SIIState {
 }
 
 #[derive(Debug)]
-pub struct SIIReader<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    pub(crate) timer: &'a mut T,
+pub struct SIIReader {
+    timer_start: EtherCATSystemTime,
     command: Command,
     slave_address: SlaveAddress,
     buffer: [u8; buffer_size()],
@@ -60,13 +61,10 @@ where
     read_size: usize,
 }
 
-impl<'a, T> SIIReader<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    pub fn new(timer: &'a mut T) -> Self {
+impl SIIReader {
+    pub fn new() -> Self {
         Self {
-            timer: timer,
+            timer_start: EtherCATSystemTime(0),
             state: SIIState::Idle,
             slave_address: SlaveAddress::SlaveNumber(0),
             sii_address: 0,
@@ -136,16 +134,17 @@ where
     //    }
     //}
 
-    pub(crate) fn take_timer(self) -> &'a mut T {
-        self.timer
-    }
+    //pub(crate) fn take_timer(self) -> &'a mut T {
+    //    self.timer
+    //}
 }
 
-impl<'a, T> Cyclic for SIIReader<'a, T>
-where
-    T: CountDown<Time = MicrosDurationU32>,
-{
-    fn next_command(&mut self) -> Option<(Command, &[u8])> {
+impl Cyclic for SIIReader {
+    fn next_command(
+        &mut self,
+        _: &mut NetworkDescription,
+        _: EtherCATSystemTime,
+    ) -> Option<(Command, &[u8])> {
         match self.state {
             SIIState::Idle => None,
             SIIState::Error(_) => None,
@@ -181,7 +180,7 @@ where
                 self.command = Command::new_write(self.slave_address, SIIControl::ADDRESS);
                 Some((self.command, &self.buffer[..SIIControl::SIZE]))
             }
-            SIIState::Poll => {
+            SIIState::Wait => {
                 self.command = Command::new_read(self.slave_address, SIIControl::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIControl::SIZE]))
@@ -191,11 +190,26 @@ where
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIData::SIZE]))
             }
+            SIIState::ResetOwnership => {
+                self.buffer.fill(0);
+                let mut sii_access = SIIAccess(self.buffer);
+                sii_access.set_owner(true);
+                sii_access.set_reset_access(false);
+                self.command = Command::new_write(self.slave_address, SIIAccess::ADDRESS);
+                Some((self.command, &self.buffer[..SIIAccess::SIZE]))
+            }
             SIIState::Complete => None,
         }
     }
 
-    fn recieve_and_process(&mut self, command: Command, data: &[u8], wkc: u16) -> bool {
+    fn recieve_and_process(
+        &mut self,
+        command: Command,
+        data: &[u8],
+        wkc: u16,
+        _: &mut NetworkDescription,
+        sys_time: EtherCATSystemTime,
+    ) -> bool {
         if command != self.command {
             self.state = SIIState::Error(SIIError::Common(CommonError::PacketDropped));
         }
@@ -246,27 +260,27 @@ where
                 self.state = SIIState::SetReadOperation;
             }
             SIIState::SetReadOperation => {
-                self.state = SIIState::Poll;
-                self.timer
-                    .start(MicrosDurationU32::from_ticks(TIMEOUT_MS * 1000));
+                self.state = SIIState::Wait;
+                self.timer_start = sys_time;
             }
-            SIIState::Poll => {
+            SIIState::Wait => {
                 let sii_control = SIIControl(data);
                 if sii_control.command_error() {
                     self.state = SIIState::Error(SIIError::CommandError);
                 } else if !sii_control.busy() && !sii_control.read_operation() {
                     self.state = SIIState::Read;
                 } else {
-                    match self.timer.wait() {
-                        Ok(_) => self.state = SIIState::Error(SIIError::TimeoutMs(TIMEOUT_MS)),
-                        Err(nb::Error::Other(_)) => {
-                            self.state = SIIState::Error(CommonError::UnspcifiedTimerError.into())
-                        }
-                        Err(nb::Error::WouldBlock) => (),
+                    if self.timer_start.0 < sys_time.0
+                        && TIMEOUT_MS as u64 * 1000 < sys_time.0 - self.timer_start.0
+                    {
+                        self.state = SIIState::Error(SIIError::TimeoutMs(TIMEOUT_MS))
                     }
                 }
             }
             SIIState::Read => {
+                self.state = SIIState::ResetOwnership;
+            }
+            SIIState::ResetOwnership => {
                 self.state = SIIState::Complete;
             }
             SIIState::Complete => {}
@@ -298,121 +312,121 @@ pub mod sii_reg {
 
     pub struct PDIConfig;
     impl PDIConfig {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 1;
         pub const SIZE: usize = 2;
     }
 
     pub struct SyncImpulseLen;
     impl SyncImpulseLen {
-        pub const ADDRESS: u16 = 0;
-        pub const SIZE: usize = 2;
-    }
-
-    pub struct StationAlias;
-    impl StationAlias {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 2;
         pub const SIZE: usize = 2;
     }
 
     pub struct PDIConfig2;
     impl PDIConfig2 {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 3;
+        pub const SIZE: usize = 2;
+    }
+
+    pub struct StationAlias;
+    impl StationAlias {
+        pub const ADDRESS: u16 = 4;
         pub const SIZE: usize = 2;
     }
 
     pub struct Checksum;
     impl Checksum {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 7;
         pub const SIZE: usize = 2;
     }
 
     pub struct VenderID;
     impl VenderID {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 8;
         pub const SIZE: usize = 2;
     }
 
     pub struct ProductCode;
     impl ProductCode {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0xA;
         pub const SIZE: usize = 2;
     }
 
     pub struct RevisionNumber;
     impl RevisionNumber {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0xC;
         pub const SIZE: usize = 2;
     }
 
     pub struct SerialNumber;
     impl SerialNumber {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0xE;
         pub const SIZE: usize = 2;
     }
 
     pub struct BootstrapRxMailboxOffset;
     impl BootstrapRxMailboxOffset {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x14;
         pub const SIZE: usize = 2;
     }
 
     pub struct BootstrapRxMailboxSize;
     impl BootstrapRxMailboxSize {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x15;
         pub const SIZE: usize = 2;
     }
 
     pub struct BootstrapTxMailboxOffset;
     impl BootstrapTxMailboxOffset {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x16;
         pub const SIZE: usize = 2;
     }
 
     pub struct BootstrapTxMailboxSize;
     impl BootstrapTxMailboxSize {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x17;
         pub const SIZE: usize = 2;
     }
 
     pub struct StandardRxMailboxOffset;
     impl StandardRxMailboxOffset {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x18;
         pub const SIZE: usize = 2;
     }
 
     pub struct StandardRxMailboxSize;
     impl StandardRxMailboxSize {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x19;
         pub const SIZE: usize = 2;
     }
 
     pub struct StandardTxMailboxOffset;
     impl StandardTxMailboxOffset {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x1A;
         pub const SIZE: usize = 2;
     }
 
     pub struct StandardTxMailboxSize;
     impl StandardTxMailboxSize {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x1B;
         pub const SIZE: usize = 2;
     }
 
     pub struct MailboxProtocol;
     impl MailboxProtocol {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x1C;
         pub const SIZE: usize = 2;
     }
 
     pub struct Size;
     impl Size {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x3E;
         pub const SIZE: usize = 2;
     }
 
     pub struct Version;
     impl Version {
-        pub const ADDRESS: u16 = 0;
+        pub const ADDRESS: u16 = 0x3F;
         pub const SIZE: usize = 2;
     }
 }

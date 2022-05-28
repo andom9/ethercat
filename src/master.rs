@@ -1,7 +1,7 @@
 use crate::arch::Device;
 use crate::cyclic::al_state_transfer::*;
 use crate::cyclic::network_initilizer::*;
-use crate::cyclic::sii::*;
+use crate::cyclic::sii_reader::*;
 use crate::cyclic::*;
 use crate::error::CommonError;
 use crate::interface::Command;
@@ -37,7 +37,8 @@ where
 {
     cyclic: CyclicProcess<'a, D, T, CyclicUnit<'a, T, N>, 4>,
     network_initilizer_handle: UnitHandle,
-    network: Option<EtherCATNetwork<N>>,
+    network: NetworkDescription,
+    is_busy: bool,
     sii_reader_handle: UnitHandle,
     al_state_transfer_handle: UnitHandle,
 }
@@ -51,7 +52,7 @@ where
         &mut self,
         recv_timeout: I,
     ) -> Result<(), CommonError> {
-        self.cyclic.poll(recv_timeout)
+        self.cyclic.poll(&mut self.network, recv_timeout)
     }
 
     pub fn start_init(&mut self) {
@@ -63,7 +64,7 @@ where
     pub fn wait_init(&mut self) -> nb::Result<(), NetworkInitError> {
         let unit = self.network_initilizer();
         let network = unit.wait()?;
-        if let Some(network) = network{
+        if let Some(network) = network {
             self.network = Some(network);
         }
         Ok(())
@@ -81,19 +82,25 @@ where
         }
     }
 
-    pub fn sii_reader(&mut self) -> &mut SIIReader<'a, T> {
+    pub fn sii_reader(&mut self) -> Option<&mut SIIReader<'a, T>> {
+        if self.network.is_none() {
+            return None;
+        }
         let sii_reader = self.cyclic.unit_mut(self.sii_reader_handle).unwrap();
         if let CyclicUnit::SIIReader(ref mut unit) = sii_reader {
-            unit
+            Some(unit)
         } else {
             unreachable!()
         }
     }
 
-    pub fn al_state_transfer(&mut self) -> &mut ALStateTransfer<'a, T> {
+    pub fn al_state_transfer(&mut self) -> Option<&mut ALStateTransfer<'a, T>> {
+        if self.network.is_none() {
+            return None;
+        }
         let al_state_transfer = self.cyclic.unit_mut(self.al_state_transfer_handle).unwrap();
         if let CyclicUnit::ALStateTransfer(ref mut unit) = al_state_transfer {
-            unit
+            Some(unit)
         } else {
             unreachable!()
         }

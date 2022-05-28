@@ -4,7 +4,7 @@ pub mod cyclic;
 mod error;
 pub mod ethercat_frame;
 pub mod interface;
-pub mod master;
+//pub mod master;
 pub mod network;
 pub mod packet;
 pub mod register;
