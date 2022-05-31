@@ -1,4 +1,4 @@
-use crate::slave::*;
+use crate::{interface::SlaveAddress, slave::*};
 
 pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
 //const SLAVE_SIZE: usize = core::mem::size_of::<Option<Slave>>();
@@ -9,7 +9,7 @@ pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
 pub struct NetworkDescription<'a> {
     slaves: &'a mut [Option<Slave>],
     push_count: usize,
-    max_push: usize,
+    //max_push: usize,
 }
 
 impl<'a> NetworkDescription<'a> {
@@ -36,11 +36,11 @@ impl<'a> NetworkDescription<'a> {
     //}
 
     pub fn new(slave_buf: &'a mut [Option<Slave>]) -> Self {
-        let len1 = slave_buf.iter_mut().map(|buf| *buf = None).count();
+        //let len1 = slave_buf.iter_mut().map(|buf| *buf = None).count();
         Self {
             slaves: slave_buf,
             push_count: 0,
-            max_push: len1,
+            //max_push: len1,
         }
     }
 
@@ -63,17 +63,37 @@ impl<'a> NetworkDescription<'a> {
         self.push_count
     }
 
-    pub(crate) fn slave(&self, position: u16) -> Option<&Slave> {
-        if (position as usize) < self.push_count {
-            self.slaves[position as usize].as_ref()
+    pub(crate) fn slave(&self, addr: SlaveAddress) -> Option<&Slave> {
+        let addr = match addr {
+            SlaveAddress::SlavePosition(n) => n,
+            SlaveAddress::StationAddress(n) => {
+                if n == 0{
+                    return None;
+                }else{
+                    n-1
+                }
+            }
+        };
+        if (addr as usize) < self.push_count {
+            self.slaves[addr as usize].as_ref()
         } else {
             None
         }
     }
 
-    pub(crate) fn slave_mut(&mut self, position: u16) -> Option<&mut Slave> {
-        if (position as usize) < self.push_count {
-            self.slaves[position as usize].as_mut()
+    pub(crate) fn slave_mut(&mut self, addr: SlaveAddress) -> Option<&mut Slave> {
+        let addr = match addr {
+            SlaveAddress::SlavePosition(n) => n,
+            SlaveAddress::StationAddress(n) => {
+                if n == 0{
+                    return None;
+                }else{
+                    n-1
+                }
+            }
+        };
+        if (addr as usize) < self.push_count {
+            self.slaves[addr as usize].as_mut()
         } else {
             None
         }
@@ -81,7 +101,6 @@ impl<'a> NetworkDescription<'a> {
 
     pub(crate) fn slaves(&self) -> &[Option<Slave>] {
         self.slaves
-        //&self.slaves.iter().filter_map(|s|s.is_some())
     }
 
     pub(crate) fn recieved_ports(&self) -> RecievedPorts {

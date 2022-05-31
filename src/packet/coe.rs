@@ -3,6 +3,7 @@ use bitfield::*;
 pub const COE_HEADER_LENGTH: usize = 2;
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct CANOpenPDU([u8]);
     u16;
     pub number, set_number: 8, 0;
@@ -45,6 +46,7 @@ pub const SDO_HEADER_LENGTH: usize = 4;
 pub const SDO_DATA_LENGTH: usize = 4;
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct SDO([u8]);
     pub u8, command, set_command: 7, 0;
     pub u16, index, set_index: 23, 8;
@@ -195,6 +197,7 @@ impl From<u32> for AbortCode {
 const EMMERGENCY_LENGTH: usize = 8;
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct Emmergency([u8]);
     u16, error_code, _: 15, 0;
     u8, error_register, _: 23, 16;

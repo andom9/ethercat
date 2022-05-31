@@ -12,12 +12,12 @@ This crate's goal is to provide a library that allows easy construction of a cla
 - Process Data Exchange
   - [ ] Cyclic PDO
 - Network Configuration
-  - [ ] Online scanning
+  - [ ] Online Scanning
   - [ ] Compare Network Configuration
   - [x] Read Access to EEPROM
 - Mailbox Support
-  - [ ] Support Mailbox
-  - [ ] Mailbox Resilient Layer
+  - [x] Support Mailbox
+  - [x] Mailbox Resilient Layer
   - [ ] Mailbox polling
 - CAN application layer over EtherCAT
   - [ ] SDO Up/Download
@@ -25,4 +25,4 @@ This crate's goal is to provide a library that allows easy construction of a cla
 - (Option)FoE
   - [ ] FoE Protocol
 - (Option)Synchronizaion With Distributed Clock
-  - [ ] DC Support
+  - [x] DC Support

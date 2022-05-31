@@ -126,7 +126,7 @@ fn simple_test(interf_name: &str) {
     println!("wkc: {:?}", pdu.wkc());
 
     let mut sii = SlaveInformationInterface::new(&mut master);
-    let (eeprom_data, size) = sii.read(SlaveAddress::SlaveNumber(0), 0x0008).unwrap();
+    let (eeprom_data, size) = sii.read(SlaveAddress::SlavePosition(0), 0x0008).unwrap();
     println!("eeprom: {:x}", eeprom_data.sii_data());
     println!("read_size: {}", size);
 }

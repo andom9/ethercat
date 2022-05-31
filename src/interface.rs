@@ -27,7 +27,7 @@ impl Command {
 
     pub fn new_read(slave_address: SlaveAddress, ado: u16) -> Self {
         let (c_type, adp) = match slave_address {
-            SlaveAddress::SlaveNumber(adp) => (CommandType::APRD, get_ap_adp(adp)),
+            SlaveAddress::SlavePosition(adp) => (CommandType::APRD, get_ap_adp(adp)),
             SlaveAddress::StationAddress(adp) => (CommandType::FPRD, adp),
         };
         Command { c_type, adp, ado }
@@ -35,7 +35,7 @@ impl Command {
 
     pub fn new_write(slave_address: SlaveAddress, ado: u16) -> Self {
         let (c_type, adp) = match slave_address {
-            SlaveAddress::SlaveNumber(adp) => (CommandType::APWR, get_ap_adp(adp)),
+            SlaveAddress::SlavePosition(adp) => (CommandType::APWR, get_ap_adp(adp)),
             SlaveAddress::StationAddress(adp) => (CommandType::FPWR, adp),
         };
         Command { c_type, adp, ado }
@@ -144,8 +144,9 @@ where
         match self.receive(recv_timeout) {
             RxRes::Ok => (),
             RxRes::DeviceError => return Err(CommonError::DeviceErrorRx),
-            RxRes::TimerError => return Err(CommonError::UnspcifiedTimerError),
-            RxRes::Timeout => return Err(CommonError::ReceiveTimeout),
+            //RxRes::TimerError => return Err(CommonError::UnspcifiedTimerError),
+            //RxRes::Timeout => return Err(CommonError::ReceiveTimeout),
+            RxRes::Timeout => (),
         }
         Ok(())
     }
@@ -238,7 +239,7 @@ where
             }
             match self.timer.wait() {
                 Ok(_) => return RxRes::Timeout,
-                Err(nb::Error::Other(_)) => return RxRes::TimerError,
+                Err(nb::Error::Other(void)) => unreachable!(),
                 Err(nb::Error::WouldBlock) => (),
             }
         }
@@ -251,27 +252,27 @@ enum RxRes {
     Ok,
     DeviceError,
     Timeout,
-    TimerError,
+    //TimerError,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum SlaveAddress {
     StationAddress(u16),
-    SlaveNumber(u16),
+    SlavePosition(u16),
 }
 
 impl SlaveAddress {
     pub fn get_ado(&self) -> u16 {
         match self {
             Self::StationAddress(addr) => *addr,
-            Self::SlaveNumber(pos) => *pos,
+            Self::SlavePosition(pos) => *pos,
         }
     }
 }
 
 impl Default for SlaveAddress {
     fn default() -> Self {
-        SlaveAddress::SlaveNumber(0)
+        SlaveAddress::SlavePosition(0)
     }
 }
 
@@ -294,7 +295,7 @@ impl Default for SlaveAddress {
 //                size,
 //                |buf| buf.iter_mut().for_each(|b| *b = 0),
 //            )?,
-//            SlaveAddress::SlaveNumber(adr) => self.add_command(
+//            SlaveAddress::SlavePosition(adr) => self.add_command(
 //                u8::MAX,
 //                Command::new(CommandType::APRD, get_ap_adp(adr), register_address),
 //                size,
@@ -305,7 +306,7 @@ impl Default for SlaveAddress {
 //        let pdu = self
 //            .consume_command()
 //            .last()
-//            .ok_or(CommonError::PacketDropped)?;
+//            .ok_or(CommonError::BadPacket)?;
 //        check_wkc(&pdu, 1)?;
 //        Ok(pdu)
 //    }
@@ -325,7 +326,7 @@ impl Default for SlaveAddress {
 //                size,
 //                buffer_writer,
 //            )?,
-//            SlaveAddress::SlaveNumber(adr) => self.add_command(
+//            SlaveAddress::SlavePosition(adr) => self.add_command(
 //                u8::MAX,
 //                Command::new(CommandType::APWR, get_ap_adp(adr), register_address),
 //                size,
@@ -336,7 +337,7 @@ impl Default for SlaveAddress {
 //        let pdu = self
 //            .consume_command()
 //            .last()
-//            .ok_or(CommonError::PacketDropped)?;
+//            .ok_or(CommonError::BadPacket)?;
 //        check_wkc(&pdu, 1)?;
 //        Ok(pdu)
 //    }

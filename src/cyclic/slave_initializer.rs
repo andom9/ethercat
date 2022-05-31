@@ -1,5 +1,5 @@
-use super::EtherCATSystemTime;
 use super::{al_state_transfer::*, sii_reader::*};
+use super::{EtherCATSystemTime, ReceivedData};
 use crate::cyclic::Cyclic;
 use crate::error::*;
 use crate::interface::*;
@@ -8,8 +8,6 @@ use crate::register::{application::*, datalink::*};
 use crate::slave::*;
 use crate::util::*;
 use bit_field::BitField;
-use embedded_hal::timer::*;
-use fugit::*;
 
 #[derive(Debug, Clone)]
 pub enum InitError {
@@ -50,12 +48,8 @@ enum InitilizerState {
     DisableSMWatchDog,
     CheckDLStatus,
     CheckDLInfo,
-    ClearFMMU0,
-    ClearFMMU1,
-    ClearSM0,
-    ClearSM1,
-    ClearSM2,
-    ClearSM3,
+    ClearFMMU(u16),
+    ClearSM(u16),
     GetVenderID,
     WaitVenderID,
     GetProductCode,
@@ -72,8 +66,10 @@ enum InitilizerState {
     WaitTxMailboxSize,
     GetTxMailboxOffset,
     WaitTxMailboxOffset,
-    SetSM0,
-    SetSM1,
+    SetSM0Control,
+    SetSM0Activation,
+    SetSM1Control,
+    SetSM1Activation,
     SetStationAddress,
     ClearDCActivation,
     ClearCyclicOperationStartTime,
@@ -102,7 +98,7 @@ impl SlaveInitilizer {
     pub fn new() -> Self {
         Self {
             inner: InnerFunction::This,
-            slave_address: SlaveAddress::SlaveNumber(0),
+            slave_address: SlaveAddress::SlavePosition(0),
             state: InitilizerState::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -111,7 +107,7 @@ impl SlaveInitilizer {
     }
 
     pub fn start(&mut self, slave_position: u16) {
-        self.slave_address = SlaveAddress::SlaveNumber(slave_position);
+        self.slave_address = SlaveAddress::SlavePosition(slave_position);
         self.state = InitilizerState::SetLoopPort;
         self.slave_info = Some(Slave::default());
     }
@@ -123,55 +119,6 @@ impl SlaveInitilizer {
             _ => Err(nb::Error::WouldBlock),
         }
     }
-
-    //pub fn start(&mut self, slave_position: u16) -> bool {
-    //    match self.state {
-    //        InitilizerState::Idle | InitilizerState::Complete | InitilizerState::Error(_) => {
-    //            self.reset();
-    //            self.slave_address = SlaveAddress::SlaveNumber(slave_position);
-    //            self.state = InitilizerState::SetLoopPort;
-    //            true
-    //        }
-    //        _ => false,
-    //    }
-    //}
-
-    //pub fn reset(&mut self) {
-    //    self.inner.into_owned();
-    //    self.state = InitilizerState::SetLoopPort;
-    //    self.command = Command::default();
-    //    self.buffer.fill(0);
-    //    self.slave_info = SlaveInfo::default();
-    //}
-
-    //pub fn error(&self) -> Option<InitError> {
-    //    if let InitilizerState::Error(err) = &self.state {
-    //        Some(err.clone())
-    //    } else {
-    //        None
-    //    }
-    //}
-
-    //pub fn wait_slave_info(&self) -> Result<Option<&SlaveInfo>, InitError> {
-    //    if let InitilizerState::Error(err) = &self.state {
-    //        Err(err.clone())
-    //    } else {
-    //        if let InitilizerState::Complete = self.state {
-    //            Ok(Some(&self.slave_info))
-    //        } else {
-    //            Ok(None)
-    //        }
-    //    }
-    //}
-
-    //pub(crate) fn take_timer(mut self) -> &'a mut T {
-    //    self.inner.into_owned();
-    //    if let InnerFunction::Owned(timer) = self.inner {
-    //        timer
-    //    } else {
-    //        unreachable!()
-    //    }
-    //}
 }
 
 impl Cyclic for SlaveInitilizer {
@@ -244,41 +191,24 @@ impl Cyclic for SlaveInitilizer {
                 self.buffer.fill(0);
                 Some((command, &self.buffer[..DLInformation::SIZE]))
             }
-            InitilizerState::ClearFMMU0 => {
-                let command = Command::new_write(self.slave_address, FMMURegister::ADDRESS0);
+            InitilizerState::ClearFMMU(count) => {
+                let command =
+                    Command::new_write(self.slave_address, FMMURegister::ADDRESS + count * 0x10);
                 self.buffer.fill(0);
                 // disable dl watch dog
                 Some((command, &self.buffer[..FMMURegister::SIZE]))
             }
-            InitilizerState::ClearFMMU1 => {
-                let command = Command::new_write(self.slave_address, FMMURegister::ADDRESS1);
+            InitilizerState::ClearSM(count) => {
+                let command = Command::new_write(
+                    self.slave_address,
+                    SyncManagerControl::ADDRESS * count * 0x08,
+                );
                 self.buffer.fill(0);
                 // disable dl watch dog
-                Some((command, &self.buffer[..FMMURegister::SIZE]))
-            }
-            InitilizerState::ClearSM0 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS0);
-                self.buffer.fill(0);
-                // disable dl watch dog
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
-            }
-            InitilizerState::ClearSM1 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS1);
-                self.buffer.fill(0);
-                // disable dl watch dog
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
-            }
-            InitilizerState::ClearSM2 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS2);
-                self.buffer.fill(0);
-                // disable dl watch dog
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
-            }
-            InitilizerState::ClearSM3 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS3);
-                self.buffer.fill(0);
-                // disable dl watch dog
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
+                let length = SyncManagerControl::SIZE
+                    + SyncManagerStatus::SIZE
+                    + SyncManagerActivation::SIZE;
+                Some((command, &self.buffer[..length]))
             }
             InitilizerState::GetVenderID => {
                 self.inner.into_sii();
@@ -359,54 +289,78 @@ impl Cyclic for SlaveInitilizer {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.next_command(desc, sys_time)
             }
-            InitilizerState::SetSM0 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS0);
+            InitilizerState::SetSM0Control => {
+                let command = Command::new_write(self.slave_address, SyncManagerControl::ADDRESS);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxRx(ref sm0_info)) =
                     self.slave_info.as_mut().unwrap().info.sm0
                 {
-                    let mut sm = SyncManagerRegister(self.buffer);
+                    let mut sm = SyncManagerControl(self.buffer);
                     sm.set_physical_start_address(sm0_info.start_address);
                     sm.set_length(sm0_info.size);
                     sm.set_buffer_type(0b10); //mailbox
                     sm.set_direction(1); //slave read access
                     sm.set_dls_user_event_enable(true);
-                    sm.set_watchdog_enable(false); //まずはfalse
+                    //sm.set_watchdog_enable(false); //まずはfalse
+                }
+                Some((command, &self.buffer[..SyncManagerControl::SIZE]))
+            }
+            InitilizerState::SetSM0Activation => {
+                let command =
+                    Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS);
+                self.buffer.fill(0);
+                if let Some(SyncManager::MailboxRx(ref sm0_info)) =
+                    self.slave_info.as_mut().unwrap().info.sm0
+                {
+                    let mut sm = SyncManagerActivation(self.buffer);
                     sm.set_channel_enable(true);
                     sm.set_repeat(false);
-                    sm.set_dc_event_w_bus_w(false);
-                    sm.set_dc_event_w_loc_w(false);
+                    //sm.set_dc_event_w_bus_w(false);
+                    //sm.set_dc_event_w_loc_w(false);
                 }
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
+                Some((command, &self.buffer[..SyncManagerActivation::SIZE]))
             }
-            InitilizerState::SetSM1 => {
-                let command = Command::new_write(self.slave_address, SyncManagerRegister::ADDRESS1);
+            InitilizerState::SetSM1Control => {
+                let command =
+                    Command::new_write(self.slave_address, SyncManagerControl::ADDRESS + 0x08);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxTx(ref sm1_info)) =
                     self.slave_info.as_mut().unwrap().info.sm1
                 {
-                    let mut sm = SyncManagerRegister(self.buffer);
+                    let mut sm = SyncManagerControl(self.buffer);
                     sm.set_physical_start_address(sm1_info.start_address);
                     sm.set_length(sm1_info.size);
                     sm.set_buffer_type(0b10); //mailbox
                     sm.set_direction(0); //slave write access
                     sm.set_dls_user_event_enable(true);
-                    sm.set_watchdog_enable(false); //まずはfalse
+                    //sm.set_watchdog_enable(false); //まずはfalse
+                }
+                Some((command, &self.buffer[..SyncManagerControl::SIZE]))
+            }
+            InitilizerState::SetSM1Activation => {
+                let command =
+                    Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS + 0x08);
+                self.buffer.fill(0);
+                if let Some(SyncManager::MailboxTx(ref sm1_info)) =
+                    self.slave_info.as_mut().unwrap().info.sm1
+                {
+                    let mut sm = SyncManagerActivation(self.buffer);
                     sm.set_channel_enable(true);
                     sm.set_repeat(false);
-                    sm.set_dc_event_w_bus_w(false);
-                    sm.set_dc_event_w_loc_w(false);
+                    //sm.set_dc_event_w_bus_w(false);
+                    //sm.set_dc_event_w_loc_w(false);
                 }
-                Some((command, &self.buffer[..SyncManagerRegister::SIZE]))
+                Some((command, &self.buffer[..SyncManagerActivation::SIZE]))
             }
             InitilizerState::SetStationAddress => {
                 let command = Command::new_write(self.slave_address, FixedStationAddress::ADDRESS);
                 self.buffer.fill(0);
                 let mut st_addr = FixedStationAddress(self.buffer);
                 let addr = match self.slave_address {
-                    SlaveAddress::SlaveNumber(addr) => addr,
+                    SlaveAddress::SlavePosition(addr) => addr+1,
                     SlaveAddress::StationAddress(addr) => addr,
                 };
+                self.slave_info.as_mut().unwrap().configured_address = addr;
                 st_addr.set_configured_station_address(addr);
                 Some((command, &self.buffer[..FixedStationAddress::SIZE]))
             }
@@ -474,18 +428,24 @@ impl Cyclic for SlaveInitilizer {
 
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
         sys_time: EtherCATSystemTime,
-    ) -> bool {
-        if command != self.command {
-            self.state = InitilizerState::Error(InitError::Common(CommonError::PacketDropped));
-        }
-        if wkc != 1 {
-            self.state = InitilizerState::Error(InitError::Common(CommonError::UnexpectedWKC(wkc)));
-        }
+    ) {
+        let data = if let Some(ref recv_data) = recv_data {
+            let ReceivedData { command, data, wkc } = recv_data;
+            if *command != self.command {
+                self.state = InitilizerState::Error(InitError::Common(CommonError::BadPacket));
+            }
+            if *wkc != 1 {
+                self.state =
+                    InitilizerState::Error(InitError::Common(CommonError::UnexpectedWKC(*wkc)));
+            }
+            data
+        } else {
+            self.state = InitilizerState::Error(InitError::Common(CommonError::LostCommand));
+            return;
+        };
 
         match self.state {
             InitilizerState::Error(_) => {}
@@ -496,12 +456,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::RequestInitState => {
                 let al_transfer = self.inner.al_state_transfer().unwrap();
-                al_transfer.recieve_and_process(command, data, wkc, desc, sys_time);
+                al_transfer.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitInitState;
             }
             InitilizerState::WaitInitState => {
                 let al_transfer = self.inner.al_state_transfer().unwrap();
-                al_transfer.recieve_and_process(command, data, wkc, desc, sys_time);
+                al_transfer.recieve_and_process(recv_data, desc, sys_time);
                 match al_transfer.wait() {
                     Ok(AlState::Init) => {
                         self.slave_info.as_mut().unwrap().al_state = AlState::Init;
@@ -556,22 +516,30 @@ impl Cyclic for SlaveInitilizer {
                 //}
                 slave.info.number_of_fmmu = number_of_fmmu;
                 slave.info.number_of_sm = dl_info.number_of_supported_sm_channels();
-                self.state = InitilizerState::ClearFMMU0;
+                self.state = InitilizerState::ClearFMMU(0);
             }
-            InitilizerState::ClearFMMU0 => self.state = InitilizerState::ClearFMMU1,
-            InitilizerState::ClearFMMU1 => self.state = InitilizerState::ClearSM0,
-            InitilizerState::ClearSM0 => self.state = InitilizerState::ClearSM1,
-            InitilizerState::ClearSM1 => self.state = InitilizerState::ClearSM2,
-            InitilizerState::ClearSM2 => self.state = InitilizerState::ClearSM3,
-            InitilizerState::ClearSM3 => self.state = InitilizerState::GetVenderID,
+            InitilizerState::ClearFMMU(count) => {
+                if count < 1 {
+                    self.state = InitilizerState::ClearFMMU(count + 1);
+                } else {
+                    self.state = InitilizerState::ClearSM(0);
+                }
+            }
+            InitilizerState::ClearSM(count) => {
+                if count < 4 {
+                    self.state = InitilizerState::ClearFMMU(count + 1);
+                } else {
+                    self.state = InitilizerState::GetVenderID;
+                }
+            }
             InitilizerState::GetVenderID => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitVenderID;
             }
             InitilizerState::WaitVenderID => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         self.slave_info.as_mut().unwrap().info.id.vender_id =
@@ -586,12 +554,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetProductCode => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitProductCode;
             }
             InitilizerState::WaitProductCode => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         self.slave_info.as_mut().unwrap().info.id.product_code =
@@ -606,12 +574,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetRevision => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitRevision;
             }
             InitilizerState::WaitRevision => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         self.slave_info.as_mut().unwrap().info.id.revision_number =
@@ -626,12 +594,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetProtocol => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitProtocol;
             }
             InitilizerState::WaitProtocol => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         self.slave_info.as_mut().unwrap().info.support_coe = data.0[0].get_bit(2);
@@ -645,12 +613,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetRxMailboxSize => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitRxMailboxSize;
             }
             InitilizerState::WaitRxMailboxSize => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
@@ -677,12 +645,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetRxMailboxOffset => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitRxMailboxOffset;
             }
             InitilizerState::WaitRxMailboxOffset => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         match self.slave_info.as_mut().unwrap().info.sm0 {
@@ -702,12 +670,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetTxMailboxSize => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitTxMailboxSize;
             }
             InitilizerState::WaitTxMailboxSize => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
@@ -732,12 +700,12 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::GetTxMailboxOffset => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 self.state = InitilizerState::WaitTxMailboxOffset;
             }
             InitilizerState::WaitTxMailboxOffset => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(command, data, wkc, desc, sys_time);
+                sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
                     Ok((data, _size)) => {
                         match self.slave_info.as_mut().unwrap().info.sm1 {
@@ -750,7 +718,7 @@ impl Cyclic for SlaveInitilizer {
                             &mut self.slave_info.as_mut().unwrap().info,
                         );
 
-                        self.state = InitilizerState::SetSM0
+                        self.state = InitilizerState::SetSM0Control
                     }
                     Err(nb::Error::WouldBlock) => {}
                     Err(nb::Error::Other(err)) => {
@@ -758,8 +726,10 @@ impl Cyclic for SlaveInitilizer {
                     }
                 }
             }
-            InitilizerState::SetSM0 => self.state = InitilizerState::SetSM1,
-            InitilizerState::SetSM1 => self.state = InitilizerState::SetStationAddress,
+            InitilizerState::SetSM0Control => self.state = InitilizerState::SetSM0Activation,
+            InitilizerState::SetSM0Activation => self.state = InitilizerState::SetSM1Control,
+            InitilizerState::SetSM1Control => self.state = InitilizerState::SetSM1Activation,
+            InitilizerState::SetSM1Activation => self.state = InitilizerState::SetStationAddress,
             InitilizerState::SetStationAddress => self.state = InitilizerState::ClearDCActivation,
             InitilizerState::ClearDCActivation => {
                 self.state = InitilizerState::ClearCyclicOperationStartTime
@@ -786,12 +756,6 @@ impl Cyclic for SlaveInitilizer {
             }
             InitilizerState::ClearLatch1NegativeEdgeValue => self.state = InitilizerState::Complete,
         }
-
-        if let InitilizerState::Error(_) = self.state {
-            false
-        } else {
-            true
-        }
     }
 }
 
@@ -805,7 +769,10 @@ const fn buffer_size() -> usize {
     size = const_max(size, DLStatus::SIZE);
     size = const_max(size, DLInformation::SIZE);
     size = const_max(size, FMMURegister::SIZE);
-    size = const_max(size, SyncManagerRegister::SIZE);
+    size = const_max(
+        size,
+        SyncManagerControl::SIZE + SyncManagerStatus::SIZE + SyncManagerActivation::SIZE,
+    );
     size = const_max(size, FixedStationAddress::SIZE);
     size = const_max(size, DCActivation::SIZE);
     size = const_max(size, CyclicOperationStartTime::SIZE);

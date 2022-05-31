@@ -10,6 +10,7 @@ pub const WKC_LENGTH: usize = 2;
 pub const ETHERCAT_TYPE: u16 = 0x88A4;
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct EthernetHeader(MSB0 [u8]);
     u64;
     pub destination, set_destination: 47, 0;
@@ -46,6 +47,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> EthernetHeader<T> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct EtherCATHeader([u8]);
     u16;
     pub length, set_length: 10, 0;
@@ -73,6 +75,7 @@ impl<T: AsRef<[u8]>> EtherCATHeader<T> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct EtherCATPDU([u8]);
     u8;
     pub command_type, set_command_type: 7, 0;
@@ -120,6 +123,7 @@ impl<T: AsRef<[u8]>> EtherCATPDU<T> {
 }
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct MailboxPDU([u8]);
     u16;
     pub length, set_length: 15, 0;
@@ -159,6 +163,7 @@ pub enum MailboxType {
 pub const MAILBOX_ERROR_LENGTH: usize = 4;
 
 bitfield! {
+    #[derive(Debug, Clone)]
     pub struct MailboxError([u8]);
     u16;
     pub service_type, _: 15, 0;
@@ -181,45 +186,6 @@ impl<T: AsRef<[u8]>> MailboxError<T> {
 
     pub fn is_buffer_range_ok(&self) -> bool {
         self.0.as_ref().get(MAILBOX_ERROR_LENGTH - 1).is_some()
-    }
-}
-
-pub const FMMU_LENGTH: usize = 16;
-
-bitfield! {
-    pub struct FMMU([u8]);
-    u32;
-    pub logical_start_address, set_logical_start_address: 31, 0;
-    u16;
-    pub length, set_length: 47, 32;
-    u8;
-    pub logical_start_bit, set_logical_start_bit: 50, 48;
-    pub logical_stop_bit, set_logical_stop_bit: 58, 56;
-    u16;
-    pub physical_start_address, set_physical_start_address: 79, 64;
-    u8;
-    pub physical_start_bit, set_physical_start_bit: 82, 80;
-    pub read_access, set_read_access: 88;
-    pub write_access, set_write_access: 89;
-    pub active, set_active: 96;
-}
-
-impl<T: AsRef<[u8]>> FMMU<T> {
-    pub fn new(buf: T) -> Option<Self> {
-        let packet = Self(buf);
-        if packet.is_buffer_range_ok() {
-            Some(packet)
-        } else {
-            None
-        }
-    }
-
-    //pub fn new_unchecked(buf: T) -> Self {
-    //    Self(buf)
-    //}
-
-    pub fn is_buffer_range_ok(&self) -> bool {
-        self.0.as_ref().get(FMMU_LENGTH - 1).is_some()
     }
 }
 

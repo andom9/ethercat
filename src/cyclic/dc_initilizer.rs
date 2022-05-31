@@ -19,7 +19,7 @@ pub enum DCState {
     CalculateDelay((usize, u16)),
     SetOffset(u16),
     SetDelay(u16),
-    ConpensateDrift(usize),
+    CompensateDrift(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl DCInitializer {
         for recv_port in desc.recieved_ports() {
             let slave_pos = recv_port.position;
             let port_number = recv_port.port;
-            let slave = desc.slave(slave_pos).unwrap();
+            let slave = desc.slave(SlaveAddress::SlavePosition(slave_pos)).unwrap();
             let mut dc = slave.dc_context.borrow_mut();
             if slave.info.support_dc && self.first_dc_slave.is_none() {
                 self.first_dc_slave = Some(slave_pos);
@@ -86,12 +86,14 @@ impl DCInitializer {
             last_recv_port = port_number;
         }
         if let Some(first_slave) = first_slave {
-            let first_slave = desc.slave(first_slave).unwrap();
+            let first_slave = desc
+                .slave(SlaveAddress::SlavePosition(first_slave))
+                .unwrap();
             let mut dc = first_slave.dc_context.borrow_mut();
             dc.parent_port = None;
         }
         for i in 0..desc.len() {
-            let slave = desc.slave(i as u16).unwrap();
+            let slave = desc.slave(SlaveAddress::SlavePosition(i as u16)).unwrap();
             if slave.info.support_dc {
                 self.dc_slave_count += 1;
             }
@@ -117,45 +119,45 @@ impl Cyclic for DCInitializer {
             }
             DCState::CalculateOffset((_, pos)) => {
                 let command =
-                    Command::new_read(SlaveAddress::SlaveNumber(*pos), DCSystemTime::ADDRESS);
+                    Command::new_read(SlaveAddress::SlavePosition(*pos), DCSystemTime::ADDRESS);
                 self.buffer.fill(0);
                 //self.time_buf = self.duration_from_2000_0_0.;
                 Some((command, &self.buffer[..DCSystemTime::SIZE]))
             }
             DCState::CalculateDelay((_, pos)) => {
                 let command =
-                    Command::new_read(SlaveAddress::SlaveNumber(*pos), DCRecieveTime::ADDRESS);
+                    Command::new_read(SlaveAddress::SlavePosition(*pos), DCRecieveTime::ADDRESS);
                 self.buffer.fill(0);
                 self.sys_time = sys_time;
                 Some((command, &self.buffer[..DCRecieveTime::SIZE]))
             }
             DCState::SetOffset(pos) => {
                 let command = Command::new_write(
-                    SlaveAddress::SlaveNumber(*pos),
+                    SlaveAddress::SlavePosition(*pos),
                     DCSystemTimeOffset::ADDRESS,
                 );
                 self.buffer.fill(0);
-                let slave = desc.slave(*pos).unwrap();
+                let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                 let dc = slave.dc_context.borrow();
                 DCSystemTimeOffset(&mut self.buffer).set_system_time_offset(dc.offset);
                 Some((command, &self.buffer[..DCSystemTimeOffset::SIZE]))
             }
             DCState::SetDelay(pos) => {
                 let command = Command::new_write(
-                    SlaveAddress::SlaveNumber(*pos),
+                    SlaveAddress::SlavePosition(*pos),
                     DCSystemTimeTransmissionDelay::ADDRESS,
                 );
                 self.buffer.fill(0);
-                let slave = desc.slave(*pos).unwrap();
+                let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                 let dc = slave.dc_context.borrow();
                 DCSystemTimeTransmissionDelay(&mut self.buffer)
                     .set_system_time_transmission_delay(dc.delay);
                 Some((command, &self.buffer[..DCSystemTimeTransmissionDelay::SIZE]))
             }
-            DCState::ConpensateDrift(_) => {
+            DCState::CompensateDrift(_) => {
                 let command = Command::new(
                     CommandType::ARMW,
-                    SlaveAddress::SlaveNumber(self.first_dc_slave.unwrap()).get_ado(),
+                    SlaveAddress::SlavePosition(self.first_dc_slave.unwrap()).get_ado(),
                     DCSystemTime::ADDRESS,
                 );
                 self.buffer.fill(0);
@@ -166,15 +168,20 @@ impl Cyclic for DCInitializer {
 
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
         _: EtherCATSystemTime,
-    ) -> bool {
-        if command != self.command {
-            self.state = DCState::Error(DCError::Common(CommonError::PacketDropped));
-        }
+    ) {
+        let (data, wkc) = if let Some(recv_data) = recv_data {
+            let ReceivedData { command, data, wkc } = recv_data;
+            if command != self.command {
+                self.state = DCState::Error(DCError::Common(CommonError::BadPacket));
+            }
+            (data, wkc)
+        } else {
+            self.state = DCState::Error(DCError::Common(CommonError::LostCommand));
+            return;
+        };
 
         match &self.state {
             DCState::Idle => {}
@@ -192,7 +199,7 @@ impl Cyclic for DCInitializer {
                     self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     let master_time = self.sys_time.0;
-                    let slave = desc.slave(*pos).unwrap();
+                    let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
                     let sys_time = DCSystemTime(data);
                     let offset = if master_time > sys_time.local_system_time() {
@@ -218,7 +225,7 @@ impl Cyclic for DCInitializer {
                     self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     let recv_time = DCRecieveTime(data);
-                    let slave = desc.slave(*pos).unwrap();
+                    let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
                     dc.recieved_port_time = [
                         recv_time.receive_time_port0(),
@@ -233,22 +240,24 @@ impl Cyclic for DCInitializer {
                             .iter()
                             .position(|is_active| *is_active)
                             .unwrap();
-                        let second_recieved_port = slave
+                        let last_recieved_port = slave
                             .linked_ports
                             .iter()
                             .enumerate()
-                            .position(|(i, is_active)| *is_active && first_recieved_port < i);
+                            .rev()
+                            .find(|(i, &is_active)| is_active && first_recieved_port < *i)
+                            .map(|(i, _)| i);
                         let inner_loop_duration =
-                            if let Some(second_recieved_port) = second_recieved_port {
+                            if let Some(last_recieved_port) = last_recieved_port {
                                 let first_recv_time = dc.recieved_port_time[first_recieved_port];
-                                let second_recv_time = dc.recieved_port_time[second_recieved_port];
-                                first_recv_time.abs_diff(second_recv_time)
+                                let last_recv_time = dc.recieved_port_time[last_recieved_port];
+                                first_recv_time.abs_diff(last_recv_time)
                             } else {
                                 0
                             };
 
                         let (parent_pos, parent_port) = dc.parent_port.unwrap();
-                        let parent = desc.slave(parent_pos).unwrap();
+                        let parent = desc.slave(SlaveAddress::SlavePosition(parent_pos)).unwrap();
                         let parent_dc = parent.dc_context.borrow();
                         let parent_next_port = parent
                             .linked_ports
@@ -321,27 +330,21 @@ impl Cyclic for DCInitializer {
                     if let Some(next_pos) = next_pos {
                         self.state = DCState::SetDelay(next_pos as u16);
                     } else {
-                        self.state = DCState::ConpensateDrift(0);
+                        self.state = DCState::CompensateDrift(0);
                     }
                 }
             }
-            DCState::ConpensateDrift(count) => {
+            DCState::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
                     self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     if count + 1 < DRIFT_COUNT_MAX {
-                        self.state = DCState::ConpensateDrift(count + 1);
+                        self.state = DCState::CompensateDrift(count + 1);
                     } else {
                         self.state = DCState::Complete;
                     }
                 }
             }
-        }
-
-        if let DCState::Error(_) = self.state {
-            false
-        } else {
-            true
         }
     }
 }

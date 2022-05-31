@@ -330,9 +330,9 @@ bitfield! {
 }
 
 impl FMMURegister<[u8; 16]> {
-    pub const ADDRESS0: u16 = 0x0600;
-    pub const ADDRESS1: u16 = 0x0610;
-    pub const ADDRESS2: u16 = 0x0620;
+    pub const ADDRESS: u16 = 0x0600;
+    //pub const ADDRESS1: u16 = 0x0610;
+    //pub const ADDRESS2: u16 = 0x0620;
     pub const SIZE: usize = 16;
 
     pub fn new() -> Self {
@@ -342,31 +342,82 @@ impl FMMURegister<[u8; 16]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SyncManagerRegister([u8]);
+    pub struct SyncManagerControl([u8]);
     pub u16, physical_start_address, set_physical_start_address: 8*2-1, 8*0;
     pub u16, length, set_length: 8*4-1, 8*2;
     pub u8, buffer_type, set_buffer_type: 8*4+1, 8*4;
     pub u8, direction, set_direction: 8*4+3, 8*4+2;
     pub dls_user_event_enable, set_dls_user_event_enable: 8*4+5;
-    pub watchdog_enable, set_watchdog_enable: 8*4+6;
-    pub write_event, _: 8*5;
-    pub read_event, _: 8*5+1;
-    pub mailbox_state, _: 8*5+3;
-    pub u8, bufferd_state, _: 8*5+5, 8*5+4;
-    pub channel_enable, set_channel_enable: 8*6;
-    pub repeat, set_repeat: 8*6+1;
-    pub dc_event_w_bus_w, set_dc_event_w_bus_w: 8*6+6;
-    pub dc_event_w_loc_w, set_dc_event_w_loc_w: 8*6+7;
-    pub channel_enable_pdi, _: 8*7;
-    pub repeat_ack, _: 8*7+1;
+    //pub watchdog_enable, set_watchdog_enable: 8*4+6;
 }
 
-impl SyncManagerRegister<[u8; 8]> {
-    pub const ADDRESS0: u16 = 0x0800;
-    pub const ADDRESS1: u16 = 0x0808;
-    pub const ADDRESS2: u16 = 0x0810;
-    pub const ADDRESS3: u16 = 0x0818;
-    pub const SIZE: usize = 8;
+impl SyncManagerControl<[u8; 5]> {
+    pub const ADDRESS: u16 = 0x0800;
+    //pub const ADDRESS1: u16 = 0x0808;
+    //pub const ADDRESS2: u16 = 0x0810;
+    //pub const ADDRESS3: u16 = 0x0818;
+    pub const SIZE: usize = 5;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct SyncManagerStatus([u8]);
+    pub write_event, _: 8*0;
+    pub read_event, _: 8*0+1;
+    pub is_mailbox_full, _: 8*0+3;
+    pub u8, bufferd_state, _: 8*0+5, 8*0+4;
+}
+
+impl SyncManagerStatus<[u8; 1]> {
+    pub const ADDRESS: u16 = 0x0805;
+    //pub const ADDRESS1: u16 = 0x0805+0x08;
+    //pub const ADDRESS2: u16 = 0x0805+0x08*2;
+    //pub const ADDRESS3: u16 = 0x0805+0x08*3;
+    pub const SIZE: usize = 1;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct SyncManagerActivation([u8]);
+    pub channel_enable, set_channel_enable: 0;
+    pub repeat, set_repeat: 1;
+    //pub dc_event_w_bus_w, set_dc_event_w_bus_w: 6;
+    //pub dc_event_w_loc_w, set_dc_event_w_loc_w: 7;
+}
+
+impl SyncManagerActivation<[u8; 1]> {
+    pub const ADDRESS: u16 = 0x0806;
+    //pub const ADDRESS1: u16 = 0x0806+0x08;
+    //pub const ADDRESS2: u16 = 0x0806+0x08*2;
+    //pub const ADDRESS3: u16 = 0x0806+0x08*3;
+    pub const SIZE: usize = 1;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct SyncManagerPDIControl([u8]);
+    pub channel_enable_pdi, _: 0;
+    pub repeat_ack, _: 1;
+}
+
+impl SyncManagerPDIControl<[u8; 1]> {
+    pub const ADDRESS: u16 = 0x0807;
+    //pub const ADDRESS1: u16 = 0x0807+0x08;
+    //pub const ADDRESS2: u16 = 0x0807+0x08*2;
+    //pub const ADDRESS3: u16 = 0x0807+0x08*3;
+    pub const SIZE: usize = 1;
 
     pub fn new() -> Self {
         Self([0; Self::SIZE])

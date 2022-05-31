@@ -3,9 +3,10 @@ pub enum CommonError {
     DeviceErrorTx,
     DeviceErrorRx,
     BufferExhausted,
-    PacketDropped,
-    UnspcifiedTimerError,
-    ReceiveTimeout,
+    BadPacket,
+    //UnspcifiedTimerError,
+    //ReceiveTimeout,
+    LostCommand,
     UnexpectedWKC(u16),
 }
 

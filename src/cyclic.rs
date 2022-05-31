@@ -1,8 +1,11 @@
 pub mod al_state_transfer;
 pub mod dc_initilizer;
+pub mod mailbox_reader;
+pub mod mailbox_writer;
 pub mod network_initilizer;
 pub mod sii_reader;
 pub mod slave_initializer;
+pub mod sdo;
 
 use crate::arch::*;
 use crate::error::*;
@@ -26,12 +29,17 @@ pub trait Cyclic {
     ) -> Option<(Command, &[u8])>;
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
         sys_time: EtherCATSystemTime,
-    ) -> bool;
+    );
+}
+
+#[derive(Debug, Clone)]
+pub struct ReceivedData<'a> {
+    pub command: Command,
+    pub data: &'a [u8],
+    pub wkc: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +53,7 @@ where
     C: Cyclic,
 {
     iface: &'a mut EtherCATInterface<'a, D, T>,
-    units: Vec<C, U>,
+    units: Vec<(C, bool), U>,
 }
 
 impl<'a, D, T, C, const U: usize> CyclicProcess<'a, D, T, C, U>
@@ -63,11 +71,14 @@ where
 
     pub fn add_unit(&mut self, unit: C) -> Result<UnitHandle, C> {
         let len = self.units.len() as u8;
-        self.units.push(unit).map(|_| UnitHandle(len))
+        self.units
+            .push((unit, false))
+            .map(|_| UnitHandle(len))
+            .map_err(|(c, _)| c)
     }
 
     pub fn unit_mut(&mut self, handle: UnitHandle) -> Option<&mut C> {
-        self.units.get_mut(handle.0 as usize)
+        self.units.get_mut(handle.0 as usize).map(|(c, _)| c)
     }
 
     pub fn poll<I: Into<MicrosDurationU32> + Clone>(
@@ -92,7 +103,7 @@ where
         sys_time: EtherCATSystemTime,
     ) -> Result<bool, CommonError> {
         let mut complete = true;
-        for (i, unit) in self.units.iter_mut().enumerate() {
+        for (i, (unit, sent)) in self.units.iter_mut().enumerate() {
             if let Some((command, data)) = unit.next_command(desc, sys_time) {
                 let len = data.len();
                 if self.iface.remaing_capacity() < len {
@@ -104,6 +115,7 @@ where
                         *b = *d;
                     }
                 })?;
+                *sent = true;
             }
         }
         Ok(complete)
@@ -117,13 +129,38 @@ where
     ) -> Result<(), CommonError> {
         self.iface.poll(timeout)?;
         let pdus = self.iface.consume_command();
+        let mut last_index = 0;
         for pdu in pdus {
             let index = pdu.index() as usize;
-            if let Some(unit) = self.units.get_mut(index) {
+            for j in last_index..index {
+                if let Some((unit, sent)) = self.units.get_mut(j) {
+                    if *sent {
+                        unit.recieve_and_process(None, desc, sys_time);
+                        *sent = false;
+                    }
+                }
+            }
+            if let Some((unit, sent)) = self.units.get_mut(index) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
                     Command::new(CommandType::new(pdu.command_type()), pdu.adp(), pdu.ado());
-                unit.recieve_and_process(command, pdu.data(), wkc, desc, sys_time);
+                let recv_data = ReceivedData {
+                    command,
+                    data: pdu.data(),
+                    wkc,
+                };
+                assert!(*sent);
+                unit.recieve_and_process(Some(recv_data), desc, sys_time);
+                *sent = false;
+            }
+            last_index = index + 1;
+        }
+        for j in last_index..self.units.len() {
+            if let Some((unit, sent)) = self.units.get_mut(j) {
+                if *sent {
+                    unit.recieve_and_process(None, desc, sys_time);
+                    *sent = false;
+                }
             }
         }
         Ok(())

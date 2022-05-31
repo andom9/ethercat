@@ -1,19 +1,13 @@
+use crate::cyclic::slave_initializer::*;
 use crate::cyclic::Cyclic;
-use crate::cyclic::{al_state_transfer::*, sii_reader::*, slave_initializer::*};
 use crate::error::*;
 use crate::interface::*;
 use crate::network::*;
 use crate::packet::ethercat::CommandType;
-use crate::register::{application::*, datalink::*};
-use crate::slave::*;
-use crate::util::*;
-use bit_field::BitField;
-use embedded_hal::timer::*;
-use fugit::*;
-use heapless::Vec;
 use nb;
 
 use super::EtherCATSystemTime;
+use super::ReceivedData;
 
 #[derive(Debug, Clone)]
 pub enum NetworkInitError {
@@ -65,32 +59,11 @@ impl NetworkInitilizer {
     }
 
     pub fn start(&mut self) {
-        //if let Some(initilizer) = core::mem::take(&mut self.initilizer) {
-        //    self.timer = Some(initilizer.take_timer());
-        //}
         self.buffer.fill(0);
         self.command = Command::default();
 
         self.state = NetworkInitilizerState::CountSlaves;
     }
-
-    //pub fn reset(&mut self){
-    //    if let Some(initilizer) = core::mem::take(&mut self.initilizer){
-    //        self.timer = Some(initilizer.take_timer());
-    //    }
-    //    self.state = NetworkInitilizerState::Idle;
-    //    self.buffer.fill(0);
-    //    self.command = Command::default();
-    //    self.network = None;
-    //}
-
-    //pub fn error(&self) -> Option<NetworkInitError> {
-    //    if let NetworkInitilizerState::Error(err) = &self.state {
-    //        Some(err.clone())
-    //    } else {
-    //        None
-    //    }
-    //}
 
     pub fn wait(&mut self) -> nb::Result<(), NetworkInitError> {
         if let NetworkInitilizerState::Error(err) = &self.state {
@@ -98,7 +71,6 @@ impl NetworkInitilizer {
         } else {
             if let NetworkInitilizerState::Complete = self.state {
                 Ok(())
-                //Ok(core::mem::take(&mut self.network))
             } else {
                 Err(nb::Error::WouldBlock)
             }
@@ -121,9 +93,6 @@ impl Cyclic for NetworkInitilizer {
                 Some((command, &self.buffer[..1]))
             }
             NetworkInitilizerState::StartInitSlaves(count) => {
-                //let timer = core::mem::take(&mut self.timer).unwrap();
-                //self.initilizer = Some(SlaveInitilizer::new(timer));
-                //let initilizer = self.initilizer.as_mut().unwrap();
                 self.initilizer.start(*count);
                 self.initilizer.next_command(desc, sys_time)
             }
@@ -140,16 +109,22 @@ impl Cyclic for NetworkInitilizer {
 
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
         sys_time: EtherCATSystemTime,
-    ) -> bool {
-        if command != self.command {
+    ) {
+        let wkc = if let Some(ref recv_data) = recv_data {
+            let ReceivedData { command, wkc, .. } = recv_data;
+            if *command != self.command {
+                self.state =
+                    NetworkInitilizerState::Error(NetworkInitError::Common(CommonError::BadPacket));
+            }
+            *wkc
+        } else {
             self.state =
-                NetworkInitilizerState::Error(NetworkInitError::Common(CommonError::PacketDropped));
-        }
+                NetworkInitilizerState::Error(NetworkInitError::Common(CommonError::LostCommand));
+            return;
+        };
 
         match &mut self.state {
             NetworkInitilizerState::Idle => {}
@@ -157,7 +132,7 @@ impl Cyclic for NetworkInitilizer {
             NetworkInitilizerState::CountSlaves => {
                 self.num_slaves = wkc;
                 desc.clear();
-                if wkc <= 0 {
+                if wkc == 0 {
                     self.state = NetworkInitilizerState::Complete;
                 } else {
                     self.state = NetworkInitilizerState::StartInitSlaves(0);
@@ -165,17 +140,14 @@ impl Cyclic for NetworkInitilizer {
             }
             NetworkInitilizerState::StartInitSlaves(count) => {
                 self.initilizer
-                    .recieve_and_process(command, data, wkc, desc, sys_time);
+                    .recieve_and_process(recv_data, desc, sys_time);
                 self.state = NetworkInitilizerState::WaitInitSlaves(*count);
             }
             NetworkInitilizerState::WaitInitSlaves(count) => {
                 self.initilizer
-                    .recieve_and_process(command, data, wkc, desc, sys_time);
+                    .recieve_and_process(recv_data, desc, sys_time);
                 match self.initilizer.wait() {
                     Ok(Some(slave)) => {
-                        //if let Some(existed_slave) = desc.slave_mut(*count){
-                        //    *existed_slave = slave;
-                        //}else{
                         if desc.push_slave(slave).is_err() {
                             self.state =
                                 NetworkInitilizerState::Error(NetworkInitError::TooManySlaves);
@@ -186,7 +158,6 @@ impl Cyclic for NetworkInitilizer {
                                 self.state = NetworkInitilizerState::Complete;
                             }
                         }
-                        //}
                     }
                     Ok(None) => unreachable!(),
                     Err(nb::Error::WouldBlock) => {}
@@ -196,12 +167,6 @@ impl Cyclic for NetworkInitilizer {
                 }
             }
             NetworkInitilizerState::Complete => {}
-        }
-
-        if let NetworkInitilizerState::Error(_) = self.state {
-            false
-        } else {
-            true
         }
     }
 }

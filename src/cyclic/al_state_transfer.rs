@@ -1,3 +1,5 @@
+use super::EtherCATSystemTime;
+use super::ReceivedData;
 use crate::cyclic::Cyclic;
 use crate::error::*;
 use crate::interface::*;
@@ -6,12 +8,7 @@ use crate::register::application::*;
 use crate::slave::*;
 use crate::util::*;
 use crate::*;
-use embedded_hal::timer::CountDown;
-use fugit::*;
 use nb;
-
-use super::EtherCATSystemTime;
-//const TIMEOUT_MS: u32 = 200;
 
 #[derive(Debug, Clone)]
 pub enum AlStateTransitionError {
@@ -39,7 +36,6 @@ enum TransferState {
 
 #[derive(Debug)]
 pub struct ALStateTransfer {
-    //timer: &'a mut T,
     timer_start: EtherCATSystemTime,
     state: TransferState,
     slave_address: SlaveAddress,
@@ -55,7 +51,7 @@ impl ALStateTransfer {
         Self {
             timer_start: EtherCATSystemTime(0),
             state: TransferState::Idle,
-            slave_address: SlaveAddress::SlaveNumber(0),
+            slave_address: SlaveAddress::SlavePosition(0),
             target_al: None,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -79,51 +75,6 @@ impl ALStateTransfer {
             _ => Err(nb::Error::WouldBlock),
         }
     }
-
-    //fn start(&mut self, slave_address: SlaveAddress, target_al_state: AlState) -> bool {
-    //    match self.state {
-    //        TransferState::Idle | TransferState::Complete | TransferState::Error(_) => {
-    //            self.reset();
-    //            self.target_al = target_al_state;
-    //            self.slave_address = slave_address;
-    //            self.state = TransferState::Read;
-    //            true
-    //        }
-    //        _ => false,
-    //    }
-    //}
-
-    //pub fn reset(&mut self) {
-    //    self.state = TransferState::Read;
-    //    self.command = Command::default();
-    //    self.buffer.fill(0);
-    //    self.current_al_state = None;
-    //    self.timeout_ms = 0;
-    //}
-
-    //fn error(&self) -> Option<AlStateTransitionError> {
-    //    if let TransferState::Error(err) = &self.state {
-    //        Some(err.clone())
-    //    } else {
-    //        None
-    //    }
-    //}
-
-    //fn wait_al_state(&self) -> Result<Option<AlState>, AlStateTransitionError> {
-    //    if let TransferState::Error(err) = &self.state {
-    //        Err(err.clone())
-    //    } else {
-    //        if let TransferState::Complete = &self.state {
-    //            Ok(Some(self.current_al_state.unwrap()))
-    //        } else {
-    //            Ok(None)
-    //        }
-    //    }
-    //}
-
-    //pub(crate) fn take_timer(self) -> &'a mut T {
-    //    self.timer
-    //}
 }
 
 impl Cyclic for ALStateTransfer {
@@ -169,25 +120,32 @@ impl Cyclic for ALStateTransfer {
 
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         _: &mut NetworkDescription,
         sys_time: EtherCATSystemTime,
-    ) -> bool {
-        if command != self.command {
+    ) {
+        let data = if let Some(recv_data) = recv_data {
+            let ReceivedData { command, data, wkc } = recv_data;
+            if command != self.command {
+                self.state =
+                    TransferState::Error(AlStateTransitionError::Common(CommonError::BadPacket));
+            }
+            if wkc != 1 {
+                self.state = TransferState::Error(AlStateTransitionError::Common(
+                    CommonError::UnexpectedWKC(wkc),
+                ));
+            }
+            data
+        } else {
             self.state =
-                TransferState::Error(AlStateTransitionError::Common(CommonError::PacketDropped));
-        }
-        if wkc != 1 {
-            self.state = TransferState::Error(AlStateTransitionError::Common(
-                CommonError::UnexpectedWKC(wkc),
-            ));
-        }
+                TransferState::Error(AlStateTransitionError::Common(CommonError::LostCommand));
+            return;
+        };
 
         match self.state {
             TransferState::Idle => {}
             TransferState::Error(_) => {}
+            TransferState::Complete => {}
             TransferState::Read => {
                 let al_status = ALStatus(data);
                 let al_state = AlState::from(al_status.state());
@@ -205,10 +163,6 @@ impl Cyclic for ALStateTransfer {
                 }
             }
             TransferState::Request => {
-                //self.timer
-                //.as_mut()
-                //.unwrap()
-                //    .start(MicrosDurationU32::from_ticks(self.timeout_ms * 1000));
                 self.timer_start = sys_time;
                 self.state = TransferState::Poll;
             }
@@ -230,13 +184,6 @@ impl Cyclic for ALStateTransfer {
                     }
                 }
             }
-            TransferState::Complete => {}
-        }
-
-        if let TransferState::Error(_) = self.state {
-            false
-        } else {
-            true
         }
     }
 }

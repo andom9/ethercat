@@ -4,10 +4,9 @@ use crate::interface::*;
 use crate::network::*;
 use crate::register::datalink::*;
 use crate::util::*;
-use embedded_hal::timer::CountDown;
-use fugit::MicrosDurationU32;
 
 use super::EtherCATSystemTime;
+use super::ReceivedData;
 
 const TIMEOUT_MS: u32 = 100;
 
@@ -66,7 +65,7 @@ impl SIIReader {
         Self {
             timer_start: EtherCATSystemTime(0),
             state: SIIState::Idle,
-            slave_address: SlaveAddress::SlaveNumber(0),
+            slave_address: SlaveAddress::SlavePosition(0),
             sii_address: 0,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -89,54 +88,6 @@ impl SIIReader {
             _ => Err(nb::Error::WouldBlock),
         }
     }
-
-    //pub fn start(&mut self, slave_address: SlaveAddress, sii_address: u16) -> bool {
-    //    match self.state {
-    //        SIIState::Idle | SIIState::Complete | SIIState::Error(_) => {
-    //            self.reset();
-    //            self.slave_address = slave_address;
-    //            self.sii_address = sii_address;
-    //            self.state = SIIState::Init;
-    //            true
-    //        }
-    //        _ => false,
-    //    }
-    //}
-
-    //pub fn reset(&mut self) {
-    //    self.state = SIIState::Init;
-    //    //self.slave_address = SlaveAddress::default();
-    //    //self.sii_address = 0;
-    //    self.command = Command::default();
-    //    self.buffer.fill(0);
-    //    self.read_size = 0;
-    //}
-
-    //pub fn error(&self) -> Option<SIIError> {
-    //    if let SIIState::Error(err) = &self.state {
-    //        Some(err.clone())
-    //    } else {
-    //        None
-    //    }
-    //}
-
-    //pub fn wait_read_data(
-    //    &self,
-    //) -> Result<Option<(SIIData<[u8; SIIData::SIZE]>, usize)>, SIIError> {
-    //    if let SIIState::Error(err) = &self.state {
-    //        Err(err.clone())
-    //    } else {
-    //        if let SIIState::Complete = self.state {
-    //            Ok(Some((SIIData(self.buffer.clone()), self.read_size)))
-    //        } else {
-    //            Ok(None)
-    //        }
-    //    }
-    //}
-
-    //pub(crate) fn take_timer(self) -> &'a mut T {
-    //    self.timer
-    //}
 }
 
 impl Cyclic for SIIReader {
@@ -204,18 +155,23 @@ impl Cyclic for SIIReader {
 
     fn recieve_and_process(
         &mut self,
-        command: Command,
-        data: &[u8],
-        wkc: u16,
+        recv_data: Option<ReceivedData>,
         _: &mut NetworkDescription,
         sys_time: EtherCATSystemTime,
-    ) -> bool {
-        if command != self.command {
-            self.state = SIIState::Error(SIIError::Common(CommonError::PacketDropped));
-        }
-        if wkc != 1 {
-            self.state = SIIState::Error(SIIError::Common(CommonError::UnexpectedWKC(wkc)));
-        }
+    ) {
+        let data = if let Some(recv_data) = recv_data {
+            let ReceivedData { command, data, wkc } = recv_data;
+            if command != self.command {
+                self.state = SIIState::Error(SIIError::Common(CommonError::BadPacket));
+            }
+            if wkc != 1 {
+                self.state = SIIState::Error(SIIError::Common(CommonError::UnexpectedWKC(wkc)));
+            }
+            data
+        } else {
+            self.state = SIIState::Error(SIIError::Common(CommonError::LostCommand));
+            return;
+        };
 
         match self.state {
             SIIState::Idle => {}
@@ -284,12 +240,6 @@ impl Cyclic for SIIReader {
                 self.state = SIIState::Complete;
             }
             SIIState::Complete => {}
-        }
-
-        if let SIIState::Error(_) = self.state {
-            false
-        } else {
-            true
         }
     }
 }

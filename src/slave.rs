@@ -29,13 +29,13 @@ pub struct SlaveID {
 
 #[derive(Debug, Default)]
 pub struct Slave {
+    pub configured_address: u16,
     pub info: SlaveInfo,
     pub error: Option<SlaveError>,
     pub al_state: AlState,
-    pub mailbox_count: u8,
+    //pub mailbox_count: u8,
     pub rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
     pub tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
-
     pub linked_ports: [bool; 4],
 
     // for DC init
@@ -55,7 +55,6 @@ pub struct DCContext {
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
     pub id: SlaveID,
-    //pub(crate) configured_address: u16,
     pub ports: [Option<PortPhysics>; 4],
     pub ram_size_kb: u8,
 
@@ -77,6 +76,35 @@ pub struct SlaveInfo {
     pub support_rw: bool,
 
     pub support_coe: bool,
+}
+
+impl SlaveInfo {
+    pub(crate) fn mailbox_rx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
+        if let Some(SyncManager::MailboxRx(sm)) = self.sm0 {
+            Some((0, sm))
+        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm1 {
+            Some((1, sm))
+        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm2 {
+            Some((2, sm))
+        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm3 {
+            Some((3, sm))
+        } else {
+            None
+        }
+    }
+    pub(crate) fn mailbox_tx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
+        if let Some(SyncManager::MailboxTx(sm)) = self.sm0 {
+            Some((0, sm))
+        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm1 {
+            Some((1, sm))
+        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm2 {
+            Some((2, sm))
+        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm3 {
+            Some((3, sm))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
@@ -123,7 +151,7 @@ pub enum SyncManager {
     ProcessDataTx,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MailboxSyncManager {
     pub size: u16,
     pub start_address: u16,
