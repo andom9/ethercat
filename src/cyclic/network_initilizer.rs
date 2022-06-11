@@ -69,12 +69,10 @@ impl NetworkInitilizer {
     pub fn wait(&mut self) -> nb::Result<(), Error> {
         if let State::Error(err) = &self.state {
             Err(nb::Error::Other(err.clone()))
+        } else if let State::Complete = self.state {
+            Ok(())
         } else {
-            if let State::Complete = self.state {
-                Ok(())
-            } else {
-                Err(nb::Error::WouldBlock)
-            }
+            Err(nb::Error::WouldBlock)
         }
     }
 }
@@ -147,12 +145,10 @@ impl Cyclic for NetworkInitilizer {
                     Ok(Some(slave)) => {
                         if desc.push_slave(slave).is_err() {
                             self.state = State::Error(Error::TooManySlaves);
+                        } else if *count + 1 < self.num_slaves {
+                            self.state = State::StartInitSlaves(*count + 1);
                         } else {
-                            if *count + 1 < self.num_slaves {
-                                self.state = State::StartInitSlaves(*count + 1);
-                            } else {
-                                self.state = State::Complete;
-                            }
+                            self.state = State::Complete;
                         }
                     }
                     Ok(None) => unreachable!(),

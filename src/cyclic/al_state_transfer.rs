@@ -192,12 +192,10 @@ impl Cyclic for AlStateTransfer {
                     self.state = State::Error(Error::InvalidAlState);
                 } else if al_status.change_err() {
                     self.state = State::ResetError(al_state);
-                } else {
-                    if self.timer_start.0 < sys_time.0
-                        && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
-                    {
-                        self.state = State::Error(Error::TimeoutMs(self.timeout_ms));
-                    }
+                } else if self.timer_start.0 < sys_time.0
+                    && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
+                {
+                    self.state = State::Error(Error::TimeoutMs(self.timeout_ms));
                 }
             }
         }

@@ -105,7 +105,7 @@ impl<'a> NetworkDescription<'a> {
 
     pub(crate) fn recieved_ports(&self) -> RecievedPorts {
         let Self { slaves, .. } = self;
-        RecievedPorts::new(&slaves)
+        RecievedPorts::new(slaves)
     }
 
     pub(crate) fn read_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
@@ -208,7 +208,7 @@ pub(crate) fn read_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
             for pdo_mapping in sm_out.iter_mut() {
                 for pdo in pdo_mapping.entries.iter_mut() {
                     let byte_length = pdo.byte_length as usize;
-                    pdo_buffer[offset..offset + byte_length].copy_from_slice(&pdo.data);
+                    pdo_buffer[offset..offset + byte_length].copy_from_slice(pdo.data);
                     offset += byte_length;
                 }
             }

@@ -198,12 +198,10 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                             .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
                         if !status.is_mailbox_full() {
                             self.state = State::Write;
+                        } else if self.wait_full {
+                            self.state = State::WaitMailboxEmpty;
                         } else {
-                            if self.wait_full {
-                                self.state = State::WaitMailboxEmpty;
-                            } else {
-                                self.state = State::Error(Error::MailboxFull);
-                            }
+                            self.state = State::Error(Error::MailboxFull);
                         }
                     }
                 }

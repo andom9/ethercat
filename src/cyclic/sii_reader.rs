@@ -83,7 +83,7 @@ impl SIIReader {
 
     pub fn wait(&mut self) -> nb::Result<(SIIData<[u8; SIIData::SIZE]>, usize), Error> {
         match &self.state {
-            State::Complete => Ok((SIIData(self.buffer.clone()), self.read_size)),
+            State::Complete => Ok((SIIData(self.buffer), self.read_size)),
             State::Error(err) => Err(nb::Error::Other(err.clone())),
             _ => Err(nb::Error::WouldBlock),
         }
@@ -225,12 +225,10 @@ impl Cyclic for SIIReader {
                     self.state = State::Error(Error::CommandError);
                 } else if !sii_control.busy() && !sii_control.read_operation() {
                     self.state = State::Read;
-                } else {
-                    if self.timer_start.0 < sys_time.0
-                        && TIMEOUT_MS as u64 * 1000 < sys_time.0 - self.timer_start.0
-                    {
-                        self.state = State::Error(Error::TimeoutMs(TIMEOUT_MS))
-                    }
+                } else if self.timer_start.0 < sys_time.0
+                    && TIMEOUT_MS as u64 * 1000 < sys_time.0 - self.timer_start.0
+                {
+                    self.state = State::Error(Error::TimeoutMs(TIMEOUT_MS))
                 }
             }
             State::Read => {

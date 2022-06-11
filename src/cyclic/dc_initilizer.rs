@@ -301,16 +301,12 @@ impl Cyclic for DcInitializer {
                     }
                     if desc.len() <= (pos + 1) as usize {
                         self.state = State::CalculateDelay((*count, pos + 1));
+                    } else if *count < OFFSET_COUNT_MAX {
+                        self.state = State::RequestToLatch(*count);
+                    } else if let Some(first_dc_slave) = self.first_dc_slave {
+                        self.state = State::SetOffset(first_dc_slave);
                     } else {
-                        if *count < OFFSET_COUNT_MAX {
-                            self.state = State::RequestToLatch(*count);
-                        } else {
-                            if let Some(first_dc_slave) = self.first_dc_slave {
-                                self.state = State::SetOffset(first_dc_slave);
-                            } else {
-                                self.state = State::Complete;
-                            }
-                        }
+                        self.state = State::Complete;
                     }
                 }
             }
@@ -351,12 +347,10 @@ impl Cyclic for DcInitializer {
             State::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
                     self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                } else if count + 1 < DRIFT_COUNT_MAX {
+                    self.state = State::CompensateDrift(count + 1);
                 } else {
-                    if count + 1 < DRIFT_COUNT_MAX {
-                        self.state = State::CompensateDrift(count + 1);
-                    } else {
-                        self.state = State::Complete;
-                    }
+                    self.state = State::Complete;
                 }
             }
         }

@@ -178,7 +178,7 @@ where
                 }
             }
 
-            if let None = ethdev.send(
+            if ethdev.send(
                 EthernetHeader::SIZE + EtherCatHeader::SIZE + send_size,
                 |tx_buffer| {
                     let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
@@ -202,7 +202,7 @@ where
                     *should_recv_frames += 1;
                     Some(())
                 },
-            ) {
+            ).is_none() {
                 error!("Failed to consume TX token");
                 return false;
             }
@@ -220,7 +220,7 @@ where
         let mut data_size = 0;
         self.timer.start(timeout);
         while *should_recv_frames > 0 {
-            if let None = ethdev.recv(|frame| {
+            if ethdev.recv(|frame| {
                 info!("something receive");
                 let eth = EthernetHeader(&frame);
                 if eth.source() == SRC_MAC || eth.ether_type() != ETHERCat_TYPE {
@@ -229,17 +229,17 @@ where
                 let ec_frame = EtherCatFrame::new_unchecked(frame);
                 for pdu in ec_frame.iter_dlpdu() {
                     let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
-                    buffer[data_size..data_size + pdu_size].copy_from_slice(&pdu.0);
+                    buffer[data_size..data_size + pdu_size].copy_from_slice(pdu.0);
                     data_size += pdu_size;
                 }
                 *should_recv_frames -= 1;
                 Some(())
-            }) {
+            }).is_none() {
                 return RxRes::DeviceError;
             }
             match self.timer.wait() {
                 Ok(_) => return RxRes::Timeout,
-                Err(nb::Error::Other(void)) => unreachable!(),
+                Err(nb::Error::Other(_void)) => unreachable!(),
                 Err(nb::Error::WouldBlock) => (),
             }
         }

@@ -328,7 +328,7 @@ impl Cyclic for SlaveInitilizer {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS);
                 self.buffer.fill(0);
-                if let Some(SyncManager::MailboxRx(ref sm0_info)) =
+                if let Some(SyncManager::MailboxRx(ref _sm0_info)) =
                     self.slave_info.as_mut().unwrap().info.sm0
                 {
                     let mut sm = SyncManagerActivation(self.buffer);
@@ -360,7 +360,7 @@ impl Cyclic for SlaveInitilizer {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS + 0x08);
                 self.buffer.fill(0);
-                if let Some(SyncManager::MailboxTx(ref sm1_info)) =
+                if let Some(SyncManager::MailboxTx(ref _sm1_info)) =
                     self.slave_info.as_mut().unwrap().info.sm1
                 {
                     let mut sm = SyncManagerActivation(self.buffer);

@@ -1,6 +1,6 @@
 use crate::register::datalink::PortPhysics;
 use core::cell::RefCell;
-use heapless::Deque;
+
 
 #[derive(Debug, Clone)]
 pub enum SlaveError {

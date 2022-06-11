@@ -226,12 +226,10 @@ impl<'a> Cyclic for MailboxReader<'a> {
                             .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
                         if status.is_mailbox_full() {
                             self.state = State::Read;
+                        } else if self.wait_full {
+                            self.state = State::WaitMailboxFull;
                         } else {
-                            if self.wait_full {
-                                self.state = State::WaitMailboxFull;
-                            } else {
-                                self.state = State::Error(Error::MailboxEmpty);
-                            }
+                            self.state = State::Error(Error::MailboxEmpty);
                         }
                     }
                 }
@@ -279,13 +277,11 @@ impl<'a> Cyclic for MailboxReader<'a> {
                 State::WaitRepeatAck => {
                     if wkc != 1 {
                         self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    } else if SyncManagerPdiControl(data).repeat_ack() == self.activation_buf.repeat()
+                    {
+                        self.state = State::WaitMailboxFull;
                     } else {
-                        if SyncManagerPdiControl(data).repeat_ack() == self.activation_buf.repeat()
-                        {
-                            self.state = State::WaitMailboxFull;
-                        } else {
-                            self.state = State::WaitRepeatAck;
-                        }
+                        self.state = State::WaitRepeatAck;
                     }
                 }
             }

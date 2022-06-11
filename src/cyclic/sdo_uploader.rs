@@ -191,7 +191,7 @@ impl<'a> Cyclic for SdoUploader<'a> {
                         self.state = State::WriteUploadRequest(true)
                     }
                     Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(other)) => self.state = State::Error(other.clone().into()),
+                    Err(nb::Error::Other(other)) => self.state = State::Error(other.into()),
                 }
             }
             State::WriteUploadRequest(_) => {

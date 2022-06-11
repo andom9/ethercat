@@ -172,7 +172,7 @@ impl<'a> Cyclic for SdoDownloader<'a> {
                         self.state = State::WriteDownloadRequest(true)
                     }
                     Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(other)) => self.state = State::Error(other.clone().into()),
+                    Err(nb::Error::Other(other)) => self.state = State::Error(other.into()),
                 }
             }
             State::WriteDownloadRequest(_) => {
