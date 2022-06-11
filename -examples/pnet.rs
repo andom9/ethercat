@@ -113,7 +113,7 @@ fn simple_test(interf_name: &str) {
     let mut buf = [0; 1500];
     let device = PnetDevice::open(&interf_name);
 
-    let mut master = EtherCATInterface::new(device, timer, &mut buf);
+    let mut master = EtherCatInterface::new(device, timer, &mut buf);
     master
         .add_command(CommandType::BRD, 0, 0, 1, |_| ())
         .unwrap();

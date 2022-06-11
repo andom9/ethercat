@@ -1,14 +1,14 @@
-# EtherCAT Master
+# EtherCat Master
 **WIP**
 
-This crate's goal is to provide a library that allows easy construction of a class B EtherCAT master.
+This crate's goal is to provide a library that allows easy construction of a class B EtherCat master.
 
-#### Class B EtherCAT Master Requirements
+#### Class B EtherCat Master Requirements
 - Basic Features
-  - [ ] Slaves with Device Emulation
-  - [x] EtherCAT State Machine
+  - [x] Slaves with Device Emulation
+  - [ ] EtherCat State Machine
   - [ ] Error Handling
-  - [x] EtherCAT Frame Types
+  - [x] EtherCat Frame Types
 - Process Data Exchange
   - [ ] Cyclic PDO
 - Network Configuration
@@ -19,10 +19,10 @@ This crate's goal is to provide a library that allows easy construction of a cla
   - [x] Support Mailbox
   - [x] Mailbox Resilient Layer
   - [ ] Mailbox polling
-- CAN application layer over EtherCAT
-  - [ ] SDO Up/Download
+- CAN application layer over EtherCat
+  - [ ] Sdo Up/Download
   - [ ] Emmergency Message
 - (Option)FoE
   - [ ] FoE Protocol
 - (Option)Synchronizaion With Distributed Clock
-  - [x] DC Support
+  - [ ] Dc Support

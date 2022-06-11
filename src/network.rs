@@ -3,7 +3,7 @@ use crate::{interface::SlaveAddress, slave::*};
 pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
 //const SLAVE_SIZE: usize = core::mem::size_of::<Option<Slave>>();
 //pub const EMPTY_SLAVE_PORT_CONTEXT: Option<SlavePort> = None;
-//pub const EMPTY_SLAVE_DC_CONTEXT: Option<SlaveDC> = None;
+//pub const EMPTY_SLAVE_Dc_CONTEXT: Option<SlaveDc> = None;
 
 #[derive(Debug)]
 pub struct NetworkDescription<'a> {
@@ -15,14 +15,14 @@ pub struct NetworkDescription<'a> {
 impl<'a> NetworkDescription<'a> {
     //pub fn new(context_buf: &mut [u8]) -> Self{
     //    let len = context_buf.len();
-    //    let max_num_slaves = len/(SLAVE_SIZE+SLAVE_DC_SIZE);
+    //    let max_num_slaves = len/(SLAVE_SIZE+SLAVE_Dc_SIZE);
     //    let (slave_buf, rest) = context_buf.split_at_mut(max_num_slaves*SLAVE_SIZE);
-    //    let (dc_buf, _) = rest.split_at_mut(max_num_slaves*SLAVE_DC_SIZE);
+    //    let (dc_buf, _) = rest.split_at_mut(max_num_slaves*SLAVE_Dc_SIZE);
     //
     //    let (slave_buf, dc_buf) = unsafe{
     //        (
     //        core::mem::transmute::<&mut[u8],&mut[Option<Slave>]>(slave_buf),
-    //        core::mem::transmute::<&mut[u8],&mut[Option<SlaveDC>]>(dc_buf))
+    //        core::mem::transmute::<&mut[u8],&mut[Option<SlaveDc>]>(dc_buf))
     //    };
     //    slave_buf.iter_mut().for_each(|b|*b=None);
     //    dc_buf.iter_mut().for_each(|b|*b=None);
@@ -67,10 +67,10 @@ impl<'a> NetworkDescription<'a> {
         let addr = match addr {
             SlaveAddress::SlavePosition(n) => n,
             SlaveAddress::StationAddress(n) => {
-                if n == 0{
+                if n == 0 {
                     return None;
-                }else{
-                    n-1
+                } else {
+                    n - 1
                 }
             }
         };
@@ -85,10 +85,10 @@ impl<'a> NetworkDescription<'a> {
         let addr = match addr {
             SlaveAddress::SlavePosition(n) => n,
             SlaveAddress::StationAddress(n) => {
-                if n == 0{
+                if n == 0 {
                     return None;
-                }else{
-                    n-1
+                } else {
+                    n - 1
                 }
             }
         };

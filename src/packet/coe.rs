@@ -1,96 +1,65 @@
 use bitfield::*;
 
-pub const COE_HEADER_LENGTH: usize = 2;
+//pub const COE_HEADER_LENGTH: usize = 2;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct CANOpenPDU([u8]);
+    pub struct CoEHeader([u8]);
     u16;
     pub number, set_number: 8, 0;
     u8;
     pub service_type, set_service_type: 15, 12;
 }
 
-impl<T: AsRef<[u8]>> CANOpenPDU<T> {
-    pub fn new(buf: T) -> Option<Self> {
-        let packet = Self(buf);
-        if packet.is_buffer_range_ok() {
-            Some(packet)
-        } else {
-            None
-        }
-    }
-
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
-
-    pub fn is_buffer_range_ok(&self) -> bool {
-        self.0.as_ref().get(COE_HEADER_LENGTH - 1).is_some()
+impl CoEHeader<[u8; 2]> {
+    pub const SIZE: usize = 2;
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
-pub enum CANOpenServiceType {
+pub enum CoeServiceType {
     Emmergency = 1,
-    SDOReq,
-    SDORes,
+    SdoReq,
+    SdoRes,
     TxPDO,
     RxPDO,
     TxPDORemoteReq,
     RxPDORemoteReq,
-    SDOInfo,
+    SdoInfo,
 }
-
-pub const SDO_HEADER_LENGTH: usize = 4;
-pub const SDO_DATA_LENGTH: usize = 4;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SDO([u8]);
-    pub u8, command, set_command: 7, 0;
+    pub struct SdoHeader([u8]);
+    pub size_indicator, set_size_indicator: 0;
+    pub transfer_type, set_transfer_type: 1;
+    pub u8, data_set_size, set_data_set_size: 3, 2;
+    pub complete_access, set_complete_access: 4;
+    pub u8, command_specifier, set_command_specifier: 7, 5;
     pub u16, index, set_index: 23, 8;
     pub u8, sub_index, set_sub_index: 31, 24;
-    pub u32, data, set_data: 63, 32;
 }
 
-impl<T: AsRef<[u8]>> SDO<T> {
-    pub fn new(buf: T) -> Option<Self> {
-        let packet = Self(buf);
-        if packet.is_buffer_range_ok() {
-            Some(packet)
-        } else {
-            None
-        }
-    }
-
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
-
-    pub fn is_buffer_range_ok(&self) -> bool {
-        self.0
-            .as_ref()
-            .get(SDO_HEADER_LENGTH + SDO_DATA_LENGTH - 1)
-            .is_some()
+impl SdoHeader<[u8; 4]> {
+    pub const SIZE: usize = 4;
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
-pub enum SDOCommand {
-    DownExpReq1 = 0b0010_1111,
-    DownExpReq2 = 0b0010_1011,
-    DownExpReq3 = 0b0010_0111,
-    DownExpReq4 = 0b0010_0011,
-    DownRes = 0b0110_0000,
-    DownNormalReq = 0b0010_0001,
-    UpReq = 0b0100_0000,
-    UpExpRes1 = 0b0100_1111,
-    UpExpRes2 = 0b0100_1011,
-    UpExpRes3 = 0b0100_0111,
-    UpExpRes4 = 0b0100_0011,
-    UpNormalRes = 0b0100_0001,
-    Abort = 0b1000_0000,
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct SdoDownloadNormalHeader([u8]);
+    pub u32, complete_size, set_complete_size: 31, 0;
+}
+
+impl SdoDownloadNormalHeader<[u8; 4]> {
+    pub const SIZE: usize = 4;
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
@@ -194,8 +163,6 @@ impl From<u32> for AbortCode {
     }
 }
 
-const EMMERGENCY_LENGTH: usize = 8;
-
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct Emmergency([u8]);
@@ -204,21 +171,9 @@ bitfield! {
     u64, data, _: 63, 24;
 }
 
-impl<T: AsRef<[u8]>> Emmergency<T> {
-    pub fn new(buf: T) -> Option<Self> {
-        let packet = Self(buf);
-        if packet.is_buffer_range_ok() {
-            Some(packet)
-        } else {
-            None
-        }
-    }
-
-    pub fn new_unchecked(buf: T) -> Self {
-        Self(buf)
-    }
-
-    pub fn is_buffer_range_ok(&self) -> bool {
-        self.0.as_ref().get(EMMERGENCY_LENGTH - 1).is_some()
+impl Emmergency<[u8; 8]> {
+    const SIZE: usize = 8;
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
     }
 }

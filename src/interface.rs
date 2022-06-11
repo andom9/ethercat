@@ -53,7 +53,7 @@ impl Command {
 }
 
 #[derive(Debug)]
-pub struct EtherCATInterface<'a, D, T>
+pub struct EtherCatInterface<'a, D, T>
 where
     D: Device,
     T: CountDown<Time = MicrosDurationU32>,
@@ -66,7 +66,7 @@ where
     timer: T,
 }
 
-impl<'a, D, T> EtherCATInterface<'a, D, T>
+impl<'a, D, T> EtherCatInterface<'a, D, T>
 where
     D: Device,
     T: CountDown<Time = MicrosDurationU32>,
@@ -84,7 +84,7 @@ where
     }
 
     pub fn remaing_capacity(&self) -> usize {
-        self.buffer_size - self.data_size - ETHERCAT_HEADER_LENGTH - WKC_LENGTH
+        self.buffer_size - self.data_size - EtherCatHeader::SIZE - WKC_LENGTH
     }
 
     pub fn add_command<F: FnOnce(&mut [u8])>(
@@ -94,45 +94,45 @@ where
         data_size: usize,
         data_writer: F,
     ) -> Result<(), CommonError> {
-        if self.data_size + ETHERCAT_HEADER_LENGTH + data_size + WKC_LENGTH > self.buffer_size {
+        if self.data_size + EtherCatHeader::SIZE + data_size + WKC_LENGTH > self.buffer_size {
             return Err(CommonError::BufferExhausted);
         }
 
         if data_size
             > self.ethdev.max_transmission_unit()
-                - (ETHERNET_HEADER_LENGTH
-                    + ETHERCAT_HEADER_LENGTH
-                    + ETHERCATPDU_HEADER_LENGTH
+                - (EthernetHeader::SIZE
+                    + EtherCatHeader::SIZE
+                    + EtherCatPduHeader::SIZE
                     + WKC_LENGTH)
         {
             return Err(CommonError::BufferExhausted);
         }
 
-        let mut header = [0; ETHERCATPDU_HEADER_LENGTH];
-        let mut pdu = EtherCATPDU::new_unchecked(&mut header);
+        let mut header = [0; EtherCatPduHeader::SIZE];
+        let mut pdu = EtherCatPduHeader(&mut header);
         pdu.set_index(pdu_index);
         pdu.set_command_type(command.c_type as u8);
         pdu.set_adp(command.adp);
         pdu.set_ado(command.ado);
         pdu.set_length(data_size as u16);
 
-        self.buffer[self.data_size..self.data_size + ETHERCATPDU_HEADER_LENGTH]
+        self.buffer[self.data_size..self.data_size + EtherCatPduHeader::SIZE]
             .copy_from_slice(&header);
         data_writer(
-            &mut self.buffer[self.data_size + ETHERCATPDU_HEADER_LENGTH
-                ..self.data_size + ETHERCATPDU_HEADER_LENGTH + data_size],
+            &mut self.buffer[self.data_size + EtherCatPduHeader::SIZE
+                ..self.data_size + EtherCatPduHeader::SIZE + data_size],
         );
 
         // WKC field
-        self.buffer[self.data_size + ETHERCATPDU_HEADER_LENGTH + data_size + 1] = 0;
-        self.buffer[self.data_size + ETHERCATPDU_HEADER_LENGTH + data_size + 2] = 0;
+        self.buffer[self.data_size + EtherCatPduHeader::SIZE + data_size + 1] = 0;
+        self.buffer[self.data_size + EtherCatPduHeader::SIZE + data_size + 2] = 0;
 
-        self.data_size += ETHERCATPDU_HEADER_LENGTH + data_size + WKC_LENGTH;
+        self.data_size += EtherCatPduHeader::SIZE + data_size + WKC_LENGTH;
         Ok(())
     }
 
-    pub fn consume_command(&mut self) -> EtherCATPDUs {
-        let pdus = EtherCATPDUs::new(self.buffer, self.data_size, 0);
+    pub fn consume_command(&mut self) -> EtherCatPdus {
+        let pdus = EtherCatPdus::new(self.buffer, self.data_size, 0);
         self.data_size = 0;
         pdus
     }
@@ -161,15 +161,15 @@ where
         } = self;
         let buffer = &buffer[0..*data_size];
         let mtu = ethdev.max_transmission_unit();
-        let max_send_count = EtherCATPDUs::new(buffer, *data_size, 0).count();
+        let max_send_count = EtherCatPdus::new(buffer, *data_size, 0).count();
         let mut actual_send_count = 0;
 
         while actual_send_count < max_send_count {
-            let pdus = EtherCATPDUs::new(buffer, *data_size, 0);
+            let pdus = EtherCatPdus::new(buffer, *data_size, 0);
             let mut send_size = 0;
             let mut send_count = actual_send_count;
             for pdu in pdus {
-                let pdu_length = pdu.length() as usize + ETHERCATPDU_HEADER_LENGTH + WKC_LENGTH;
+                let pdu_length = pdu.length() as usize + EtherCatPduHeader::SIZE + WKC_LENGTH;
                 if mtu > send_size + pdu_length {
                     send_size += pdu_length;
                     send_count += 1;
@@ -179,11 +179,11 @@ where
             }
 
             if let None = ethdev.send(
-                ETHERNET_HEADER_LENGTH + ETHERCAT_HEADER_LENGTH + send_size,
+                EthernetHeader::SIZE + EtherCatHeader::SIZE + send_size,
                 |tx_buffer| {
-                    let mut ec_frame = EtherCATFrame::new_unchecked(tx_buffer);
+                    let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
                     ec_frame.init();
-                    let pdus = EtherCATPDUs::new(buffer, *data_size, 0);
+                    let pdus = EtherCatPdus::new(buffer, *data_size, 0);
                     for (i, pdu) in pdus.into_iter().enumerate().skip(actual_send_count) {
                         if i >= send_count {
                             break;
@@ -222,13 +222,13 @@ where
         while *should_recv_frames > 0 {
             if let None = ethdev.recv(|frame| {
                 info!("something receive");
-                let eth = EthernetHeader::new_unchecked(&frame);
-                if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
+                let eth = EthernetHeader(&frame);
+                if eth.source() == SRC_MAC || eth.ether_type() != ETHERCat_TYPE {
                     return Some(());
                 }
-                let ec_frame = EtherCATFrame::new_unchecked(frame);
+                let ec_frame = EtherCatFrame::new_unchecked(frame);
                 for pdu in ec_frame.iter_dlpdu() {
-                    let pdu_size = ETHERCATPDU_HEADER_LENGTH + pdu.length() as usize + WKC_LENGTH;
+                    let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
                     buffer[data_size..data_size + pdu_size].copy_from_slice(&pdu.0);
                     data_size += pdu_size;
                 }
@@ -276,7 +276,7 @@ impl Default for SlaveAddress {
     }
 }
 
-//impl<'a, D, T> EtherCATInterface<'a, D, T>
+//impl<'a, D, T> EtherCatInterface<'a, D, T>
 //where
 //    D: Device,
 //    T: CountDown<Time = MicrosDurationU32>,
@@ -287,7 +287,7 @@ impl Default for SlaveAddress {
 //        register_address: u16,
 //        size: usize,
 //        //timeout: I,
-//    ) -> Result<EtherCATPDU<&[u8]>, CommonError> {
+//    ) -> Result<EtherCatPdu<&[u8]>, CommonError> {
 //        match slave_address {
 //            SlaveAddress::StationAddress(adr) => self.add_command(
 //                u8::MAX,
@@ -318,7 +318,7 @@ impl Default for SlaveAddress {
 //        size: usize,
 //        //timeout: I,
 //        buffer_writer: F,
-//    ) -> Result<EtherCATPDU<&[u8]>, CommonError> {
+//    ) -> Result<EtherCatPdu<&[u8]>, CommonError> {
 //        match slave_address {
 //            SlaveAddress::StationAddress(adr) => self.add_command(
 //                u8::MAX,
@@ -345,7 +345,7 @@ impl Default for SlaveAddress {
 //
 //macro_rules! define_read_specific_register {
 //    ($($func: ident, $reg: ident, $address: ident;)*) =>{
-//        impl<'a, D: Device, T> EtherCATInterface<'a, D, T>
+//        impl<'a, D: Device, T> EtherCatInterface<'a, D, T>
 //        where
 //            D: Device,
 //            T: CountDown<Time = MicrosDurationU32>,
@@ -357,7 +357,7 @@ impl Default for SlaveAddress {
 //                self.read_register(slave_address, $reg::$address, $reg::SIZE)
 //                .map(|pdu| {
 //                    let mut copied = [0; $reg::SIZE];
-//                    copied.copy_from_slice(&pdu.0[ETHERCATPDU_HEADER_LENGTH..ETHERCATPDU_HEADER_LENGTH + $reg::SIZE]);
+//                    copied.copy_from_slice(&pdu.0[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + $reg::SIZE]);
 //                    $reg(copied)}
 //                )
 //            })*
@@ -367,7 +367,7 @@ impl Default for SlaveAddress {
 //
 //macro_rules! define_write_specific_register {
 //    ($($func: ident, $reg: ident, $address: ident;)*) =>{
-//        impl<'a, D, T> EtherCATInterface<'a, D, T>
+//        impl<'a, D, T> EtherCatInterface<'a, D, T>
 //        where
 //            D: Device,
 //            T: CountDown<Time = MicrosDurationU32>,
@@ -385,7 +385,7 @@ impl Default for SlaveAddress {
 //                    //data_writer(&mut initial_value);
 //                    buf.copy_from_slice(&initial_value.0);
 //                })
-//                .map(|pdu| $reg(&pdu.0[ETHERCATPDU_HEADER_LENGTH..ETHERCATPDU_HEADER_LENGTH + $reg::SIZE]))
+//                .map(|pdu| $reg(&pdu.0[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + $reg::SIZE]))
 //            })*
 //        }
 //    };
@@ -412,14 +412,14 @@ impl Default for SlaveAddress {
 //    read_sm1, SyncManagerRegister, ADDRESS1;
 //    read_sm2, SyncManagerRegister, ADDRESS2;
 //    read_sm3, SyncManagerRegister, ADDRESS3;
-//    read_dc_recieve_time, DCRecieveTime, ADDRESS;
-//    read_dc_system_time, DCSystemTime, ADDRESS;
-//    read_al_control, ALControl, ADDRESS;
-//    read_al_status, ALStatus, ADDRESS;
-//    read_pdi_control, PDIControl, ADDRESS;
-//    read_pdi_config, PDIConfig, ADDRESS;
+//    read_dc_recieve_time, DcRecieveTime, ADDRESS;
+//    read_dc_system_time, DcSystemTime, ADDRESS;
+//    read_al_control, AlControl, ADDRESS;
+//    read_al_status, AlStatus, ADDRESS;
+//    read_pdi_control, PdiControl, ADDRESS;
+//    read_pdi_config, PdiConfig, ADDRESS;
 //    read_sync_config, SyncConfig, ADDRESS;
-//    read_dc_activation, DCActivation, ADDRESS;
+//    read_dc_activation, DcActivation, ADDRESS;
 //    read_sync_pulse, SyncPulse, ADDRESS;
 //    read_interrupt_status, InterruptStatus, ADDRESS;
 //    read_cyclic_operation_start_time, CyclicOperationStartTime, ADDRESS;
@@ -451,10 +451,10 @@ impl Default for SlaveAddress {
 //    write_sm1, SyncManagerRegister, ADDRESS1;
 //    write_sm2, SyncManagerRegister, ADDRESS2;
 //    write_sm3, SyncManagerRegister, ADDRESS3;
-//    write_dc_recieve_time, DCRecieveTime, ADDRESS;
-//    write_dc_system_time, DCSystemTime, ADDRESS;
-//    write_al_control, ALControl, ADDRESS;
-//    write_dc_activation, DCActivation, ADDRESS;
+//    write_dc_recieve_time, DcRecieveTime, ADDRESS;
+//    write_dc_system_time, DcSystemTime, ADDRESS;
+//    write_al_control, AlControl, ADDRESS;
+//    write_dc_activation, DcActivation, ADDRESS;
 //    write_cyclic_operation_start_time, CyclicOperationStartTime, ADDRESS;
 //    write_sync0_cycle_time, Sync0CycleTime, ADDRESS;
 //    write_sync1_cycle_time, Sync1CycleTime, ADDRESS;

@@ -3,9 +3,10 @@ pub mod dc_initilizer;
 pub mod mailbox_reader;
 pub mod mailbox_writer;
 pub mod network_initilizer;
+pub mod sdo_downloader;
+pub mod sdo_uploader;
 pub mod sii_reader;
 pub mod slave_initializer;
-pub mod sdo;
 
 use crate::arch::*;
 use crate::error::*;
@@ -17,21 +18,21 @@ use embedded_hal::timer::*;
 use fugit::*;
 use heapless::Vec;
 
-///EtherCAT system time is expressed in nanoseconds elapsed since January 1, 2000.
+///EtherCat system time is expressed in nanoseconds elapsed since January 1, 2000.
 #[derive(Debug, Clone, Copy)]
-pub struct EtherCATSystemTime(pub u64);
+pub struct EtherCatSystemTime(pub u64);
 
 pub trait Cyclic {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])>;
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     );
 }
 
@@ -52,7 +53,7 @@ where
     T: CountDown<Time = MicrosDurationU32>,
     C: Cyclic,
 {
-    iface: &'a mut EtherCATInterface<'a, D, T>,
+    iface: &'a mut EtherCatInterface<'a, D, T>,
     units: Vec<(C, bool), U>,
 }
 
@@ -62,7 +63,7 @@ where
     T: CountDown<Time = MicrosDurationU32>,
     C: Cyclic,
 {
-    pub fn new(iface: &'a mut EtherCATInterface<'a, D, T>) -> Self {
+    pub fn new(iface: &'a mut EtherCatInterface<'a, D, T>) -> Self {
         Self {
             iface,
             units: Vec::default(),
@@ -84,7 +85,7 @@ where
     pub fn poll<I: Into<MicrosDurationU32> + Clone>(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
         recv_timeout: I,
     ) -> Result<(), CommonError> {
         loop {
@@ -100,7 +101,7 @@ where
     fn enqueue_commands(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) -> Result<bool, CommonError> {
         let mut complete = true;
         for (i, (unit, sent)) in self.units.iter_mut().enumerate() {
@@ -124,7 +125,7 @@ where
     fn process<I: Into<MicrosDurationU32>>(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
         timeout: I,
     ) -> Result<(), CommonError> {
         self.iface.poll(timeout)?;

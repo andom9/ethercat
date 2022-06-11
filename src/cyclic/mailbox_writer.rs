@@ -1,34 +1,20 @@
-use super::{Cyclic, EtherCATSystemTime, ReceivedData};
-use crate::network::*;
-use crate::packet::ethercat::{MailboxPDU, MAILBOX_HEADER_LENGTH};
+use super::mailbox_reader::Error;
+use super::{Cyclic, EtherCatSystemTime, ReceivedData};
+use crate::network::NetworkDescription;
+use crate::packet::ethercat::MailboxHeader;
 use crate::{
     error::CommonError,
     interface::{Command, SlaveAddress},
-    register::datalink::*,
+    register::datalink::{SyncManagerActivation, SyncManagerStatus},
     util::const_max,
 };
 use nb;
 
-#[derive(Debug, Clone)]
-pub enum MailboxWriterError {
-    Common(CommonError),
-    TimeoutMs(u32),
-    NoMailbox,
-    MailboxNotAvailable,
-    NoSlave,
-    MailboxFull,
-    SmallBuffer,
-}
-
-impl From<CommonError> for MailboxWriterError {
-    fn from(err: CommonError) -> Self {
-        Self::Common(err)
-    }
-}
+const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 
 #[derive(Debug)]
-enum MailboxWriterState {
-    Error(MailboxWriterError),
+enum State {
+    Error(Error),
     Idle,
     Complete,
     CheckMailboxEmpty,
@@ -36,7 +22,7 @@ enum MailboxWriterState {
     Write,
 }
 
-impl Default for MailboxWriterState {
+impl Default for State {
     fn default() -> Self {
         Self::Idle
     }
@@ -44,48 +30,82 @@ impl Default for MailboxWriterState {
 
 #[derive(Debug)]
 pub struct MailboxWriter<'a> {
-    timer_start: EtherCATSystemTime,
+    timer_start: EtherCatSystemTime,
     command: Command,
     slave_address: SlaveAddress,
     buffer: [u8; buffer_size()],
-    //mailbox_header: MailboxPDU<[u8; MAILBOX_HEADER_LENGTH]>,
-    state: MailboxWriterState,
+    state: State,
     send_buf: &'a mut [u8],
+    //data_length: usize,
     activation_buf: SyncManagerActivation<[u8; SyncManagerActivation::SIZE]>,
     timeout_ns: u64,
     wait_full: bool,
 }
 
 impl<'a> MailboxWriter<'a> {
+    pub fn new(send_buf: &'a mut [u8]) -> Self {
+        Self {
+            timer_start: EtherCatSystemTime(0),
+            command: Command::default(),
+            slave_address: SlaveAddress::default(),
+            buffer: [0; buffer_size()],
+            state: State::Idle,
+            send_buf,
+            activation_buf: SyncManagerActivation([0; SyncManagerActivation::SIZE]),
+            timeout_ns: 0,
+            wait_full: true,
+        }
+    }
+
+    pub fn set_data_to_write<F: FnOnce(&mut [u8])>(&mut self, data_writer: F) {
+        data_writer(&mut self.send_buf[MailboxHeader::SIZE..]);
+    }
+
+    pub fn data_to_write(&self) -> &[u8] {
+        &self.send_buf[MailboxHeader::SIZE..]
+    }
+
+    pub fn set_header(&mut self, mailbox_header: MailboxHeader<[u8; MailboxHeader::SIZE]>) {
+        self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
+    }
+
+    pub fn header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
+        let mut header = MailboxHeader::new();
+        header
+            .0
+            .copy_from_slice(&self.send_buf[..MailboxHeader::SIZE]);
+        header
+    }
+
     pub fn start(
         &mut self,
         slave_address: SlaveAddress,
-        mailbox_header: MailboxPDU<[u8; MAILBOX_HEADER_LENGTH]>,
-        data: &'a [u8],
-        timeout_ms: u32,
-        wait: bool,
+        //mailbox_header: MailboxPdu<[u8; MailboxHeader::SIZE]>,
+        //data: &[u8],
+        //timeout_ms: u32,
+        wait_empty: bool,
     ) {
         //self.mailbox_header = mailbox_header;
-        self.timer_start = EtherCATSystemTime(0);
+        self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
         self.buffer.fill(0);
         self.send_buf.fill(0);
-        self.send_buf[..MAILBOX_HEADER_LENGTH].copy_from_slice(&mailbox_header.0);
-        self.send_buf
-            .iter_mut()
-            .skip(MAILBOX_HEADER_LENGTH)
-            .zip(data.iter())
-            .for_each(|(buf, data)| *buf = *data);
-        self.timeout_ns = timeout_ms as u64 * 1000 * 1000;
-        self.state = MailboxWriterState::CheckMailboxEmpty;
-        self.wait_full = wait;
+        //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
+        //self.send_buf
+        //    .iter_mut()
+        //    .skip(MailboxHeader::SIZE)
+        //    .zip(data.iter())
+        //    .for_each(|(buf, data)| *buf = *data);
+        self.timeout_ns = MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
+        self.state = State::CheckMailboxEmpty;
+        self.wait_full = wait_empty;
     }
 
-    pub fn wait(&mut self) -> nb::Result<(), MailboxWriterError> {
+    pub fn wait(&self) -> nb::Result<(), Error> {
         match &self.state {
-            MailboxWriterState::Complete => Ok(()),
-            MailboxWriterState::Error(err) => Err(nb::Error::Other(err.clone())),
+            State::Complete => Ok(()),
+            State::Error(err) => Err(nb::Error::Other(err.clone())),
             _ => Err(nb::Error::WouldBlock),
         }
     }
@@ -95,13 +115,13 @@ impl<'a> Cyclic for MailboxWriter<'a> {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
-            MailboxWriterState::Idle => None,
-            MailboxWriterState::Error(_) => None,
-            MailboxWriterState::Complete => None,
-            MailboxWriterState::CheckMailboxEmpty => {
+            State::Idle => None,
+            State::Error(_) => None,
+            State::Complete => None,
+            State::CheckMailboxEmpty => {
                 self.timer_start = sys_time;
                 if let Some(slave) = desc.slave(self.slave_address) {
                     if let Some((sm_num, _)) = slave.info.mailbox_rx_sm() {
@@ -115,15 +135,15 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                             &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
                         ))
                     } else {
-                        self.state = MailboxWriterState::Error(MailboxWriterError::NoMailbox);
+                        self.state = State::Error(Error::NoMailbox);
                         None
                     }
                 } else {
-                    self.state = MailboxWriterState::Error(MailboxWriterError::NoSlave);
+                    self.state = State::Error(Error::NoSlave);
                     None
                 }
             }
-            MailboxWriterState::WaitMailboxEmpty => {
+            State::WaitMailboxEmpty => {
                 let slave = desc.slave(self.slave_address).unwrap();
                 let (sm_num, _) = slave.info.mailbox_rx_sm().unwrap();
                 self.command = Command::new_read(
@@ -136,16 +156,16 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                     &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
                 ))
             }
-            MailboxWriterState::Write => {
+            State::Write => {
                 let slave = desc.slave(self.slave_address).unwrap();
                 let (_, sm) = slave.info.mailbox_rx_sm().unwrap();
                 self.command = Command::new_write(self.slave_address, sm.start_address);
                 self.buffer.fill(0);
                 if self.send_buf.len() < sm.size as usize {
-                    self.state = MailboxWriterState::Error(MailboxWriterError::SmallBuffer);
+                    self.state = State::Error(Error::BufferSmall);
                     None
                 } else {
-                    //self.send_buf[..MAILBOX_HEADER_LENGTH].copy_from_slice(&self.mailbox_header.0);
+                    //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&self.mailbox_header.0);
                     Some((self.command, &self.send_buf[..sm.size as usize]))
                 }
             }
@@ -156,71 +176,65 @@ impl<'a> Cyclic for MailboxWriter<'a> {
         &mut self,
         recv_data: Option<ReceivedData>,
         _desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) {
         if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if *command != self.command {
-                self.state =
-                    MailboxWriterState::Error(MailboxWriterError::Common(CommonError::BadPacket));
+                self.state = State::Error(Error::Common(CommonError::BadPacket));
             }
             let wkc = *wkc;
             match self.state {
-                MailboxWriterState::Idle => {}
-                MailboxWriterState::Error(_) => {}
-                MailboxWriterState::Complete => {}
-                MailboxWriterState::CheckMailboxEmpty => {
+                State::Idle => {}
+                State::Error(_) => {}
+                State::Complete => {}
+                State::CheckMailboxEmpty => {
                     if wkc != 1 {
-                        self.state =
-                            MailboxWriterState::Error(MailboxWriterError::MailboxNotAvailable);
+                        self.state = State::Error(Error::MailboxNotAvailable);
                     } else {
                         let status = SyncManagerStatus(data);
                         self.activation_buf
                             .0
                             .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
                         if !status.is_mailbox_full() {
-                            self.state = MailboxWriterState::Write;
+                            self.state = State::Write;
                         } else {
                             if self.wait_full {
-                                self.state = MailboxWriterState::WaitMailboxEmpty;
+                                self.state = State::WaitMailboxEmpty;
                             } else {
-                                self.state =
-                                    MailboxWriterState::Error(MailboxWriterError::MailboxFull);
+                                self.state = State::Error(Error::MailboxFull);
                             }
                         }
                     }
                 }
-                MailboxWriterState::WaitMailboxEmpty => {
+                State::WaitMailboxEmpty => {
                     if wkc != 1 {
-                        self.state =
-                            MailboxWriterState::Error(MailboxWriterError::MailboxNotAvailable);
+                        self.state = State::Error(Error::MailboxNotAvailable);
                     } else {
                         let status = SyncManagerStatus(data);
                         self.activation_buf
                             .0
                             .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
                         if !status.is_mailbox_full() {
-                            self.state = MailboxWriterState::Write;
+                            self.state = State::Write;
                         } else {
-                            self.state = MailboxWriterState::WaitMailboxEmpty;
+                            self.state = State::WaitMailboxEmpty;
                         }
                     }
                 }
-                MailboxWriterState::Write => {
+                State::Write => {
                     // mailbox lost
                     if wkc != 1 {
-                        self.state = MailboxWriterState::Write;
+                        self.state = State::Write;
                     } else {
-                        self.state = MailboxWriterState::Complete;
+                        self.state = State::Complete;
                     }
                 }
             }
         }
         // check timeout
         if self.timer_start.0 < sys_time.0 && self.timeout_ns < sys_time.0 - self.timer_start.0 {
-            self.state = MailboxWriterState::Error(MailboxWriterError::TimeoutMs(
-                (self.timeout_ns / 1000 / 1000) as u32,
-            ));
+            self.state = State::Error(Error::TimeoutMs((self.timeout_ns / 1000 / 1000) as u32));
         }
     }
 }

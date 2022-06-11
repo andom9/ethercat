@@ -1,17 +1,17 @@
 use crate::cyclic::Cyclic;
 use crate::error::CommonError;
-use crate::interface::*;
-use crate::network::*;
-use crate::register::datalink::*;
-use crate::util::*;
+use crate::interface::{Command, SlaveAddress};
+use crate::network::NetworkDescription;
+use crate::register::datalink::{SIIAccess, SIIAddress, SIIControl, SIIData};
+use crate::util::const_max;
 
-use super::EtherCATSystemTime;
+use super::EtherCatSystemTime;
 use super::ReceivedData;
 
 const TIMEOUT_MS: u32 = 100;
 
 #[derive(Debug, Clone)]
-pub enum SIIError {
+pub enum Error {
     Common(CommonError),
     PermittionDenied,
     AddressSizeOver,
@@ -22,15 +22,15 @@ pub enum SIIError {
     TimeoutMs(u32),
 }
 
-impl From<CommonError> for SIIError {
+impl From<CommonError> for Error {
     fn from(err: CommonError) -> Self {
         Self::Common(err)
     }
 }
 
 #[derive(Debug)]
-enum SIIState {
-    Error(SIIError),
+enum State {
+    Error(Error),
     Idle,
     Init,
     SetOwnership,
@@ -43,7 +43,7 @@ enum SIIState {
     Complete,
 }
 
-impl Default for SIIState {
+impl Default for State {
     fn default() -> Self {
         Self::Init
     }
@@ -51,11 +51,11 @@ impl Default for SIIState {
 
 #[derive(Debug)]
 pub struct SIIReader {
-    timer_start: EtherCATSystemTime,
+    timer_start: EtherCatSystemTime,
     command: Command,
     slave_address: SlaveAddress,
     buffer: [u8; buffer_size()],
-    state: SIIState,
+    state: State,
     sii_address: u16,
     read_size: usize,
 }
@@ -63,8 +63,8 @@ pub struct SIIReader {
 impl SIIReader {
     pub fn new() -> Self {
         Self {
-            timer_start: EtherCATSystemTime(0),
-            state: SIIState::Idle,
+            timer_start: EtherCatSystemTime(0),
+            state: State::Idle,
             slave_address: SlaveAddress::SlavePosition(0),
             sii_address: 0,
             command: Command::default(),
@@ -76,15 +76,15 @@ impl SIIReader {
     pub fn start(&mut self, slave_address: SlaveAddress, sii_address: u16) {
         self.slave_address = slave_address;
         self.sii_address = sii_address;
-        self.state = SIIState::Init;
+        self.state = State::Init;
         self.buffer.fill(0);
         self.command = Command::default();
     }
 
-    pub fn wait(&mut self) -> nb::Result<(SIIData<[u8; SIIData::SIZE]>, usize), SIIError> {
+    pub fn wait(&mut self) -> nb::Result<(SIIData<[u8; SIIData::SIZE]>, usize), Error> {
         match &self.state {
-            SIIState::Complete => Ok((SIIData(self.buffer.clone()), self.read_size)),
-            SIIState::Error(err) => Err(nb::Error::Other(err.clone())),
+            State::Complete => Ok((SIIData(self.buffer.clone()), self.read_size)),
+            State::Error(err) => Err(nb::Error::Other(err.clone())),
             _ => Err(nb::Error::WouldBlock),
         }
     }
@@ -94,17 +94,17 @@ impl Cyclic for SIIReader {
     fn next_command(
         &mut self,
         _: &mut NetworkDescription,
-        _: EtherCATSystemTime,
+        _: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
-            SIIState::Idle => None,
-            SIIState::Error(_) => None,
-            SIIState::Init => {
+            State::Idle => None,
+            State::Error(_) => None,
+            State::Init => {
                 self.command = Command::new_read(self.slave_address, SIIControl::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIControl::SIZE]))
             }
-            SIIState::SetOwnership => {
+            State::SetOwnership => {
                 self.buffer.fill(0);
                 let mut sii_access = SIIAccess(self.buffer);
                 sii_access.set_owner(false);
@@ -112,36 +112,36 @@ impl Cyclic for SIIReader {
                 self.command = Command::new_write(self.slave_address, SIIAccess::ADDRESS);
                 Some((self.command, &self.buffer[..SIIAccess::SIZE]))
             }
-            SIIState::CheckOwnership => {
+            State::CheckOwnership => {
                 self.command = Command::new_read(self.slave_address, SIIAccess::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIAccess::SIZE]))
             }
-            SIIState::SetAddress => {
+            State::SetAddress => {
                 self.buffer.fill(0);
                 let mut sii_address = SIIAddress(self.buffer);
                 sii_address.set_sii_address(self.sii_address as u32);
                 self.command = Command::new_write(self.slave_address, SIIAddress::ADDRESS);
                 Some((self.command, &self.buffer[..SIIAddress::SIZE]))
             }
-            SIIState::SetReadOperation => {
+            State::SetReadOperation => {
                 self.buffer.fill(0);
                 let mut sii_address = SIIControl(self.buffer);
                 sii_address.set_read_operation(true);
                 self.command = Command::new_write(self.slave_address, SIIControl::ADDRESS);
                 Some((self.command, &self.buffer[..SIIControl::SIZE]))
             }
-            SIIState::Wait => {
+            State::Wait => {
                 self.command = Command::new_read(self.slave_address, SIIControl::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIControl::SIZE]))
             }
-            SIIState::Read => {
+            State::Read => {
                 self.command = Command::new_read(self.slave_address, SIIData::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SIIData::SIZE]))
             }
-            SIIState::ResetOwnership => {
+            State::ResetOwnership => {
                 self.buffer.fill(0);
                 let mut sii_access = SIIAccess(self.buffer);
                 sii_access.set_owner(true);
@@ -149,7 +149,7 @@ impl Cyclic for SIIReader {
                 self.command = Command::new_write(self.slave_address, SIIAccess::ADDRESS);
                 Some((self.command, &self.buffer[..SIIAccess::SIZE]))
             }
-            SIIState::Complete => None,
+            State::Complete => None,
         }
     }
 
@@ -157,37 +157,37 @@ impl Cyclic for SIIReader {
         &mut self,
         recv_data: Option<ReceivedData>,
         _: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) {
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if command != self.command {
-                self.state = SIIState::Error(SIIError::Common(CommonError::BadPacket));
+                self.state = State::Error(Error::Common(CommonError::BadPacket));
             }
             if wkc != 1 {
-                self.state = SIIState::Error(SIIError::Common(CommonError::UnexpectedWKC(wkc)));
+                self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
             }
             data
         } else {
-            self.state = SIIState::Error(SIIError::Common(CommonError::LostCommand));
+            self.state = State::Error(Error::Common(CommonError::LostCommand));
             return;
         };
 
         match self.state {
-            SIIState::Idle => {}
-            SIIState::Error(_) => {}
-            SIIState::Init => {
+            State::Idle => {}
+            State::Error(_) => {}
+            State::Init => {
                 let sii_control = SIIControl(data);
                 if sii_control.check_sum_error() {
-                    self.state = SIIState::Error(SIIError::CheckSumError);
+                    self.state = State::Error(Error::CheckSumError);
                 }
                 if sii_control.device_info_error() {
-                    self.state = SIIState::Error(SIIError::DeviceInfoError);
+                    self.state = State::Error(Error::DeviceInfoError);
                 }
 
                 // アドレスアルゴリズムが0なら、アドレスは1オクテットでなければならない。
                 if !sii_control.address_algorithm() && self.sii_address >> 8 != 0 {
-                    self.state = SIIState::Error(SIIError::AddressSizeOver);
+                    self.state = State::Error(Error::AddressSizeOver);
                 }
 
                 if sii_control.busy()
@@ -195,51 +195,51 @@ impl Cyclic for SIIReader {
                     || sii_control.write_operation()
                     || sii_control.reload_operation()
                 {
-                    self.state = SIIState::Error(SIIError::Busy);
+                    self.state = State::Error(Error::Busy);
                 }
 
                 self.read_size = if sii_control.read_size() { 8 } else { 4 };
 
-                self.state = SIIState::SetOwnership;
+                self.state = State::SetOwnership;
             }
-            SIIState::SetOwnership => {
-                self.state = SIIState::CheckOwnership;
+            State::SetOwnership => {
+                self.state = State::CheckOwnership;
             }
-            SIIState::CheckOwnership => {
+            State::CheckOwnership => {
                 let sii_access = SIIAccess(data);
                 if sii_access.owner() || sii_access.pdi_accessed() {
-                    self.state = SIIState::Error(SIIError::PermittionDenied);
+                    self.state = State::Error(Error::PermittionDenied);
                 }
-                self.state = SIIState::SetAddress;
+                self.state = State::SetAddress;
             }
-            SIIState::SetAddress => {
-                self.state = SIIState::SetReadOperation;
+            State::SetAddress => {
+                self.state = State::SetReadOperation;
             }
-            SIIState::SetReadOperation => {
-                self.state = SIIState::Wait;
+            State::SetReadOperation => {
+                self.state = State::Wait;
                 self.timer_start = sys_time;
             }
-            SIIState::Wait => {
+            State::Wait => {
                 let sii_control = SIIControl(data);
                 if sii_control.command_error() {
-                    self.state = SIIState::Error(SIIError::CommandError);
+                    self.state = State::Error(Error::CommandError);
                 } else if !sii_control.busy() && !sii_control.read_operation() {
-                    self.state = SIIState::Read;
+                    self.state = State::Read;
                 } else {
                     if self.timer_start.0 < sys_time.0
                         && TIMEOUT_MS as u64 * 1000 < sys_time.0 - self.timer_start.0
                     {
-                        self.state = SIIState::Error(SIIError::TimeoutMs(TIMEOUT_MS))
+                        self.state = State::Error(Error::TimeoutMs(TIMEOUT_MS))
                     }
                 }
             }
-            SIIState::Read => {
-                self.state = SIIState::ResetOwnership;
+            State::Read => {
+                self.state = State::ResetOwnership;
             }
-            SIIState::ResetOwnership => {
-                self.state = SIIState::Complete;
+            State::ResetOwnership => {
+                self.state = State::Complete;
             }
-            SIIState::Complete => {}
+            State::Complete => {}
         }
     }
 }
@@ -254,14 +254,14 @@ const fn buffer_size() -> usize {
 }
 
 pub mod sii_reg {
-    pub struct PDIControl;
-    impl PDIControl {
+    pub struct PdiControl;
+    impl PdiControl {
         pub const ADDRESS: u16 = 0;
         pub const SIZE: usize = 2;
     }
 
-    pub struct PDIConfig;
-    impl PDIConfig {
+    pub struct PdiConfig;
+    impl PdiConfig {
         pub const ADDRESS: u16 = 1;
         pub const SIZE: usize = 2;
     }
@@ -272,8 +272,8 @@ pub mod sii_reg {
         pub const SIZE: usize = 2;
     }
 
-    pub struct PDIConfig2;
-    impl PDIConfig2 {
+    pub struct PdiConfig2;
+    impl PdiConfig2 {
         pub const ADDRESS: u16 = 3;
         pub const SIZE: usize = 2;
     }

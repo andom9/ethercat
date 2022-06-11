@@ -4,8 +4,8 @@ use heapless::Deque;
 
 #[derive(Debug, Clone)]
 pub enum SlaveError {
-    PDINotOperational,
-    UnexpectedALState,
+    PdiNotOperational,
+    UnexpectedAlState,
     SMSettingsAreNotCorrect,
     WatchdogTimeout,
     PDOStateError,
@@ -33,17 +33,27 @@ pub struct Slave {
     pub info: SlaveInfo,
     pub error: Option<SlaveError>,
     pub al_state: AlState,
-    //pub mailbox_count: u8,
+    pub mailbox_count: u8,
     pub rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
     pub tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
     pub linked_ports: [bool; 4],
 
-    // for DC init
-    pub(crate) dc_context: RefCell<DCContext>,
+    // for Dc init
+    pub(crate) dc_context: RefCell<DcContext>,
+}
+
+impl Slave {
+    pub(crate) fn increment_mb_count(&mut self) {
+        if self.mailbox_count < 7 {
+            self.mailbox_count += 1;
+        } else {
+            self.mailbox_count = 1;
+        }
+    }
 }
 
 #[derive(Debug, Default)]
-pub struct DCContext {
+pub struct DcContext {
     pub parent_port: Option<(u16, u8)>,
     pub current_port: u8,
     pub recieved_port_time: [u32; 4],
@@ -127,8 +137,6 @@ impl From<u8> for AlState {
             AlState::Bootstrap
         } else if v == AlState::SafeOperational as u8 {
             AlState::SafeOperational
-        } else if v == AlState::PreOperational as u8 {
-            AlState::PreOperational
         } else if v == AlState::Operational as u8 {
             AlState::Operational
         } else {

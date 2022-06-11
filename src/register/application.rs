@@ -24,13 +24,13 @@ const DC_USER_P12: u16 = 0x09CC; //R
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct ALControl([u8]);
+    pub struct AlControl([u8]);
     pub u8, state, set_state: 3, 0;
     pub acknowledge, set_acknowledge: 4;
     pub u8, appl_specific, set_appl_specific: 8*2-1, 8*1;
 }
 
-impl ALControl<[u8; 2]> {
+impl AlControl<[u8; 2]> {
     pub const ADDRESS: u16 = R1;
     pub const SIZE: usize = 2;
 
@@ -41,14 +41,14 @@ impl ALControl<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct ALStatus([u8]);
+    pub struct AlStatus([u8]);
     pub u8, state, _: 3, 0;
     pub change_err, _: 4;
     pub u8, appl_specific, _: 8*2-1, 8*1;
     pub u16, al_status_code, _: 8*6-1, 8*4;
 }
 
-impl ALStatus<[u8; 2]> {
+impl AlStatus<[u8; 2]> {
     pub const ADDRESS: u16 = R3;
     pub const SIZE: usize = 2;
 
@@ -59,12 +59,12 @@ impl ALStatus<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct PDIControl([u8]);
+    pub struct PdiControl([u8]);
     pub u8, pdi_type, _: 7, 0;
     pub strict_al_control, _: 8;
 }
 
-impl PDIControl<[u8; 2]> {
+impl PdiControl<[u8; 2]> {
     pub const ADDRESS: u16 = R7;
     pub const SIZE: usize = 2;
 
@@ -75,11 +75,11 @@ impl PDIControl<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct PDIConfig([u8]);
+    pub struct PdiConfig([u8]);
     pub u8, application_specific, _: 7, 0;
 }
 
-impl PDIConfig<[u8; 1]> {
+impl PdiConfig<[u8; 1]> {
     pub const ADDRESS: u16 = R8;
     pub const SIZE: usize = 1;
 
@@ -110,13 +110,13 @@ impl SyncConfig<[u8; 1]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCActivation([u8]);
+    pub struct DcActivation([u8]);
     pub cyclic_operation_enable, set_cyclic_operation_enable: 0;
     pub sync0_activate, set_sync0_activate: 1;
     pub sync1_activate, set_sync1_activate: 2;
 }
 
-impl DCActivation<[u8; 1]> {
+impl DcActivation<[u8; 1]> {
     pub const ADDRESS: u16 = DC_USER_P1;
     pub const SIZE: usize = 1;
 

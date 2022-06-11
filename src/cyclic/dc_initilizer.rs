@@ -1,18 +1,22 @@
 use crate::cyclic::Cyclic;
-use crate::cyclic::*;
-use crate::error::*;
-use crate::interface::*;
-use crate::network::*;
-use crate::register::datalink::*;
-use crate::util::*;
+use crate::cyclic::{
+    Command, CommandType, CommonError, EtherCatSystemTime, NetworkDescription, ReceivedData,
+    SlaveAddress,
+};
+use crate::register::datalink::{
+    DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
+};
+use crate::util::const_max;
+
+//TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
 
 const OFFSET_COUNT_MAX: usize = 16;
 const DRIFT_COUNT_MAX: usize = 15000;
 
 #[derive(Debug, Clone)]
-pub enum DCState {
+pub enum State {
     Idle,
-    Error(DCError),
+    Error(Error),
     Complete,
     RequestToLatch(usize),
     CalculateOffset((usize, u16)),
@@ -23,31 +27,31 @@ pub enum DCState {
 }
 
 #[derive(Debug, Clone)]
-pub enum DCError {
+pub enum Error {
     Common(CommonError),
 }
 
-impl From<CommonError> for DCError {
+impl From<CommonError> for Error {
     fn from(err: CommonError) -> Self {
         Self::Common(err)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct DCInitializer {
-    sys_time: EtherCATSystemTime,
-    state: DCState,
+pub struct DcInitializer {
+    sys_time: EtherCatSystemTime,
+    state: State,
     command: Command,
     buffer: [u8; buffer_size()],
     first_dc_slave: Option<u16>,
     dc_slave_count: usize,
 }
 
-impl DCInitializer {
+impl DcInitializer {
     pub fn new() -> Self {
         Self {
-            sys_time: EtherCATSystemTime(0),
-            state: DCState::Idle,
+            sys_time: EtherCatSystemTime(0),
+            state: State::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
             first_dc_slave: None,
@@ -56,13 +60,14 @@ impl DCInitializer {
     }
 
     pub fn start(&mut self, desc: &mut NetworkDescription) {
-        self.sys_time = EtherCATSystemTime(0);
+        self.sys_time = EtherCatSystemTime(0);
         self.command = Command::default();
         self.buffer.fill(0);
         self.first_dc_slave = None;
         self.dc_slave_count = 0;
 
-        // specofy network topology
+        // MEMO:ネットワークイニシャライザーの方にもっていく？
+        // specify network topology
         let mut last_recv_slave = 0;
         let mut last_recv_port = 0;
         let mut first_slave = None;
@@ -98,70 +103,70 @@ impl DCInitializer {
                 self.dc_slave_count += 1;
             }
         }
-        self.state = DCState::RequestToLatch(0);
+        self.state = State::RequestToLatch(0);
     }
 }
 
-impl Cyclic for DCInitializer {
+impl Cyclic for DcInitializer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
-        sys_time: EtherCATSystemTime,
+        sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match &self.state {
-            DCState::Idle => None,
-            DCState::Error(_) => None,
-            DCState::Complete => None,
-            DCState::RequestToLatch(_) => {
-                let command = Command::new(CommandType::BWR, 0, DCRecieveTime::ADDRESS);
+            State::Idle => None,
+            State::Error(_) => None,
+            State::Complete => None,
+            State::RequestToLatch(_) => {
+                let command = Command::new(CommandType::BWR, 0, DcRecieveTime::ADDRESS);
                 self.buffer.fill(0);
-                Some((command, &self.buffer[..DCRecieveTime::SIZE]))
+                Some((command, &self.buffer[..DcRecieveTime::SIZE]))
             }
-            DCState::CalculateOffset((_, pos)) => {
+            State::CalculateOffset((_, pos)) => {
                 let command =
-                    Command::new_read(SlaveAddress::SlavePosition(*pos), DCSystemTime::ADDRESS);
+                    Command::new_read(SlaveAddress::SlavePosition(*pos), DcSystemTime::ADDRESS);
                 self.buffer.fill(0);
                 //self.time_buf = self.duration_from_2000_0_0.;
-                Some((command, &self.buffer[..DCSystemTime::SIZE]))
+                Some((command, &self.buffer[..DcSystemTime::SIZE]))
             }
-            DCState::CalculateDelay((_, pos)) => {
+            State::CalculateDelay((_, pos)) => {
                 let command =
-                    Command::new_read(SlaveAddress::SlavePosition(*pos), DCRecieveTime::ADDRESS);
+                    Command::new_read(SlaveAddress::SlavePosition(*pos), DcRecieveTime::ADDRESS);
                 self.buffer.fill(0);
                 self.sys_time = sys_time;
-                Some((command, &self.buffer[..DCRecieveTime::SIZE]))
+                Some((command, &self.buffer[..DcRecieveTime::SIZE]))
             }
-            DCState::SetOffset(pos) => {
+            State::SetOffset(pos) => {
                 let command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos),
-                    DCSystemTimeOffset::ADDRESS,
+                    DcSystemTimeOffset::ADDRESS,
                 );
                 self.buffer.fill(0);
                 let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                 let dc = slave.dc_context.borrow();
-                DCSystemTimeOffset(&mut self.buffer).set_system_time_offset(dc.offset);
-                Some((command, &self.buffer[..DCSystemTimeOffset::SIZE]))
+                DcSystemTimeOffset(&mut self.buffer).set_system_time_offset(dc.offset);
+                Some((command, &self.buffer[..DcSystemTimeOffset::SIZE]))
             }
-            DCState::SetDelay(pos) => {
+            State::SetDelay(pos) => {
                 let command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos),
-                    DCSystemTimeTransmissionDelay::ADDRESS,
+                    DcSystemTimeTransmissionDelay::ADDRESS,
                 );
                 self.buffer.fill(0);
                 let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                 let dc = slave.dc_context.borrow();
-                DCSystemTimeTransmissionDelay(&mut self.buffer)
+                DcSystemTimeTransmissionDelay(&mut self.buffer)
                     .set_system_time_transmission_delay(dc.delay);
-                Some((command, &self.buffer[..DCSystemTimeTransmissionDelay::SIZE]))
+                Some((command, &self.buffer[..DcSystemTimeTransmissionDelay::SIZE]))
             }
-            DCState::CompensateDrift(_) => {
+            State::CompensateDrift(_) => {
                 let command = Command::new(
                     CommandType::ARMW,
                     SlaveAddress::SlavePosition(self.first_dc_slave.unwrap()).get_ado(),
-                    DCSystemTime::ADDRESS,
+                    DcSystemTime::ADDRESS,
                 );
                 self.buffer.fill(0);
-                Some((command, &self.buffer[..DCSystemTime::SIZE]))
+                Some((command, &self.buffer[..DcSystemTime::SIZE]))
             }
         }
     }
@@ -170,38 +175,38 @@ impl Cyclic for DCInitializer {
         &mut self,
         recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
-        _: EtherCATSystemTime,
+        _: EtherCatSystemTime,
     ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if command != self.command {
-                self.state = DCState::Error(DCError::Common(CommonError::BadPacket));
+                self.state = State::Error(Error::Common(CommonError::BadPacket));
             }
             (data, wkc)
         } else {
-            self.state = DCState::Error(DCError::Common(CommonError::LostCommand));
+            self.state = State::Error(Error::Common(CommonError::LostCommand));
             return;
         };
 
         match &self.state {
-            DCState::Idle => {}
-            DCState::Error(_) => {}
-            DCState::Complete => {}
-            DCState::RequestToLatch(count) => {
+            State::Idle => {}
+            State::Error(_) => {}
+            State::Complete => {}
+            State::RequestToLatch(count) => {
                 if wkc != desc.len() as u16 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
-                    self.state = DCState::CalculateOffset((*count, 0))
+                    self.state = State::CalculateOffset((*count, 0))
                 }
             }
-            DCState::CalculateOffset((count, pos)) => {
+            State::CalculateOffset((count, pos)) => {
                 if wkc != 1 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     let master_time = self.sys_time.0;
                     let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
-                    let sys_time = DCSystemTime(data);
+                    let sys_time = DcSystemTime(data);
                     let offset = if master_time > sys_time.local_system_time() {
                         master_time - sys_time.local_system_time()
                     } else {
@@ -214,17 +219,17 @@ impl Cyclic for DCInitializer {
                         dc.offset = offset;
                     }
                     if desc.len() <= (pos + 1) as usize {
-                        self.state = DCState::CalculateOffset((*count, pos + 1));
+                        self.state = State::CalculateOffset((*count, pos + 1));
                     } else {
-                        self.state = DCState::CalculateDelay((*count, 0));
+                        self.state = State::CalculateDelay((*count, 0));
                     }
                 }
             }
-            DCState::CalculateDelay((count, pos)) => {
+            State::CalculateDelay((count, pos)) => {
                 if wkc != 1 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
-                    let recv_time = DCRecieveTime(data);
+                    let recv_time = DcRecieveTime(data);
                     let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
                     dc.recieved_port_time = [
@@ -251,7 +256,12 @@ impl Cyclic for DCInitializer {
                             if let Some(last_recieved_port) = last_recieved_port {
                                 let first_recv_time = dc.recieved_port_time[first_recieved_port];
                                 let last_recv_time = dc.recieved_port_time[last_recieved_port];
-                                first_recv_time.abs_diff(last_recv_time)
+                                if first_recv_time < last_recv_time {
+                                    last_recv_time - first_recv_time
+                                } else {
+                                    ((1_u64 << 32) + last_recv_time as u64 - first_recv_time as u64)
+                                        as u32
+                                }
                             } else {
                                 0
                             };
@@ -269,15 +279,19 @@ impl Cyclic for DCInitializer {
                             let first_recv_time =
                                 parent_dc.recieved_port_time[parent_port as usize];
                             let second_recv_time = parent_dc.recieved_port_time[parent_next_port];
-                            first_recv_time.abs_diff(second_recv_time)
+                            if first_recv_time < second_recv_time {
+                                second_recv_time - first_recv_time
+                            } else {
+                                ((1_u64 << 32) + second_recv_time as u64 - first_recv_time as u64)
+                                    as u32
+                            }
                         };
-                        let tx_delay_ns = match parent.info.ports[parent_port as usize].unwrap() {
-                            PortPhysics::MII => 40,
-                            PortPhysics::EBUS => 20,
-                        };
+                        //let phy_delay_ns = match parent.info.ports[parent_port as usize].unwrap() {
+                        //    PortPhysics::MII => 40,
+                        //    PortPhysics::EBUS => 20,
+                        //};
                         let parent_delay = parent_dc.delay;
-                        let delay_delta =
-                            (outer_loop_duration - inner_loop_duration) / 2 + tx_delay_ns;
+                        let delay_delta = (outer_loop_duration - inner_loop_duration) / 2; // + phy_delay_ns;
                         if dc.delay != 0 {
                             dc.delay /= 2;
                             dc.delay += (parent_delay + delay_delta) / 2;
@@ -286,23 +300,23 @@ impl Cyclic for DCInitializer {
                         }
                     }
                     if desc.len() <= (pos + 1) as usize {
-                        self.state = DCState::CalculateDelay((*count, pos + 1));
+                        self.state = State::CalculateDelay((*count, pos + 1));
                     } else {
                         if *count < OFFSET_COUNT_MAX {
-                            self.state = DCState::RequestToLatch(*count);
+                            self.state = State::RequestToLatch(*count);
                         } else {
                             if let Some(first_dc_slave) = self.first_dc_slave {
-                                self.state = DCState::SetOffset(first_dc_slave);
+                                self.state = State::SetOffset(first_dc_slave);
                             } else {
-                                self.state = DCState::Complete;
+                                self.state = State::Complete;
                             }
                         }
                     }
                 }
             }
-            DCState::SetOffset(pos) => {
+            State::SetOffset(pos) => {
                 if wkc != 1 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     let next_pos = desc
                         .slaves()
@@ -311,15 +325,15 @@ impl Cyclic for DCInitializer {
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
-                        self.state = DCState::SetOffset(next_pos as u16);
+                        self.state = State::SetOffset(next_pos as u16);
                     } else {
-                        self.state = DCState::SetDelay(self.first_dc_slave.unwrap());
+                        self.state = State::SetDelay(self.first_dc_slave.unwrap());
                     }
                 }
             }
-            DCState::SetDelay(pos) => {
+            State::SetDelay(pos) => {
                 if wkc != 1 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     let next_pos = desc
                         .slaves()
@@ -328,20 +342,20 @@ impl Cyclic for DCInitializer {
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
-                        self.state = DCState::SetDelay(next_pos as u16);
+                        self.state = State::SetDelay(next_pos as u16);
                     } else {
-                        self.state = DCState::CompensateDrift(0);
+                        self.state = State::CompensateDrift(0);
                     }
                 }
             }
-            DCState::CompensateDrift(count) => {
+            State::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
-                    self.state = DCState::Error(DCError::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
                 } else {
                     if count + 1 < DRIFT_COUNT_MAX {
-                        self.state = DCState::CompensateDrift(count + 1);
+                        self.state = State::CompensateDrift(count + 1);
                     } else {
-                        self.state = DCState::Complete;
+                        self.state = State::Complete;
                     }
                 }
             }
@@ -351,9 +365,9 @@ impl Cyclic for DCInitializer {
 
 const fn buffer_size() -> usize {
     let mut size = 0;
-    size = const_max(size, DCRecieveTime::SIZE);
-    size = const_max(size, DCSystemTime::SIZE);
-    size = const_max(size, DCSystemTimeOffset::SIZE);
-    size = const_max(size, DCSystemTimeTransmissionDelay::SIZE);
+    size = const_max(size, DcRecieveTime::SIZE);
+    size = const_max(size, DcSystemTime::SIZE);
+    size = const_max(size, DcSystemTimeOffset::SIZE);
+    size = const_max(size, DcSystemTimeTransmissionDelay::SIZE);
     size
 }

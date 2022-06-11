@@ -14,9 +14,9 @@ bitfield! {
     pub u8, ram_size, _: 8*7-1, 8*6;
     /// FMMU bit operation not supported
     pub fmmu_bit_operation_not_supported, _: 8*8;
-    /// DC supported
+    /// Dc supported
     pub dc_supported, _: 8*8+2;
-    /// DC range. If true, 64bit.
+    /// Dc range. If true, 64bit.
     pub dc_range, _: 8*8+3;
     /// Low Jitter EBUS
     pub low_jitter_ebus, _: 8*8+4;
@@ -407,12 +407,12 @@ impl SyncManagerActivation<[u8; 1]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SyncManagerPDIControl([u8]);
+    pub struct SyncManagerPdiControl([u8]);
     pub channel_enable_pdi, _: 0;
     pub repeat_ack, _: 1;
 }
 
-impl SyncManagerPDIControl<[u8; 1]> {
+impl SyncManagerPdiControl<[u8; 1]> {
     pub const ADDRESS: u16 = 0x0807;
     //pub const ADDRESS1: u16 = 0x0807+0x08;
     //pub const ADDRESS2: u16 = 0x0807+0x08*2;
@@ -426,14 +426,14 @@ impl SyncManagerPDIControl<[u8; 1]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCRecieveTime([u8]);
+    pub struct DcRecieveTime([u8]);
     pub u32, receive_time_port0, set_receive_time_port0: 8*4-1, 8*0;
     pub u32, receive_time_port1, set_receive_time_port1: 8*8-1, 8*4;
     pub u32, receive_time_port2, set_receive_time_port2: 8*12-1, 8*8;
     pub u32, receive_time_port3, set_receive_time_port3: 8*16-1, 8*12;
 }
 
-impl DCRecieveTime<[u8; 16]> {
+impl DcRecieveTime<[u8; 16]> {
     pub const ADDRESS: u16 = 0x0900;
     pub const SIZE: usize = 16;
 
@@ -444,11 +444,11 @@ impl DCRecieveTime<[u8; 16]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCSystemTime([u8]);
+    pub struct DcSystemTime([u8]);
     pub u64, local_system_time, set_local_system_time: 8*8-1, 0;
 }
 
-impl DCSystemTime<[u8; 8]> {
+impl DcSystemTime<[u8; 8]> {
     pub const ADDRESS: u16 = 0x0910;
     pub const SIZE: usize = 8;
 
@@ -459,11 +459,11 @@ impl DCSystemTime<[u8; 8]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCSystemTimeOffset([u8]);
+    pub struct DcSystemTimeOffset([u8]);
     pub u64, system_time_offset, set_system_time_offset: 8*8-1, 0;
 }
 
-impl DCSystemTimeOffset<[u8; 8]> {
+impl DcSystemTimeOffset<[u8; 8]> {
     pub const ADDRESS: u16 = 0x0920;
     pub const SIZE: usize = 8;
 
@@ -474,11 +474,11 @@ impl DCSystemTimeOffset<[u8; 8]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DCSystemTimeTransmissionDelay([u8]);
+    pub struct DcSystemTimeTransmissionDelay([u8]);
     pub u32, system_time_transmission_delay, set_system_time_transmission_delay: 8*4-1, 0;
 }
 
-impl DCSystemTimeTransmissionDelay<[u8; 4]> {
+impl DcSystemTimeTransmissionDelay<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0928;
     pub const SIZE: usize = 4;
 

@@ -14,7 +14,7 @@ where
     T: CountDown<Time = MicrosDurationU32>,
 {
     SIIReader(SIIReader<'a, T>),
-    ALStateTransfer(ALStateTransfer<'a, T>),
+    AlStateTransfer(AlStateTransfer<'a, T>),
     NetworkInitilizer(NetworkInitilizer<'a, T, N>),
 }
 
@@ -94,12 +94,12 @@ where
         }
     }
 
-    pub fn al_state_transfer(&mut self) -> Option<&mut ALStateTransfer<'a, T>> {
+    pub fn al_state_transfer(&mut self) -> Option<&mut AlStateTransfer<'a, T>> {
         if self.network.is_none() {
             return None;
         }
         let al_state_transfer = self.cyclic.unit_mut(self.al_state_transfer_handle).unwrap();
-        if let CyclicUnit::ALStateTransfer(ref mut unit) = al_state_transfer {
+        if let CyclicUnit::AlStateTransfer(ref mut unit) = al_state_transfer {
             Some(unit)
         } else {
             unreachable!()
