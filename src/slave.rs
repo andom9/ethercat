@@ -1,19 +1,18 @@
 use crate::register::datalink::PortPhysics;
 use core::cell::RefCell;
 
-
 #[derive(Debug, Clone)]
 pub enum SlaveError {
     PdiNotOperational,
     UnexpectedAlState,
-    SMSettingsAreNotCorrect,
+    SmSettingsAreNotCorrect,
     WatchdogTimeout,
-    PDOStateError,
-    PDOControlError,
-    PDOToggleError,
-    EarlySMEvnet,
-    SMEvnetJitterTooMuch,
-    SMEventNotRecieved,
+    PdoStateError,
+    PdoControlError,
+    PdoToggleError,
+    EarlySmEvent,
+    SmEvnetJitterTooMuch,
+    SmEventNotRecieved,
     OutputCalcAndCopyNotFinished,
     Sync0NotRecieved,
     Sync1NotRecieved,
@@ -22,9 +21,9 @@ pub enum SlaveError {
 
 #[derive(Debug, Clone, Default)]
 pub struct SlaveID {
-    pub(crate) vender_id: u16,
-    pub(crate) product_code: u16,
-    pub(crate) revision_number: u16,
+    pub vender_id: u16,
+    pub product_code: u16,
+    pub revision_number: u16,
 }
 
 #[derive(Debug, Default)]
@@ -53,12 +52,12 @@ impl Slave {
 }
 
 #[derive(Debug, Default)]
-pub struct DcContext {
+pub(crate) struct DcContext {
     pub parent_port: Option<(u16, u8)>,
     pub current_port: u8,
     pub recieved_port_time: [u32; 4],
     pub delay: u32,
-    pub recieved_time: u64,
+    //pub recieved_time: u64,
     pub offset: u64,
 }
 
@@ -86,6 +85,10 @@ pub struct SlaveInfo {
     pub support_rw: bool,
 
     pub support_coe: bool,
+
+    pub strict_al_control: bool,
+    pub enable_dc_sync_outputs: bool,
+    pub enable_dc_latch_inputs: bool,
 }
 
 impl SlaveInfo {
@@ -124,7 +127,7 @@ pub enum AlState {
     Bootstrap = 0x3,
     SafeOperational = 0x4,
     Operational = 0x8,
-    Invalid,
+    InvalidOrMixed,
 }
 
 impl From<u8> for AlState {
@@ -140,14 +143,14 @@ impl From<u8> for AlState {
         } else if v == AlState::Operational as u8 {
             AlState::Operational
         } else {
-            AlState::Invalid
+            AlState::InvalidOrMixed
         }
     }
 }
 
 impl Default for AlState {
     fn default() -> Self {
-        AlState::Invalid
+        AlState::InvalidOrMixed
     }
 }
 

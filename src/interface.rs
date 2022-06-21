@@ -1,11 +1,18 @@
-use crate::arch::Device;
-use crate::error::CommonError;
+use crate::arch::{CountDown, Device};
+use crate::error::EcError;
 use crate::ethercat_frame::*;
 use crate::packet::ethercat::*;
 use crate::util::*;
-use embedded_hal::timer::CountDown;
-use fugit::MicrosDurationU32;
+use core::time::Duration;
 use log::*;
+
+#[derive(Debug, Clone)]
+pub enum Error {
+    DeviceErrorTx,
+    DeviceErrorRx,
+    LargeDate,
+    RecieveTimeout,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Command {
@@ -56,34 +63,34 @@ impl Command {
 pub struct EtherCatInterface<'a, D, T>
 where
     D: Device,
-    T: CountDown<Time = MicrosDurationU32>,
+    T: CountDown,
 {
     ethdev: D,
+    timer: T,
     buffer: &'a mut [u8],
     data_size: usize,
     buffer_size: usize,
     should_recv_frames: usize,
-    timer: T,
 }
 
 impl<'a, D, T> EtherCatInterface<'a, D, T>
 where
     D: Device,
-    T: CountDown<Time = MicrosDurationU32>,
+    T: CountDown,
 {
     pub fn new(ethdev: D, timer: T, buffer: &'a mut [u8]) -> Self {
         let buffer_size = buffer.len();
         Self {
             ethdev,
+            timer,
             buffer,
             data_size: 0,
             buffer_size,
             should_recv_frames: 0,
-            timer,
         }
     }
 
-    pub fn remaing_capacity(&self) -> usize {
+    pub fn remainig_capacity(&self) -> usize {
         self.buffer_size - self.data_size - EtherCatHeader::SIZE - WKC_LENGTH
     }
 
@@ -93,9 +100,9 @@ where
         command: Command,
         data_size: usize,
         data_writer: F,
-    ) -> Result<(), CommonError> {
+    ) -> Result<(), Error> {
         if self.data_size + EtherCatHeader::SIZE + data_size + WKC_LENGTH > self.buffer_size {
-            return Err(CommonError::BufferExhausted);
+            return Err(Error::LargeDate);
         }
 
         if data_size
@@ -105,7 +112,7 @@ where
                     + EtherCatPduHeader::SIZE
                     + WKC_LENGTH)
         {
-            return Err(CommonError::BufferExhausted);
+            return Err(Error::LargeDate);
         }
 
         let mut header = [0; EtherCatPduHeader::SIZE];
@@ -131,24 +138,17 @@ where
         Ok(())
     }
 
-    pub fn consume_command(&mut self) -> EtherCatPdus {
+    pub fn consume_commands(&mut self) -> EtherCatPdus {
         let pdus = EtherCatPdus::new(self.buffer, self.data_size, 0);
         self.data_size = 0;
         pdus
     }
 
-    pub fn poll<I: Into<MicrosDurationU32>>(&mut self, recv_timeout: I) -> Result<(), CommonError> {
+    pub fn poll<I: Into<Duration>>(&mut self, recv_timeout: I) -> Result<(), Error> {
         if !self.transmit() {
-            return Err(CommonError::DeviceErrorTx);
+            return Err(Error::DeviceErrorTx);
         }
-        match self.receive(recv_timeout) {
-            RxRes::Ok => (),
-            RxRes::DeviceError => return Err(CommonError::DeviceErrorRx),
-            //RxRes::TimerError => return Err(CommonError::UnspcifiedTimerError),
-            //RxRes::Timeout => return Err(CommonError::ReceiveTimeout),
-            RxRes::Timeout => (),
-        }
-        Ok(())
+        self.receive(recv_timeout)
     }
 
     fn transmit(&mut self) -> bool {
@@ -163,6 +163,7 @@ where
         let mtu = ethdev.max_transmission_unit();
         let max_send_count = EtherCatPdus::new(buffer, *data_size, 0).count();
         let mut actual_send_count = 0;
+        *should_recv_frames = 0;
 
         while actual_send_count < max_send_count {
             let pdus = EtherCatPdus::new(buffer, *data_size, 0);
@@ -178,31 +179,35 @@ where
                 }
             }
 
-            if ethdev.send(
-                EthernetHeader::SIZE + EtherCatHeader::SIZE + send_size,
-                |tx_buffer| {
-                    let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
-                    ec_frame.init();
-                    let pdus = EtherCatPdus::new(buffer, *data_size, 0);
-                    for (i, pdu) in pdus.into_iter().enumerate().skip(actual_send_count) {
-                        if i >= send_count {
-                            break;
+            if ethdev
+                .send(
+                    EthernetHeader::SIZE + EtherCatHeader::SIZE + send_size,
+                    |tx_buffer| {
+                        //info!("something send");
+                        let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
+                        ec_frame.init();
+                        let pdus = EtherCatPdus::new(buffer, *data_size, 0);
+                        for (i, pdu) in pdus.into_iter().enumerate().skip(actual_send_count) {
+                            if i >= send_count {
+                                break;
+                            }
+                            let index = pdu.index();
+                            let command = CommandType::new(pdu.command_type());
+                            let adp = pdu.adp();
+                            let ado = pdu.ado();
+                            let data = pdu.data();
+                            if !ec_frame.add_command(command, adp, ado, data, Some(index)) {
+                                error!("Failed to add command");
+                                panic!();
+                            }
+                            actual_send_count += 1;
                         }
-                        let index = pdu.index();
-                        let command = CommandType::new(pdu.command_type());
-                        let adp = pdu.adp();
-                        let ado = pdu.ado();
-                        let data = pdu.data();
-                        if !ec_frame.add_command(command, adp, ado, data, Some(index)) {
-                            error!("Failed to add command");
-                            panic!();
-                        }
-                        actual_send_count += 1;
-                    }
-                    *should_recv_frames += 1;
-                    Some(())
-                },
-            ).is_none() {
+                        *should_recv_frames += 1;
+                        Some(())
+                    },
+                )
+                .is_none()
+            {
                 error!("Failed to consume TX token");
                 return false;
             }
@@ -210,7 +215,7 @@ where
         true
     }
 
-    fn receive<I: Into<MicrosDurationU32>>(&mut self, timeout: I) -> RxRes {
+    fn receive<I: Into<Duration>>(&mut self, timeout: I) -> Result<(), Error> {
         let Self {
             ethdev,
             buffer,
@@ -219,41 +224,46 @@ where
         } = self;
         let mut data_size = 0;
         self.timer.start(timeout);
-        while *should_recv_frames > 0 {
-            if ethdev.recv(|frame| {
-                info!("something receive");
-                let eth = EthernetHeader(&frame);
-                if eth.source() == SRC_MAC || eth.ether_type() != ETHERCat_TYPE {
-                    return Some(());
-                }
-                let ec_frame = EtherCatFrame::new_unchecked(frame);
-                for pdu in ec_frame.iter_dlpdu() {
-                    let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
-                    buffer[data_size..data_size + pdu_size].copy_from_slice(pdu.0);
-                    data_size += pdu_size;
-                }
-                *should_recv_frames -= 1;
-                Some(())
-            }).is_none() {
-                return RxRes::DeviceError;
+        while 0 < *should_recv_frames {
+            if ethdev
+                .recv(|frame| {
+                    //info!("something receive");
+                    let eth = EthernetHeader(&frame);
+                    if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
+                        //info!("{} {}", eth.source(), SRC_MAC);
+                        //info!("{} {}", eth.ether_type(), ETHERCAT_TYPE);
+
+                        return Some(());
+                    }
+                    let ec_frame = EtherCatFrame::new_unchecked(frame);
+                    for pdu in ec_frame.iter_dlpdu() {
+                        let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
+                        buffer[data_size..data_size + pdu_size].copy_from_slice(pdu.0);
+                        data_size += pdu_size;
+                    }
+                    *should_recv_frames -= 1;
+                    Some(())
+                })
+                .is_none()
+            {
+                return Err(Error::DeviceErrorRx);
             }
             match self.timer.wait() {
-                Ok(_) => return RxRes::Timeout,
-                Err(nb::Error::Other(_void)) => unreachable!(),
-                Err(nb::Error::WouldBlock) => (),
+                Ok(_) => return Err(Error::RecieveTimeout),
+                Err(nb::Error::WouldBlock) => {}
+                Err(nb::Error::Other(_)) => unreachable!(),
             }
         }
         assert_eq!(data_size, self.data_size);
-        RxRes::Ok
+        Ok(())
     }
 }
 
-enum RxRes {
-    Ok,
-    DeviceError,
-    Timeout,
-    //TimerError,
-}
+//enum RxRes {
+//    Ok,
+//    DeviceError,
+//    Timeout,
+//}
 
 #[derive(Debug, Clone, Copy)]
 pub enum SlaveAddress {
@@ -287,7 +297,7 @@ impl Default for SlaveAddress {
 //        register_address: u16,
 //        size: usize,
 //        //timeout: I,
-//    ) -> Result<EtherCatPdu<&[u8]>, CommonError> {
+//    ) -> EcResult<EtherCatPdu<&[u8]>, EcError> {
 //        match slave_address {
 //            SlaveAddress::StationAddress(adr) => self.add_command(
 //                u8::MAX,
@@ -304,9 +314,9 @@ impl Default for SlaveAddress {
 //        };
 //        self.poll(MicrosDurationU32::from_ticks(1000))?;
 //        let pdu = self
-//            .consume_command()
+//            .consume_commands()
 //            .last()
-//            .ok_or(CommonError::BadPacket)?;
+//            .ok_or(EcError::UnexpectedCommand)?;
 //        check_wkc(&pdu, 1)?;
 //        Ok(pdu)
 //    }
@@ -318,7 +328,7 @@ impl Default for SlaveAddress {
 //        size: usize,
 //        //timeout: I,
 //        buffer_writer: F,
-//    ) -> Result<EtherCatPdu<&[u8]>, CommonError> {
+//    ) -> EcResult<EtherCatPdu<&[u8]>, EcError> {
 //        match slave_address {
 //            SlaveAddress::StationAddress(adr) => self.add_command(
 //                u8::MAX,
@@ -335,9 +345,9 @@ impl Default for SlaveAddress {
 //        }
 //        self.poll(MicrosDurationU32::from_ticks(1000))?;
 //        let pdu = self
-//            .consume_command()
+//            .consume_commands()
 //            .last()
-//            .ok_or(CommonError::BadPacket)?;
+//            .ok_or(EcError::UnexpectedCommand)?;
 //        check_wkc(&pdu, 1)?;
 //        Ok(pdu)
 //    }
@@ -353,7 +363,7 @@ impl Default for SlaveAddress {
 //            $(pub fn $func(
 //                &mut self,
 //                slave_address: SlaveAddress,
-//            ) -> Result<$reg<[u8; $reg::SIZE]>, CommonError> {
+//            ) -> EcResult<$reg<[u8; $reg::SIZE]>, EcError> {
 //                self.read_register(slave_address, $reg::$address, $reg::SIZE)
 //                .map(|pdu| {
 //                    let mut copied = [0; $reg::SIZE];
@@ -378,7 +388,7 @@ impl Default for SlaveAddress {
 //                slave_address: SlaveAddress,
 //                initial_value: Option<$reg::<[u8; $reg::SIZE]>>,
 //                //data_writer: F,
-//            ) -> Result<$reg<&[u8]>, CommonError> {
+//            ) -> EcResult<$reg<&[u8]>, EcError> {
 //                self.write_register(slave_address, $reg::$address, $reg::SIZE,
 //                    |buf|{
 //                    let initial_value = initial_value.unwrap_or($reg([0;$reg::SIZE]));
@@ -392,19 +402,19 @@ impl Default for SlaveAddress {
 //}
 //
 //define_read_specific_register! {
-//    read_dl_information, DLInformation, ADDRESS;
+//    read_dl_information, DlInformation, ADDRESS;
 //    read_fixed_station_address, FixedStationAddress, ADDRESS;
-//    read_dl_control, DLControl, ADDRESS;
-//    read_dl_status, DLStatus, ADDRESS;
+//    read_dl_control, DlControl, ADDRESS;
+//    read_dl_status, DlStatus, ADDRESS;
 //    read_rx_error_counter, RxErrorCounter, ADDRESS;
 //    read_watch_dog_divider, WatchDogDivider, ADDRESS;
-//    read_dl_user_watch_dog, DLUserWatchDog, ADDRESS;
+//    read_dl_user_watch_dog, DlUserWatchDog, ADDRESS;
 //    read_sm_watch_dog, SyncManagerChannelWatchDog, ADDRESS;
 //    read_sm_watch_dog_status, SyncManagerChannelWDStatus, ADDRESS;
-//    read_sii_access, SIIAccess, ADDRESS;
-//    read_sii_control, SIIControl, ADDRESS;
-//    read_sii_address, SIIAddress, ADDRESS;
-//    read_sii_data, SIIData, ADDRESS;
+//    read_sii_access, SiiAccess, ADDRESS;
+//    read_sii_control, SiiControl, ADDRESS;
+//    read_sii_address, SiiAddress, ADDRESS;
+//    read_sii_data, SiiData, ADDRESS;
 //    read_fmmu0, FMMURegister, ADDRESS0;
 //    read_fmmu1, FMMURegister, ADDRESS1;
 //    read_fmmu2, FMMURegister, ADDRESS2;
@@ -435,15 +445,15 @@ impl Default for SlaveAddress {
 //
 //define_write_specific_register! {
 //    write_fixed_station_address, FixedStationAddress, ADDRESS;
-//    write_dl_control, DLControl, ADDRESS;
+//    write_dl_control, DlControl, ADDRESS;
 //    write_rx_error_counter, RxErrorCounter, ADDRESS;
 //    write_watch_dog_divider, WatchDogDivider, ADDRESS;
-//    write_dl_user_watch_dog, DLUserWatchDog, ADDRESS;
+//    write_dl_user_watch_dog, DlUserWatchDog, ADDRESS;
 //    write_sm_watch_dog, SyncManagerChannelWatchDog, ADDRESS;
-//    write_sii_access, SIIAccess, ADDRESS;
-//    write_sii_control, SIIControl, ADDRESS;
-//    write_sii_address, SIIAddress, ADDRESS;
-//    write_sii_data, SIIData, ADDRESS;
+//    write_sii_access, SiiAccess, ADDRESS;
+//    write_sii_control, SiiControl, ADDRESS;
+//    write_sii_address, SiiAddress, ADDRESS;
+//    write_sii_data, SiiData, ADDRESS;
 //    write_fmmu0, FMMURegister, ADDRESS0;
 //    write_fmmu1, FMMURegister, ADDRESS1;
 //    write_fmmu2, FMMURegister, ADDRESS2;

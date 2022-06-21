@@ -48,9 +48,9 @@ bitfield! {
     pub u16, al_status_code, _: 8*6-1, 8*4;
 }
 
-impl AlStatus<[u8; 2]> {
+impl AlStatus<[u8; 6]> {
     pub const ADDRESS: u16 = R3;
-    pub const SIZE: usize = 2;
+    pub const SIZE: usize = 6;
 
     pub fn new() -> Self {
         Self([0; Self::SIZE])
@@ -62,6 +62,11 @@ bitfield! {
     pub struct PdiControl([u8]);
     pub u8, pdi_type, _: 7, 0;
     pub strict_al_control, _: 8;
+
+    // I cannot find these three discriptions in the ETG specifications but in the SANYO manual.
+    //pub enhanced_link_detection, _ :9;
+    //pub enable_dc_sync_outputs, _: 10;
+    //pub enable_dc_latch_inputs, _: 11;
 }
 
 impl PdiControl<[u8; 2]> {

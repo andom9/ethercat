@@ -4,14 +4,14 @@ use bitfield::*;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct CoEHeader([u8]);
+    pub struct CoeHeader([u8]);
     u16;
     pub number, set_number: 8, 0;
     u8;
     pub service_type, set_service_type: 15, 12;
 }
 
-impl CoEHeader<[u8; 2]> {
+impl CoeHeader<[u8; 2]> {
     pub const SIZE: usize = 2;
     pub fn new() -> Self {
         Self([0; Self::SIZE])

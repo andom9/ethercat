@@ -20,7 +20,7 @@ This crate's goal is to provide a library that allows easy construction of a cla
   - [x] Mailbox Resilient Layer
   - [ ] Mailbox polling
 - CAN application layer over EtherCat
-  - [ ] Sdo Up/Download
+  - [x] Sdo Up/Download
   - [ ] Emmergency Message
 - (Option)FoE
   - [ ] FoE Protocol

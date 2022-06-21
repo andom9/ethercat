@@ -1,9 +1,9 @@
 use bitfield::*;
 
-pub const DST_MAC: u64 = 0x06_06_06_06_06_06;
-pub const SRC_MAC: u64 = 0x01_01_01_01_01_01;
-pub const WKC_LENGTH: usize = 2;
-pub const ETHERCat_TYPE: u16 = 0x88A4;
+const DST_MAC: u64 = 0x06_06_06_06_06_06;
+pub(crate) const SRC_MAC: u64 = 0x01_01_01_01_01_01;
+pub(crate) const WKC_LENGTH: usize = 2;
+pub(crate) const ETHERCAT_TYPE: u16 = 0x88A4;
 
 bitfield! {
     #[derive(Debug, Clone)]
@@ -24,9 +24,9 @@ impl EthernetHeader<[u8; 14]> {
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> EthernetHeader<T> {
     pub fn set_ethercat_default(&mut self) {
-        self.set_destination(0xFF_FF_FF_FF_FF_FF);
-        self.set_source(0x01_01_01_01_01_01);
-        self.set_ether_type(ETHERCat_TYPE);
+        self.set_destination(DST_MAC);
+        self.set_source(SRC_MAC);
+        self.set_ether_type(ETHERCAT_TYPE);
     }
 }
 

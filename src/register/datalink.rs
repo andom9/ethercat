@@ -3,7 +3,7 @@ use bitfield::*;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLInformation([u8]);
+    pub struct DlInformation([u8]);
     pub u8, ethercat_type, _: 8*1-1, 8*0;
     pub u8, revision, _: 8*2-1, 8*1;
     pub u16, build_number, _: 8*4-1, 8*2;
@@ -41,7 +41,7 @@ bitfield! {
     pub is_special_fmmu_sm_configuration, _: 8*9+3;
 }
 
-impl DLInformation<[u8; 10]> {
+impl DlInformation<[u8; 10]> {
     pub const ADDRESS: u16 = 0x0000;
     pub const SIZE: usize = 10;
 
@@ -50,7 +50,7 @@ impl DLInformation<[u8; 10]> {
     }
 }
 
-impl<B: AsRef<[u8]>> DLInformation<B> {
+impl<B: AsRef<[u8]>> DlInformation<B> {
     pub fn port0_type(&self) -> Option<PortPhysics> {
         let byte = self.0.as_ref()[7];
         match byte.get_bits(0..2) {
@@ -112,7 +112,7 @@ impl FixedStationAddress<[u8; 4]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLControl([u8]);
+    pub struct DlControl([u8]);
     pub forwarding_rule, set_forwarding_rule: 0;
     pub u8, loop_control_port0, set_loop_control_port0: 8*1+1, 8*1;
     pub u8, loop_control_port1, set_loop_control_port1: 8*1+3, 8*1+2;
@@ -122,7 +122,7 @@ bitfield! {
     pub enable_alias_address, set_enable_alias_address: 8*3;
 }
 
-impl DLControl<[u8; 4]> {
+impl DlControl<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0100;
     pub const SIZE: usize = 4;
 
@@ -133,7 +133,7 @@ impl DLControl<[u8; 4]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLStatus([u8]);
+    pub struct DlStatus([u8]);
     pub pdi_operational, _: 0;
     pub dls_user_watch_dog_status, _: 1;
     pub extended_link_detection, _: 2;
@@ -151,7 +151,7 @@ bitfield! {
     pub signal_detection_port3, _: 8*1 + 7;
 }
 
-impl DLStatus<[u8; 2]> {
+impl DlStatus<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0110;
     pub const SIZE: usize = 2;
 
@@ -199,11 +199,11 @@ impl WatchDogDivider<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct DLUserWatchDog([u8]);
+    pub struct DlUserWatchDog([u8]);
     pub u16, dls_user_watch_dog, set_dls_user_watch_dog: 8*2-1, 8*0;
 }
 
-impl DLUserWatchDog<[u8; 2]> {
+impl DlUserWatchDog<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0410;
     pub const SIZE: usize = 2;
 
@@ -244,13 +244,13 @@ impl SyncManagerChannelWDStatus<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIAccess([u8]);
+    pub struct SiiAccess([u8]);
     pub owner, set_owner: 0;
     pub reset_access, set_reset_access: 1;
     pub pdi_accessed, _: 8*1;
 }
 
-impl SIIAccess<[u8; 2]> {
+impl SiiAccess<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0500;
     pub const SIZE: usize = 2;
 
@@ -261,7 +261,7 @@ impl SIIAccess<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIControl([u8]);
+    pub struct SiiControl([u8]);
     pub enable_write_access, set_enable_write_access: 0;
     pub read_size, _: 6;
     pub address_algorithm, _: 7;
@@ -274,7 +274,7 @@ bitfield! {
     pub busy, _: 8+7;
 }
 
-impl SIIControl<[u8; 2]> {
+impl SiiControl<[u8; 2]> {
     pub const ADDRESS: u16 = 0x0502;
     pub const SIZE: usize = 2;
 
@@ -285,11 +285,11 @@ impl SIIControl<[u8; 2]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIAddress([u8]);
+    pub struct SiiAddress([u8]);
     pub u32, sii_address, set_sii_address: 8*4-1, 0;
 }
 
-impl SIIAddress<[u8; 4]> {
+impl SiiAddress<[u8; 4]> {
     pub const ADDRESS: u16 = 0x0504;
     pub const SIZE: usize = 4;
 
@@ -300,11 +300,11 @@ impl SIIAddress<[u8; 4]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SIIData([u8]);
+    pub struct SiiData([u8]);
     pub u64, sii_data, set_sii_data: 8*8-1, 0;
 }
 
-impl SIIData<[u8; 8]> {
+impl SiiData<[u8; 8]> {
     pub const ADDRESS: u16 = 0x0508;
     pub const SIZE: usize = 8;
 

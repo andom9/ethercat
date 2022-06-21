@@ -13,28 +13,6 @@ pub struct NetworkDescription<'a> {
 }
 
 impl<'a> NetworkDescription<'a> {
-    //pub fn new(context_buf: &mut [u8]) -> Self{
-    //    let len = context_buf.len();
-    //    let max_num_slaves = len/(SLAVE_SIZE+SLAVE_Dc_SIZE);
-    //    let (slave_buf, rest) = context_buf.split_at_mut(max_num_slaves*SLAVE_SIZE);
-    //    let (dc_buf, _) = rest.split_at_mut(max_num_slaves*SLAVE_Dc_SIZE);
-    //
-    //    let (slave_buf, dc_buf) = unsafe{
-    //        (
-    //        core::mem::transmute::<&mut[u8],&mut[Option<Slave>]>(slave_buf),
-    //        core::mem::transmute::<&mut[u8],&mut[Option<SlaveDc>]>(dc_buf))
-    //    };
-    //    slave_buf.iter_mut().for_each(|b|*b=None);
-    //    dc_buf.iter_mut().for_each(|b|*b=None);
-    //
-    //    Self{
-    //        slaves: slave_buf,
-    //        slave_dcs: dc_buf,
-    //        push_count: 0,
-    //        max_push: max_num_slaves,
-    //    }
-    //}
-
     pub fn new(slave_buf: &'a mut [Option<Slave>]) -> Self {
         //let len1 = slave_buf.iter_mut().map(|buf| *buf = None).count();
         Self {
@@ -63,7 +41,7 @@ impl<'a> NetworkDescription<'a> {
         self.push_count
     }
 
-    pub(crate) fn slave(&self, addr: SlaveAddress) -> Option<&Slave> {
+    pub fn slave(&self, addr: SlaveAddress) -> Option<&Slave> {
         let addr = match addr {
             SlaveAddress::SlavePosition(n) => n,
             SlaveAddress::StationAddress(n) => {
@@ -99,18 +77,22 @@ impl<'a> NetworkDescription<'a> {
         }
     }
 
-    pub(crate) fn slaves(&self) -> &[Option<Slave>] {
-        self.slaves
+    //pub fn slaves(&self) -> &[Option<Slave>] {
+    //    self.slaves
+    //}
+
+    pub fn slaves(&self) -> impl Iterator<Item = &Slave> {
+        self.slaves.iter().filter_map(|s| s.as_ref())
     }
 
-    pub(crate) fn recieved_ports(&self) -> RecievedPorts {
+    pub fn recieved_ports(&self) -> RecievedPorts {
         let Self { slaves, .. } = self;
         RecievedPorts::new(slaves)
     }
 
-    pub(crate) fn read_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
+    pub(crate) fn read_and_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
         let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
-        read_write_pdo_buffer(pdo_buffer, iter);
+        read_and_write_pdo_buffer(pdo_buffer, iter);
     }
 }
 
@@ -185,7 +167,7 @@ impl<'a> Iterator for RecievedPorts<'a> {
     }
 }
 
-pub(crate) fn read_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
+fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
     pdo_buffer: &mut [u8],
     slaves: S,
 ) {

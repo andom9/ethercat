@@ -1,6 +1,6 @@
-use crate::cyclic::Cyclic;
+use crate::cyclic::CyclicProcess;
 use crate::cyclic::{
-    Command, CommandType, CommonError, EtherCatSystemTime, NetworkDescription, ReceivedData,
+    Command, CommandType, EcError, EtherCatSystemTime, NetworkDescription, ReceivedData,
     SlaveAddress,
 };
 use crate::register::datalink::{
@@ -14,9 +14,9 @@ const OFFSET_COUNT_MAX: usize = 16;
 const DRIFT_COUNT_MAX: usize = 15000;
 
 #[derive(Debug, Clone)]
-pub enum State {
+enum State {
     Idle,
-    Error(Error),
+    Error(EcError<()>),
     Complete,
     RequestToLatch(usize),
     CalculateOffset((usize, u16)),
@@ -26,16 +26,16 @@ pub enum State {
     CompensateDrift(usize),
 }
 
-#[derive(Debug, Clone)]
-pub enum Error {
-    Common(CommonError),
-}
+//#[derive(Debug, Clone)]
+//pub enum Error {
+//    Common(EcError),
+//}
 
-impl From<CommonError> for Error {
-    fn from(err: CommonError) -> Self {
-        Self::Common(err)
-    }
-}
+//impl From<Error> for EcError<Error> {
+//    fn from(err: Error) -> Self {
+//        Self::UnitSpecific(err)
+//    }
+//}
 
 #[derive(Debug, Clone)]
 pub struct DcInitializer {
@@ -105,9 +105,11 @@ impl DcInitializer {
         }
         self.state = State::RequestToLatch(0);
     }
+
+    //TODO:Waitがない
 }
 
-impl Cyclic for DcInitializer {
+impl CyclicProcess for DcInitializer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
@@ -179,12 +181,12 @@ impl Cyclic for DcInitializer {
     ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            if command != self.command {
-                self.state = State::Error(Error::Common(CommonError::BadPacket));
-            }
+            //if command != self.command {
+            //    self.state = State::Error(EcError::UnexpectedCommand);
+            //}
             (data, wkc)
         } else {
-            self.state = State::Error(Error::Common(CommonError::LostCommand));
+            self.state = State::Error(EcError::LostCommand);
             return;
         };
 
@@ -194,14 +196,14 @@ impl Cyclic for DcInitializer {
             State::Complete => {}
             State::RequestToLatch(count) => {
                 if wkc != desc.len() as u16 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     self.state = State::CalculateOffset((*count, 0))
                 }
             }
             State::CalculateOffset((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let master_time = self.sys_time.0;
                     let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
@@ -227,7 +229,7 @@ impl Cyclic for DcInitializer {
             }
             State::CalculateDelay((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let recv_time = DcRecieveTime(data);
                     let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
@@ -312,12 +314,12 @@ impl Cyclic for DcInitializer {
             }
             State::SetOffset(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let next_pos = desc
                         .slaves()
-                        .iter()
-                        .filter_map(|s| s.as_ref())
+                        //.iter()
+                        //.filter_map(|s| s.as_ref())
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
@@ -329,12 +331,12 @@ impl Cyclic for DcInitializer {
             }
             State::SetDelay(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let next_pos = desc
                         .slaves()
-                        .iter()
-                        .filter_map(|s| s.as_ref())
+                        //.iter()
+                        //.filter_map(|s| s.as_ref())
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
@@ -346,7 +348,7 @@ impl Cyclic for DcInitializer {
             }
             State::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
-                    self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(wkc)));
+                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else if count + 1 < DRIFT_COUNT_MAX {
                     self.state = State::CompensateDrift(count + 1);
                 } else {

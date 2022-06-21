@@ -1,33 +1,31 @@
-use embedded_hal::timer::CountDown;
 use ethercat_master::arch::*;
+use ethercat_master::cyclic::sii_reader;
 use ethercat_master::interface::*;
-use ethercat_master::packet::*;
-use ethercat_master::sii::SlaveInformationInterface;
-use fugit::MicrosDurationU32;
+use ethercat_master::master::*;
+use ethercat_master::slave::Slave;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-pub struct Timer(Instant, MicrosDurationU32);
+pub struct Timer(Instant, Duration);
 
 impl Timer {
     fn new() -> Self {
-        Timer(Instant::now(), MicrosDurationU32::from_ticks(0))
+        Timer(Instant::now(), Duration::default())
     }
 }
 
 impl CountDown for Timer {
-    type Time = MicrosDurationU32;
     fn start<T>(&mut self, count: T)
     where
-        T: Into<Self::Time>,
+        T: Into<Duration>,
     {
         self.0 = Instant::now();
         self.1 = count.into();
     }
 
     fn wait(&mut self) -> nb::Result<(), void::Void> {
-        if self.0.elapsed() > std::time::Duration::from_micros(self.1.to_micros() as u64) {
+        if self.1 < self.0.elapsed() {
             Ok(())
         } else {
             Err(nb::Error::WouldBlock)
@@ -112,21 +110,14 @@ fn simple_test(interf_name: &str) {
     let timer = Timer::new();
     let mut buf = [0; 1500];
     let device = PnetDevice::open(&interf_name);
+    let mut iface = EtherCatInterface::new(device, timer, &mut buf);
+    let mut slave_buf: [Option<Slave>; 10] = Default::default();
 
-    let mut master = EtherCatInterface::new(device, timer, &mut buf);
-    master
-        .add_command(CommandType::BRD, 0, 0, 1, |_| ())
+    let mut master = EtherCatMaster::initilize(&mut iface, &mut slave_buf).unwrap();
+
+    let (eeprom_data, size) = master
+        .read_sii(SlaveAddress::SlavePosition(0), sii_reader::sii_reg::ProductCode::ADDRESS)
         .unwrap();
-    master.poll(MicrosDurationU32::from_ticks(1000)).unwrap();
-    let pdu = master.consume_command().next().unwrap();
-    println!("command type: {:?}", CommandType::new(pdu.command_type()));
-    println!("adp: {:?}", pdu.adp());
-    println!("ado: {:?}", pdu.ado());
-    println!("data: {:?}", pdu.data());
-    println!("wkc: {:?}", pdu.wkc());
-
-    let mut sii = SlaveInformationInterface::new(&mut master);
-    let (eeprom_data, size) = sii.read(SlaveAddress::SlavePosition(0), 0x0008).unwrap();
-    println!("eeprom: {:x}", eeprom_data.sii_data());
+    println!("product code: {:x}", eeprom_data.sii_data());
     println!("read_size: {}", size);
 }

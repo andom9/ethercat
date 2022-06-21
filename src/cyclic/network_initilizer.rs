@@ -1,30 +1,29 @@
 use super::slave_initializer;
 use crate::cyclic::slave_initializer::SlaveInitilizer;
-use crate::cyclic::Cyclic;
-use crate::error::CommonError;
+use crate::cyclic::CyclicProcess;
+use crate::error::EcError;
 use crate::interface::Command;
 use crate::network::NetworkDescription;
 use crate::packet::ethercat::CommandType;
-use nb;
+use crate::register::datalink::DlControl;
 
 use super::EtherCatSystemTime;
 use super::ReceivedData;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Common(CommonError),
-    Init(slave_initializer::Error),
+    Init(EcError<slave_initializer::Error>),
     TooManySlaves,
 }
 
-impl From<CommonError> for Error {
-    fn from(err: CommonError) -> Self {
-        Self::Common(err)
+impl From<Error> for EcError<Error> {
+    fn from(err: Error) -> Self {
+        Self::UnitSpecific(err)
     }
 }
 
-impl From<slave_initializer::Error> for Error {
-    fn from(err: slave_initializer::Error) -> Self {
+impl From<EcError<slave_initializer::Error>> for Error {
+    fn from(err: EcError<slave_initializer::Error>) -> Self {
         Self::Init(err)
     }
 }
@@ -32,7 +31,7 @@ impl From<slave_initializer::Error> for Error {
 #[derive(Debug)]
 enum State {
     Idle,
-    Error(Error),
+    Error(EcError<Error>),
     CountSlaves,
     StartInitSlaves(u16),
     WaitInitSlaves(u16),
@@ -66,30 +65,43 @@ impl NetworkInitilizer {
         self.state = State::CountSlaves;
     }
 
-    pub fn wait(&mut self) -> nb::Result<(), Error> {
-        if let State::Error(err) = &self.state {
-            Err(nb::Error::Other(err.clone()))
-        } else if let State::Complete = self.state {
-            Ok(())
-        } else {
-            Err(nb::Error::WouldBlock)
+    pub fn wait(&mut self) -> Option<Result<(), EcError<Error>>> {
+        match &self.state {
+            State::Complete => Some(Ok(())),
+            State::Error(err) => Some(Err(err.clone())),
+            //State::Idle => Err(EcError::NotStarted.into()),
+            _ => None,
         }
     }
 }
 
-impl Cyclic for NetworkInitilizer {
+impl CyclicProcess for NetworkInitilizer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
+        //log::info!("send {:?}",self.state);
+
         let command_and_data = match &self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::CountSlaves => {
-                let command = Command::new(CommandType::BRD, 0, 0);
+                let command = Command::new(CommandType::BWR, 0, DlControl::ADDRESS);
+                //let command = Command::new_write(self.slave_address, );
+                //self.buffer.fill(0);
+                //Some((command, &self.buffer[..1]))
                 self.buffer.fill(0);
-                Some((command, &self.buffer[..1]))
+                // ループポートを設定する。
+                // ・EtherCat以外のフレームを削除する。
+                // ・ソースMACアドレスを変更して送信する。
+                // ・ポートを自動開閉する。
+                let mut dl_control = DlControl(&mut self.buffer);
+                dl_control.set_forwarding_rule(true);
+                dl_control.set_tx_buffer_size(7);
+                dl_control.set_enable_alias_address(false);
+                //log::info!("{:?}", self.buffer);
+                Some((command, &self.buffer[..DlControl::SIZE]))
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.start(*count);
@@ -110,14 +122,16 @@ impl Cyclic for NetworkInitilizer {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
+        //log::info!("recv {:?}",self.state);
+
         let wkc = if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, wkc, .. } = recv_data;
-            if *command != self.command {
-                self.state = State::Error(Error::Common(CommonError::BadPacket));
-            }
+            //if *command != self.command {
+            //    self.state = State::Error(EcError::UnexpectedCommand);
+            //}
             *wkc
         } else {
-            self.state = State::Error(Error::Common(CommonError::LostCommand));
+            self.state = State::Error(EcError::LostCommand);
             return;
         };
 
@@ -142,19 +156,19 @@ impl Cyclic for NetworkInitilizer {
                 self.initilizer
                     .recieve_and_process(recv_data, desc, sys_time);
                 match self.initilizer.wait() {
-                    Ok(Some(slave)) => {
+                    Some(Ok(Some(slave))) => {
                         if desc.push_slave(slave).is_err() {
-                            self.state = State::Error(Error::TooManySlaves);
+                            self.state = State::Error(Error::TooManySlaves.into());
                         } else if *count + 1 < self.num_slaves {
                             self.state = State::StartInitSlaves(*count + 1);
                         } else {
                             self.state = State::Complete;
                         }
                     }
-                    Ok(None) => unreachable!(),
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(err.into());
+                    Some(Ok(None)) => unreachable!(),
+                    None => {}
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Init(err).into());
                     }
                 }
             }
@@ -164,5 +178,5 @@ impl Cyclic for NetworkInitilizer {
 }
 
 const fn buffer_size() -> usize {
-    1
+    DlControl::SIZE
 }

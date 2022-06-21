@@ -155,8 +155,7 @@ impl<B: AsRef<[u8]>> Iterator for EtherCatPduOffsets<B> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        self.buffer.as_ref()[self.offset..]
-            .get(EtherCatPduHeader::SIZE - 1)?;
+        self.buffer.as_ref()[self.offset..].get(EtherCatPduHeader::SIZE - 1)?;
         let dlpdu = EtherCatPduHeader(&self.buffer.as_ref()[self.offset..]);
         let len = dlpdu.length();
         if len == 0 {
@@ -198,8 +197,7 @@ impl<'a> Iterator for EtherCatPdus<'a> {
     type Item = EtherCatPduHeader<&'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        self.buffer[self.offset..]
-            .get(EtherCatPduHeader::SIZE - 1)?;
+        self.buffer[self.offset..].get(EtherCatPduHeader::SIZE - 1)?;
         let dlpdu = EtherCatPduHeader(&self.buffer[self.offset..]);
         let len = dlpdu.length();
         if len == 0 {

@@ -1,20 +1,19 @@
 use super::mailbox_reader::Error;
-use super::{Cyclic, EtherCatSystemTime, ReceivedData};
+use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::network::NetworkDescription;
 use crate::packet::ethercat::MailboxHeader;
 use crate::{
-    error::CommonError,
+    error::EcError,
     interface::{Command, SlaveAddress},
     register::datalink::{SyncManagerActivation, SyncManagerStatus},
     util::const_max,
 };
-use nb;
 
 const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 
 #[derive(Debug)]
 enum State {
-    Error(Error),
+    Error(EcError<Error>),
     Idle,
     Complete,
     CheckMailboxEmpty,
@@ -102,16 +101,17 @@ impl<'a> MailboxWriter<'a> {
         self.wait_full = wait_empty;
     }
 
-    pub fn wait(&self) -> nb::Result<(), Error> {
+    pub fn wait(&self) -> Option<Result<(), EcError<Error>>> {
         match &self.state {
-            State::Complete => Ok(()),
-            State::Error(err) => Err(nb::Error::Other(err.clone())),
-            _ => Err(nb::Error::WouldBlock),
+            State::Complete => Some(Ok(())),
+            State::Error(err) => Some(Err(err.clone())),
+            //State::Idle => Err(EcError::NotStarted.into()),
+            _ => None,
         }
     }
 }
 
-impl<'a> Cyclic for MailboxWriter<'a> {
+impl<'a> CyclicProcess for MailboxWriter<'a> {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
@@ -135,11 +135,11 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                             &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
                         ))
                     } else {
-                        self.state = State::Error(Error::NoMailbox);
+                        self.state = State::Error(Error::NoMailbox.into());
                         None
                     }
                 } else {
-                    self.state = State::Error(Error::NoSlave);
+                    self.state = State::Error(Error::NoSlave.into());
                     None
                 }
             }
@@ -162,7 +162,7 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                 self.command = Command::new_write(self.slave_address, sm.start_address);
                 self.buffer.fill(0);
                 if self.send_buf.len() < sm.size as usize {
-                    self.state = State::Error(Error::BufferSmall);
+                    self.state = State::Error(Error::BufferSmall.into());
                     None
                 } else {
                     //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&self.mailbox_header.0);
@@ -180,9 +180,9 @@ impl<'a> Cyclic for MailboxWriter<'a> {
     ) {
         if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            if *command != self.command {
-                self.state = State::Error(Error::Common(CommonError::BadPacket));
-            }
+            //if *command != self.command {
+            //    self.state = State::Error(EcError::UnexpectedCommand);
+            //}
             let wkc = *wkc;
             match self.state {
                 State::Idle => {}
@@ -190,7 +190,7 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                 State::Complete => {}
                 State::CheckMailboxEmpty => {
                     if wkc != 1 {
-                        self.state = State::Error(Error::MailboxNotAvailable);
+                        self.state = State::Error(Error::MailboxNotAvailable.into());
                     } else {
                         let status = SyncManagerStatus(data);
                         self.activation_buf
@@ -201,13 +201,13 @@ impl<'a> Cyclic for MailboxWriter<'a> {
                         } else if self.wait_full {
                             self.state = State::WaitMailboxEmpty;
                         } else {
-                            self.state = State::Error(Error::MailboxFull);
+                            self.state = State::Error(Error::MailboxFull.into());
                         }
                     }
                 }
                 State::WaitMailboxEmpty => {
                     if wkc != 1 {
-                        self.state = State::Error(Error::MailboxNotAvailable);
+                        self.state = State::Error(Error::MailboxNotAvailable.into());
                     } else {
                         let status = SyncManagerStatus(data);
                         self.activation_buf
@@ -232,7 +232,8 @@ impl<'a> Cyclic for MailboxWriter<'a> {
         }
         // check timeout
         if self.timer_start.0 < sys_time.0 && self.timeout_ns < sys_time.0 - self.timer_start.0 {
-            self.state = State::Error(Error::TimeoutMs((self.timeout_ns / 1000 / 1000) as u32));
+            self.state =
+                State::Error(Error::TimeoutMs((self.timeout_ns / 1000 / 1000) as u32).into());
         }
     }
 }

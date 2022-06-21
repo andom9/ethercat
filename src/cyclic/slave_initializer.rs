@@ -2,13 +2,14 @@ use super::al_state_transfer;
 use super::sii_reader;
 use super::{
     al_state_transfer::AlStateTransfer,
-    sii_reader::{sii_reg, SIIReader},
+    sii_reader::{sii_reg, SiiReader},
 };
 use super::{EtherCatSystemTime, ReceivedData};
-use crate::cyclic::Cyclic;
-use crate::error::CommonError;
+use crate::cyclic::CyclicProcess;
+use crate::error::EcError;
 use crate::interface::{Command, SlaveAddress};
 use crate::network::NetworkDescription;
+use crate::register::application::PdiControl;
 use crate::register::{
     application::{
         CyclicOperationStartTime, DcActivation, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
@@ -16,7 +17,7 @@ use crate::register::{
         Sync1CycleTime,
     },
     datalink::{
-        DLControl, DLInformation, DLStatus, DLUserWatchDog, FMMURegister, FixedStationAddress,
+        DlControl, DlInformation, DlStatus, DlUserWatchDog, FMMURegister, FixedStationAddress,
         RxErrorCounter, SyncManagerActivation, SyncManagerChannelWatchDog, SyncManagerControl,
         SyncManagerStatus, WatchDogDivider,
     },
@@ -27,76 +28,76 @@ use bit_field::BitField;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Common(CommonError),
-    AlStateTransition(al_state_transfer::Error),
-    SII(sii_reader::Error),
+    AlStateTransition(EcError<al_state_transfer::Error>),
+    Sii(EcError<sii_reader::Error>),
     FailedToLoadEEPROM,
 }
 
-impl From<CommonError> for Error {
-    fn from(err: CommonError) -> Self {
-        Self::Common(err)
+impl From<Error> for EcError<Error> {
+    fn from(err: Error) -> Self {
+        Self::UnitSpecific(err)
     }
 }
 
-impl From<al_state_transfer::Error> for Error {
-    fn from(err: al_state_transfer::Error) -> Self {
+impl From<EcError<al_state_transfer::Error>> for Error {
+    fn from(err: EcError<al_state_transfer::Error>) -> Self {
         Self::AlStateTransition(err)
     }
 }
 
-impl From<sii_reader::Error> for Error {
-    fn from(err: sii_reader::Error) -> Self {
-        Self::SII(err)
+impl From<EcError<sii_reader::Error>> for Error {
+    fn from(err: EcError<sii_reader::Error>) -> Self {
+        Self::Sii(err)
     }
 }
 
 #[derive(Debug)]
 enum State {
     Idle,
-    Error(Error),
+    Error(EcError<Error>),
     SetLoopPort,
-    RequestInitState,
-    WaitInitState,
+    RequestInitState(bool),
+    //WaitInitState,
     ResetErrorCount,
     SetWatchDogDivider,
-    DisableDLWatchDog,
-    DisableSMWatchDog,
-    CheckDLStatus,
-    CheckDLInfo,
+    DisableDlWatchDog,
+    DisableSmWatchDog,
+    CheckDlStatus,
+    CheckDlInfo,
     ClearFMMU(u16),
-    ClearSM(u16),
-    GetVenderID,
-    WaitVenderID,
-    GetProductCode,
-    WaitProductCode,
-    GetRevision,
-    WaitRevision,
-    GetProtocol,
-    WaitProtocol,
-    GetRxMailboxSize,
-    WaitRxMailboxSize,
-    GetRxMailboxOffset,
-    WaitRxMailboxOffset,
-    GetTxMailboxSize,
-    WaitTxMailboxSize,
-    GetTxMailboxOffset,
-    WaitTxMailboxOffset,
-    SetSM0Control,
-    SetSM0Activation,
-    SetSM1Control,
-    SetSM1Activation,
+    ClearSm(u16),
+    GetVenderID(bool),
+    //WaitVenderID,
+    GetProductCode(bool),
+    //WaitProductCode,
+    GetRevision(bool),
+    //WaitRevision,
+    GetProtocol(bool),
+    //WaitProtocol,
+    GetRxMailboxSize(bool),
+    //WaitRxMailboxSize,
+    GetRxMailboxOffset(bool),
+    //WaitRxMailboxOffset,
+    GetTxMailboxSize(bool),
+    //WaitTxMailboxSize,
+    GetTxMailboxOffset(bool),
+    //WaitTxMailboxOffset,
+    SetSm0Control,
+    SetSm0Activation,
+    SetSm1Control,
+    SetSm1Activation,
     SetStationAddress,
+    CheckPdiControl,
     ClearDcActivation,
     ClearCyclicOperationStartTime,
     ClearSync0CycleTime,
     ClearSync1CycleTime,
-    ClearLatchEdge,
-    ClearLatchEvent,
-    ClearLatch0PositiveEdgeValue,
-    ClearLatch0NegativeEdgeValue,
-    ClearLatch1PositiveEdgeValue,
-    ClearLatch1NegativeEdgeValue,
+    //ClearLatchEdge,
+    //ClearLatchEvent,
+    //ClearLatch0PositiveEdgeValue,
+    //ClearLatch0NegativeEdgeValue,
+    //ClearLatch1PositiveEdgeValue,
+    //ClearLatch1NegativeEdgeValue,
     Complete,
 }
 
@@ -131,48 +132,53 @@ impl SlaveInitilizer {
             .map(|slave| slave.mailbox_count = 1);
     }
 
-    pub fn wait(&mut self) -> nb::Result<Option<Slave>, Error> {
+    pub fn wait(&mut self) -> Option<Result<Option<Slave>, EcError<Error>>> {
         match &self.state {
-            State::Complete => Ok(core::mem::take(&mut self.slave_info)),
-            State::Error(err) => Err(nb::Error::Other(err.clone())),
-            _ => Err(nb::Error::WouldBlock),
+            State::Complete => Some(Ok(core::mem::take(&mut self.slave_info))),
+            State::Error(err) => Some(Err(err.clone())),
+            //State::Idle => Err(EcError::NotStarted.into()),
+            _ => None,
         }
     }
 }
 
-impl Cyclic for SlaveInitilizer {
+impl CyclicProcess for SlaveInitilizer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
+        //log::info!("send {:?}",self.state);
+
         let command_and_data = match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
             State::SetLoopPort => {
-                let command = Command::new_write(self.slave_address, DLControl::ADDRESS);
+                let command = Command::new_write(self.slave_address, DlControl::ADDRESS);
                 self.buffer.fill(0);
                 // ループポートを設定する。
                 // ・EtherCat以外のフレームを削除する。
                 // ・ソースMACアドレスを変更して送信する。
                 // ・ポートを自動開閉する。
-                let mut dl_control = DLControl(self.buffer);
+                let mut dl_control = DlControl(&mut self.buffer);
                 dl_control.set_forwarding_rule(true);
                 dl_control.set_tx_buffer_size(7);
                 dl_control.set_enable_alias_address(false);
-                Some((command, &self.buffer[..DLControl::SIZE]))
+                Some((command, &self.buffer[..DlControl::SIZE]))
             }
-            State::RequestInitState => {
+            State::RequestInitState(is_first) => {
                 self.inner.into_al_state_transfer();
                 let al_transfer = self.inner.al_state_transfer().unwrap();
-                al_transfer.start(self.slave_address, Some(AlState::Init));
+                if is_first{
+                    al_transfer.start(Some(self.slave_address), AlState::Init);
+                }
                 al_transfer.next_command(desc, sys_time)
             }
-            State::WaitInitState => {
-                let al_transfer = self.inner.al_state_transfer().unwrap();
-                al_transfer.next_command(desc, sys_time)
-            }
+            //State::WaitInitState => {
+            //    let al_transfer = self.inner.al_state_transfer().unwrap();
+            //    al_transfer.next_command(desc, sys_time)
+            //}
             State::ResetErrorCount => {
                 let command = Command::new_write(self.slave_address, RxErrorCounter::ADDRESS);
                 self.buffer.fill(0);
@@ -181,34 +187,34 @@ impl Cyclic for SlaveInitilizer {
             State::SetWatchDogDivider => {
                 let command = Command::new_write(self.slave_address, WatchDogDivider::ADDRESS);
                 self.buffer.fill(0);
-                let mut watchdog_div = WatchDogDivider(self.buffer);
+                let mut watchdog_div = WatchDogDivider(&mut self.buffer);
                 watchdog_div.set_watch_dog_divider(2498); //100us(default)
                 Some((command, &self.buffer[..WatchDogDivider::SIZE]))
             }
-            State::DisableDLWatchDog => {
-                let command = Command::new_write(self.slave_address, DLUserWatchDog::ADDRESS);
+            State::DisableDlWatchDog => {
+                let command = Command::new_write(self.slave_address, DlUserWatchDog::ADDRESS);
                 self.buffer.fill(0);
                 // disable dl watch dog
-                Some((command, &self.buffer[..DLUserWatchDog::SIZE]))
+                Some((command, &self.buffer[..DlUserWatchDog::SIZE]))
             }
-            State::DisableSMWatchDog => {
+            State::DisableSmWatchDog => {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerChannelWatchDog::ADDRESS);
                 self.buffer.fill(0);
                 // disable sm watch dog
                 Some((command, &self.buffer[..SyncManagerChannelWatchDog::SIZE]))
             }
-            State::CheckDLStatus => {
+            State::CheckDlStatus => {
                 // ポートと、EEPROMのロード状況を確認する。
-                let command = Command::new_read(self.slave_address, DLStatus::ADDRESS);
+                let command = Command::new_read(self.slave_address, DlStatus::ADDRESS);
                 self.buffer.fill(0);
-                Some((command, &self.buffer[..DLStatus::SIZE]))
+                Some((command, &self.buffer[..DlStatus::SIZE]))
             }
-            State::CheckDLInfo => {
+            State::CheckDlInfo => {
                 // 各種サポート状況の確認
-                let command = Command::new_read(self.slave_address, DLInformation::ADDRESS);
+                let command = Command::new_read(self.slave_address, DlInformation::ADDRESS);
                 self.buffer.fill(0);
-                Some((command, &self.buffer[..DLInformation::SIZE]))
+                Some((command, &self.buffer[..DlInformation::SIZE]))
             }
             State::ClearFMMU(count) => {
                 let command =
@@ -217,10 +223,10 @@ impl Cyclic for SlaveInitilizer {
                 // disable dl watch dog
                 Some((command, &self.buffer[..FMMURegister::SIZE]))
             }
-            State::ClearSM(count) => {
+            State::ClearSm(count) => {
                 let command = Command::new_write(
                     self.slave_address,
-                    SyncManagerControl::ADDRESS * count * 0x08,
+                    SyncManagerControl::ADDRESS + count * 0x08,
                 );
                 self.buffer.fill(0);
                 // disable dl watch dog
@@ -229,92 +235,108 @@ impl Cyclic for SlaveInitilizer {
                     + SyncManagerActivation::SIZE;
                 Some((command, &self.buffer[..length]))
             }
-            State::GetVenderID => {
+            State::GetVenderID(is_first) => {
                 self.inner.into_sii();
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::VenderID::ADDRESS);
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::VenderID::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::WaitVenderID => {
+            //State::WaitVenderID => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetProductCode(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::ProductCode::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::GetProductCode => {
+            //State::WaitProductCode => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetRevision(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::ProductCode::ADDRESS);
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::RevisionNumber::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::WaitProductCode => {
+            //State::WaitRevision => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetProtocol(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::MailboxProtocol::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::GetRevision => {
+            //State::WaitProtocol => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetRxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::RevisionNumber::ADDRESS);
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::StandardRxMailboxSize::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::WaitRevision => {
+            //State::WaitRxMailboxSize => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetRxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
+                if is_first{
+                    sii_reader.start(
+                        self.slave_address,
+                        sii_reg::StandardRxMailboxOffset::ADDRESS,
+                    );
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::GetProtocol => {
+            //State::WaitRxMailboxOffset => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetTxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::MailboxProtocol::ADDRESS);
+                if is_first{
+                    sii_reader.start(self.slave_address, sii_reg::StandardTxMailboxSize::ADDRESS);
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::WaitProtocol => {
+            //State::WaitTxMailboxSize => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::GetTxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
+                if is_first{
+                    sii_reader.start(
+                        self.slave_address,
+                        sii_reg::StandardTxMailboxOffset::ADDRESS,
+                    );
+                }
                 sii_reader.next_command(desc, sys_time)
             }
-            State::GetRxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::StandardRxMailboxSize::ADDRESS);
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::WaitRxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::GetRxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(
-                    self.slave_address,
-                    sii_reg::StandardRxMailboxOffset::ADDRESS,
-                );
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::WaitRxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::GetTxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(self.slave_address, sii_reg::StandardTxMailboxSize::ADDRESS);
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::WaitTxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::GetTxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.start(
-                    self.slave_address,
-                    sii_reg::StandardTxMailboxOffset::ADDRESS,
-                );
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::WaitTxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.next_command(desc, sys_time)
-            }
-            State::SetSM0Control => {
+            //State::WaitTxMailboxOffset => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.next_command(desc, sys_time)
+            //}
+            State::SetSm0Control => {
                 let command = Command::new_write(self.slave_address, SyncManagerControl::ADDRESS);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxRx(ref sm0_info)) =
                     self.slave_info.as_mut().unwrap().info.sm0
                 {
-                    let mut sm = SyncManagerControl(self.buffer);
+                    let mut sm = SyncManagerControl(&mut self.buffer);
                     sm.set_physical_start_address(sm0_info.start_address);
                     sm.set_length(sm0_info.size);
                     sm.set_buffer_type(0b10); //mailbox
@@ -324,14 +346,14 @@ impl Cyclic for SlaveInitilizer {
                 }
                 Some((command, &self.buffer[..SyncManagerControl::SIZE]))
             }
-            State::SetSM0Activation => {
+            State::SetSm0Activation => {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxRx(ref _sm0_info)) =
                     self.slave_info.as_mut().unwrap().info.sm0
                 {
-                    let mut sm = SyncManagerActivation(self.buffer);
+                    let mut sm = SyncManagerActivation(&mut self.buffer);
                     sm.set_channel_enable(true);
                     sm.set_repeat(false);
                     //sm.set_dc_event_w_bus_w(false);
@@ -339,14 +361,14 @@ impl Cyclic for SlaveInitilizer {
                 }
                 Some((command, &self.buffer[..SyncManagerActivation::SIZE]))
             }
-            State::SetSM1Control => {
+            State::SetSm1Control => {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerControl::ADDRESS + 0x08);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxTx(ref sm1_info)) =
                     self.slave_info.as_mut().unwrap().info.sm1
                 {
-                    let mut sm = SyncManagerControl(self.buffer);
+                    let mut sm = SyncManagerControl(&mut self.buffer);
                     sm.set_physical_start_address(sm1_info.start_address);
                     sm.set_length(sm1_info.size);
                     sm.set_buffer_type(0b10); //mailbox
@@ -356,14 +378,14 @@ impl Cyclic for SlaveInitilizer {
                 }
                 Some((command, &self.buffer[..SyncManagerControl::SIZE]))
             }
-            State::SetSM1Activation => {
+            State::SetSm1Activation => {
                 let command =
                     Command::new_write(self.slave_address, SyncManagerActivation::ADDRESS + 0x08);
                 self.buffer.fill(0);
                 if let Some(SyncManager::MailboxTx(ref _sm1_info)) =
                     self.slave_info.as_mut().unwrap().info.sm1
                 {
-                    let mut sm = SyncManagerActivation(self.buffer);
+                    let mut sm = SyncManagerActivation(&mut self.buffer);
                     sm.set_channel_enable(true);
                     sm.set_repeat(false);
                     //sm.set_dc_event_w_bus_w(false);
@@ -374,7 +396,7 @@ impl Cyclic for SlaveInitilizer {
             State::SetStationAddress => {
                 let command = Command::new_write(self.slave_address, FixedStationAddress::ADDRESS);
                 self.buffer.fill(0);
-                let mut st_addr = FixedStationAddress(self.buffer);
+                let mut st_addr = FixedStationAddress(&mut self.buffer);
                 let addr = match self.slave_address {
                     SlaveAddress::SlavePosition(addr) => addr + 1,
                     SlaveAddress::StationAddress(addr) => addr,
@@ -382,6 +404,12 @@ impl Cyclic for SlaveInitilizer {
                 self.slave_info.as_mut().unwrap().configured_address = addr;
                 st_addr.set_configured_station_address(addr);
                 Some((command, &self.buffer[..FixedStationAddress::SIZE]))
+            }
+            State::CheckPdiControl => {
+                // 各種サポート状況の確認
+                let command = Command::new_read(self.slave_address, PdiControl::ADDRESS);
+                self.buffer.fill(0);
+                Some((command, &self.buffer[..PdiControl::SIZE]))
             }
             State::ClearDcActivation => {
                 let command = Command::new_write(self.slave_address, DcActivation::ADDRESS);
@@ -404,40 +432,40 @@ impl Cyclic for SlaveInitilizer {
                 self.buffer.fill(0);
                 Some((command, &self.buffer[..Sync1CycleTime::SIZE]))
             }
-            State::ClearLatchEdge => {
-                let command = Command::new_write(self.slave_address, LatchEdge::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..LatchEdge::SIZE]))
-            }
-            State::ClearLatchEvent => {
-                let command = Command::new_write(self.slave_address, LatchEvent::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..LatchEvent::SIZE]))
-            }
-            State::ClearLatch0PositiveEdgeValue => {
-                let command =
-                    Command::new_write(self.slave_address, Latch0PositiveEdgeValue::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..Latch0PositiveEdgeValue::SIZE]))
-            }
-            State::ClearLatch0NegativeEdgeValue => {
-                let command =
-                    Command::new_write(self.slave_address, Latch0NegativeEdgeValue::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..Latch0NegativeEdgeValue::SIZE]))
-            }
-            State::ClearLatch1PositiveEdgeValue => {
-                let command =
-                    Command::new_write(self.slave_address, Latch1PositiveEdgeValue::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..Latch1PositiveEdgeValue::SIZE]))
-            }
-            State::ClearLatch1NegativeEdgeValue => {
-                let command =
-                    Command::new_write(self.slave_address, Latch1NegativeEdgeValue::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..Latch1NegativeEdgeValue::SIZE]))
-            }
+            //State::ClearLatchEdge => {
+            //    let command = Command::new_write(self.slave_address, LatchEdge::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..LatchEdge::SIZE]))
+            //}
+            //State::ClearLatchEvent => {
+            //    let command = Command::new_write(self.slave_address, LatchEvent::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..LatchEvent::SIZE]))
+            //}
+            //State::ClearLatch0PositiveEdgeValue => {
+            //    let command =
+            //        Command::new_write(self.slave_address, Latch0PositiveEdgeValue::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..Latch0PositiveEdgeValue::SIZE]))
+            //}
+            //State::ClearLatch0NegativeEdgeValue => {
+            //    let command =
+            //        Command::new_write(self.slave_address, Latch0NegativeEdgeValue::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..Latch0NegativeEdgeValue::SIZE]))
+            //}
+            //State::ClearLatch1PositiveEdgeValue => {
+            //    let command =
+            //        Command::new_write(self.slave_address, Latch1PositiveEdgeValue::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..Latch1PositiveEdgeValue::SIZE]))
+            //}
+            //State::ClearLatch1NegativeEdgeValue => {
+            //    let command =
+            //        Command::new_write(self.slave_address, Latch1NegativeEdgeValue::ADDRESS);
+            //    self.buffer.fill(0);
+            //    Some((command, &self.buffer[..Latch1NegativeEdgeValue::SIZE]))
+            //}
         };
         if let Some((command, _)) = command_and_data {
             self.command = command;
@@ -451,17 +479,18 @@ impl Cyclic for SlaveInitilizer {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
+        //log::info!("recv {:?}",self.state);
         let data = if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            if *command != self.command {
-                self.state = State::Error(Error::Common(CommonError::BadPacket));
-            }
+            //if *command != self.command {
+            //    self.state = State::Error(EcError::UnexpectedCommand);
+            //}
             if *wkc != 1 {
-                self.state = State::Error(Error::Common(CommonError::UnexpectedWKC(*wkc)));
+                self.state = State::Error(EcError::UnexpectedWKC(*wkc));
             }
             data
         } else {
-            self.state = State::Error(Error::Common(CommonError::LostCommand));
+            self.state = State::Error(EcError::LostCommand);
             return;
         };
 
@@ -470,47 +499,58 @@ impl Cyclic for SlaveInitilizer {
             State::Idle => {}
             State::Complete => {}
             State::SetLoopPort => {
-                self.state = State::RequestInitState;
+                self.state = State::RequestInitState(true);
             }
-            State::RequestInitState => {
+            State::RequestInitState(_) => {
                 let al_transfer = self.inner.al_state_transfer().unwrap();
                 al_transfer.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitInitState;
-            }
-            State::WaitInitState => {
-                let al_transfer = self.inner.al_state_transfer().unwrap();
-                al_transfer.recieve_and_process(recv_data, desc, sys_time);
+                //self.state = State::WaitInitState;
                 match al_transfer.wait() {
-                    Ok(AlState::Init) => {
+                    Some(Ok(AlState::Init)) => {
                         self.slave_info.as_mut().unwrap().al_state = AlState::Init;
                         self.state = State::ResetErrorCount;
                     }
-                    Ok(_) => unreachable!(),
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::AlStateTransition(err));
+                    Some(Ok(_)) => unreachable!(),
+                    None => self.state = State::RequestInitState(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::AlStateTransition(err).into());
                     }
                 }
             }
+            //State::WaitInitState => {
+            //    let al_transfer = self.inner.al_state_transfer().unwrap();
+            //    al_transfer.recieve_and_process(recv_data, desc, sys_time);
+            //    match al_transfer.wait() {
+            //        Some(Ok(AlState::Init)) => {
+            //            self.slave_info.as_mut().unwrap().al_state = AlState::Init;
+            //            self.state = State::ResetErrorCount;
+            //        }
+            //        Some(Ok(_)) => unreachable!(),
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::AlStateTransition(err).into());
+            //        }
+            //    }
+            //}
             State::ResetErrorCount => self.state = State::SetWatchDogDivider,
-            State::SetWatchDogDivider => self.state = State::DisableDLWatchDog,
-            State::DisableDLWatchDog => self.state = State::DisableSMWatchDog,
-            State::DisableSMWatchDog => self.state = State::CheckDLStatus,
-            State::CheckDLStatus => {
-                let dl_status = DLStatus(data);
+            State::SetWatchDogDivider => self.state = State::DisableDlWatchDog,
+            State::DisableDlWatchDog => self.state = State::DisableSmWatchDog,
+            State::DisableSmWatchDog => self.state = State::CheckDlStatus,
+            State::CheckDlStatus => {
+                let dl_status = DlStatus(data);
                 if !dl_status.pdi_operational() {
-                    self.state = State::Error(Error::FailedToLoadEEPROM);
+                    self.state = State::Error(Error::FailedToLoadEEPROM.into());
                 } else {
                     let slave = self.slave_info.as_mut().unwrap();
                     slave.linked_ports[0] = dl_status.signal_detection_port0();
                     slave.linked_ports[1] = dl_status.signal_detection_port1();
                     slave.linked_ports[2] = dl_status.signal_detection_port2();
                     slave.linked_ports[3] = dl_status.signal_detection_port3();
-                    self.state = State::CheckDLInfo;
+                    self.state = State::CheckDlInfo;
                 }
             }
-            State::CheckDLInfo => {
-                let dl_info = DLInformation(data);
+            State::CheckDlInfo => {
+                let dl_info = DlInformation(data);
                 let slave = self.slave_info.as_mut().unwrap();
                 slave.info.ports[0] = dl_info.port0_type();
                 slave.info.ports[1] = dl_info.port1_type();
@@ -540,105 +580,139 @@ impl Cyclic for SlaveInitilizer {
                 if count < 1 {
                     self.state = State::ClearFMMU(count + 1);
                 } else {
-                    self.state = State::ClearSM(0);
+                    self.state = State::ClearSm(0);
                 }
             }
-            State::ClearSM(count) => {
+            State::ClearSm(count) => {
                 if count < 4 {
-                    self.state = State::ClearFMMU(count + 1);
+                    self.state = State::ClearSm(count + 1);
                 } else {
-                    self.state = State::GetVenderID;
+                    self.state = State::GetVenderID(true);
                 }
             }
-            State::GetVenderID => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitVenderID;
-            }
-            State::WaitVenderID => {
+            State::GetVenderID(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         self.slave_info.as_mut().unwrap().info.id.vender_id =
                             data.sii_data() as u16;
-                        self.state = State::GetProductCode
+                        self.state = State::GetProductCode(true);
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetVenderID(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetProductCode => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitProductCode;
-            }
-            State::WaitProductCode => {
+            //State::WaitVenderID => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            self.slave_info.as_mut().unwrap().info.id.vender_id =
+            //                data.sii_data() as u16;
+            //            self.state = State::GetProductCode
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetProductCode(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         self.slave_info.as_mut().unwrap().info.id.product_code =
                             data.sii_data() as u16;
-                        self.state = State::GetRevision
+                        self.state = State::GetRevision(true);
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetProductCode(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetRevision => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitRevision;
-            }
-            State::WaitRevision => {
+            //State::WaitProductCode => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            self.slave_info.as_mut().unwrap().info.id.product_code =
+            //                data.sii_data() as u16;
+            //            self.state = State::GetRevision
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetRevision(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         self.slave_info.as_mut().unwrap().info.id.revision_number =
                             data.sii_data() as u16;
-                        self.state = State::GetProtocol
+                        self.state = State::GetProtocol(true);
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetRevision(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetProtocol => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitProtocol;
-            }
-            State::WaitProtocol => {
+            //State::WaitRevision => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            self.slave_info.as_mut().unwrap().info.id.revision_number =
+            //                data.sii_data() as u16;
+            //            self.state = State::GetProtocol
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetProtocol(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         self.slave_info.as_mut().unwrap().info.support_coe = data.0[0].get_bit(2);
-                        self.state = State::GetRxMailboxSize
+                        self.state = State::GetRxMailboxSize(true)
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetProtocol(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetRxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitRxMailboxSize;
-            }
-            State::WaitRxMailboxSize => {
+            //State::WaitProtocol => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            self.slave_info.as_mut().unwrap().info.support_coe = data.0[0].get_bit(2);
+            //            self.state = State::GetRxMailboxSize
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetRxMailboxSize(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
                             && data.sii_data() != 0
                         {
@@ -653,24 +727,46 @@ impl Cyclic for SlaveInitilizer {
                             self.slave_info.as_mut().unwrap().info.sm0 =
                                 Some(SyncManager::ProcessDataRx);
                         }
-                        self.state = State::GetRxMailboxOffset
+                        self.state = State::GetRxMailboxOffset(true);
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetRxMailboxSize(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetRxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitRxMailboxOffset;
-            }
-            State::WaitRxMailboxOffset => {
+            //State::WaitRxMailboxSize => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
+            //                && data.sii_data() != 0
+            //            {
+            //                self.slave_info.as_mut().unwrap().info.sm0 =
+            //                    Some(SyncManager::MailboxRx(MailboxSyncManager {
+            //                        size: data.sii_data() as u16,
+            //                        start_address: 0,
+            //                    }));
+            //                self.slave_info.as_mut().unwrap().info.sm2 =
+            //                    Some(SyncManager::ProcessDataRx);
+            //            } else if self.slave_info.as_ref().unwrap().info.number_of_sm >= 2 {
+            //                self.slave_info.as_mut().unwrap().info.sm0 =
+            //                    Some(SyncManager::ProcessDataRx);
+            //            }
+            //            self.state = State::GetRxMailboxOffset
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetRxMailboxOffset(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().info.sm0 {
                             Some(SyncManager::MailboxRx(ref mut sm)) => {
                                 sm.start_address = data.sii_data() as u16
@@ -678,24 +774,38 @@ impl Cyclic for SlaveInitilizer {
                             _ => {}
                         }
 
-                        self.state = State::GetTxMailboxSize
+                        self.state = State::GetTxMailboxSize(true)
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetRxMailboxOffset(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetTxMailboxSize => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitTxMailboxSize;
-            }
-            State::WaitTxMailboxSize => {
+            //State::WaitRxMailboxOffset => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            match self.slave_info.as_mut().unwrap().info.sm0 {
+            //                Some(SyncManager::MailboxRx(ref mut sm)) => {
+            //                    sm.start_address = data.sii_data() as u16
+            //                }
+            //                _ => {}
+            //            }
+            //            self.state = State::GetTxMailboxSize
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetTxMailboxSize(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
                             && data.sii_data() != 0
                         {
@@ -708,24 +818,44 @@ impl Cyclic for SlaveInitilizer {
                             self.slave_info.as_mut().unwrap().info.sm3 =
                                 Some(SyncManager::ProcessDataTx);
                         }
-                        self.state = State::GetTxMailboxOffset
+                        self.state = State::GetTxMailboxOffset(true);
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetTxMailboxSize(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::GetTxMailboxOffset => {
-                let sii_reader = self.inner.sii().unwrap();
-                sii_reader.recieve_and_process(recv_data, desc, sys_time);
-                self.state = State::WaitTxMailboxOffset;
-            }
-            State::WaitTxMailboxOffset => {
+            //State::WaitTxMailboxSize => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4
+            //                && data.sii_data() != 0
+            //            {
+            //                self.slave_info.as_mut().unwrap().info.sm1 =
+            //                    Some(SyncManager::MailboxTx(MailboxSyncManager {
+            //                        size: data.sii_data() as u16,
+            //                        start_address: 0,
+            //                    }));
+            //            } else if self.slave_info.as_ref().unwrap().info.number_of_sm >= 4 {
+            //                self.slave_info.as_mut().unwrap().info.sm3 =
+            //                    Some(SyncManager::ProcessDataTx);
+            //            }
+            //            self.state = State::GetTxMailboxOffset
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::GetTxMailboxOffset(_) => {
                 let sii_reader = self.inner.sii().unwrap();
                 sii_reader.recieve_and_process(recv_data, desc, sys_time);
                 match sii_reader.wait() {
-                    Ok((data, _size)) => {
+                    Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().info.sm1 {
                             Some(SyncManager::MailboxTx(ref mut sm)) => {
                                 sm.start_address = data.sii_data() as u16
@@ -736,48 +866,95 @@ impl Cyclic for SlaveInitilizer {
                             &mut self.slave_info.as_mut().unwrap().info,
                         );
 
-                        self.state = State::SetSM0Control
+                        self.state = State::SetSm0Control
                     }
-                    Err(nb::Error::WouldBlock) => {}
-                    Err(nb::Error::Other(err)) => {
-                        self.state = State::Error(Error::SII(err));
+                    None => self.state = State::GetTxMailboxOffset(false),
+                    Some(Err(err)) => {
+                        self.state = State::Error(Error::Sii(err).into());
                     }
                 }
             }
-            State::SetSM0Control => self.state = State::SetSM0Activation,
-            State::SetSM0Activation => self.state = State::SetSM1Control,
-            State::SetSM1Control => self.state = State::SetSM1Activation,
-            State::SetSM1Activation => self.state = State::SetStationAddress,
-            State::SetStationAddress => self.state = State::ClearDcActivation,
+            //State::WaitTxMailboxOffset => {
+            //    let sii_reader = self.inner.sii().unwrap();
+            //    sii_reader.recieve_and_process(recv_data, desc, sys_time);
+            //    match sii_reader.wait() {
+            //        Some(Ok((data, _size))) => {
+            //            match self.slave_info.as_mut().unwrap().info.sm1 {
+            //                Some(SyncManager::MailboxTx(ref mut sm)) => {
+            //                    sm.start_address = data.sii_data() as u16
+            //                }
+            //                _ => {}
+            //            }
+            //            set_process_data_sm_size_offset(
+            //                &mut self.slave_info.as_mut().unwrap().info,
+            //            );
+//
+            //            self.state = State::SetSm0Control
+            //        }
+            //        None => {}
+            //        Some(Err(err)) => {
+            //            self.state = State::Error(Error::Sii(err).into());
+            //        }
+            //    }
+            //}
+            State::SetSm0Control => self.state = State::SetSm0Activation,
+            State::SetSm0Activation => self.state = State::SetSm1Control,
+            State::SetSm1Control => self.state = State::SetSm1Activation,
+            State::SetSm1Activation => self.state = State::SetStationAddress,
+            State::SetStationAddress => self.state = State::CheckPdiControl,
+            State::CheckPdiControl => {
+                let pdi_control = PdiControl(data);
+                let slave = self.slave_info.as_mut().unwrap();
+                slave.info.strict_al_control = pdi_control.strict_al_control();
+                //slave.info.enable_dc_sync_outputs = pdi_control.enable_dc_sync_outputs();
+                //slave.info.enable_dc_latch_inputs = pdi_control.enable_dc_latch_inputs();
+                //log::info!("{:?}",pdi_control);
+                //if slave.info.enable_dc_sync_outputs{
+                //    self.state = State::ClearDcActivation;
+                //}else if slave.info.enable_dc_latch_inputs{
+                //    self.state = State::ClearLatchEdge;
+                //}else{
+                //    self.state = State::Complete;
+                //}
+                self.state = State::ClearDcActivation;
+            }
             State::ClearDcActivation => self.state = State::ClearCyclicOperationStartTime,
             State::ClearCyclicOperationStartTime => self.state = State::ClearSync0CycleTime,
             State::ClearSync0CycleTime => self.state = State::ClearSync1CycleTime,
-            State::ClearSync1CycleTime => self.state = State::ClearLatchEdge,
-            State::ClearLatchEdge => self.state = State::ClearLatchEvent,
-            State::ClearLatchEvent => self.state = State::ClearLatch0PositiveEdgeValue,
-            State::ClearLatch0PositiveEdgeValue => self.state = State::ClearLatch0NegativeEdgeValue,
-            State::ClearLatch0NegativeEdgeValue => self.state = State::ClearLatch1PositiveEdgeValue,
-            State::ClearLatch1PositiveEdgeValue => self.state = State::ClearLatch1NegativeEdgeValue,
-            State::ClearLatch1NegativeEdgeValue => self.state = State::Complete,
+            State::ClearSync1CycleTime => {
+                //let slave = self.slave_info.as_ref().unwrap();
+                //if !slave.info.enable_dc_latch_inputs{
+                //    self.state = State::ClearLatchEdge;
+                //}else{
+                    self.state = State::Complete;
+                //}
+            },
+            //State::ClearLatchEdge => self.state = State::ClearLatchEvent,
+            //State::ClearLatchEvent => self.state = State::ClearLatch0PositiveEdgeValue,
+            //State::ClearLatch0PositiveEdgeValue => self.state = State::ClearLatch0NegativeEdgeValue,
+            //State::ClearLatch0NegativeEdgeValue => self.state = State::ClearLatch1PositiveEdgeValue,
+            //State::ClearLatch1PositiveEdgeValue => self.state = State::ClearLatch1NegativeEdgeValue,
+            //State::ClearLatch1NegativeEdgeValue => self.state = State::Complete,
         }
     }
 }
 
 const fn buffer_size() -> usize {
     let mut size = 0;
-    size = const_max(size, DLControl::SIZE);
+    size = const_max(size, DlControl::SIZE);
     size = const_max(size, RxErrorCounter::SIZE);
     size = const_max(size, WatchDogDivider::SIZE);
-    size = const_max(size, DLUserWatchDog::SIZE);
+    size = const_max(size, DlUserWatchDog::SIZE);
     size = const_max(size, SyncManagerChannelWatchDog::SIZE);
-    size = const_max(size, DLStatus::SIZE);
-    size = const_max(size, DLInformation::SIZE);
+    size = const_max(size, DlStatus::SIZE);
+    size = const_max(size, DlInformation::SIZE);
     size = const_max(size, FMMURegister::SIZE);
     size = const_max(
         size,
         SyncManagerControl::SIZE + SyncManagerStatus::SIZE + SyncManagerActivation::SIZE,
     );
     size = const_max(size, FixedStationAddress::SIZE);
+    size = const_max(size, PdiControl::SIZE);
     size = const_max(size, DcActivation::SIZE);
     size = const_max(size, CyclicOperationStartTime::SIZE);
     size = const_max(size, Sync0CycleTime::SIZE);
@@ -829,7 +1006,7 @@ fn set_process_data_sm_size_offset(slave: &mut SlaveInfo) {
 #[derive(Debug)]
 enum InnerFunction {
     This,
-    SII(SIIReader),
+    Sii(SiiReader),
     AlStateTransfer(AlStateTransfer),
 }
 
@@ -851,27 +1028,27 @@ impl InnerFunction {
     //    //    Self::AlStateTransfer(al_transfer) => {
     //    //        *self = InnerFunction::Owned(al_transfer.take_timer());
     //    //    }
-    //    //    Self::SII(sii) => {
+    //    //    Self::Sii(sii) => {
     //    //        *self = InnerFunction::Owned(sii.take_timer());
     //    //    }
     //    //}
     //}
 
     fn into_sii(&mut self) {
-        if let Self::SII(_) = &self {
+        if let Self::Sii(_) = &self {
             return;
         }
-        *self = Self::SII(SIIReader::new());
+        *self = Self::Sii(SiiReader::new());
 
         //match core::mem::take(self) {
         //    Self::Taken => unreachable!(),
         //    Self::Owned(timer) => {
-        //        *self = InnerFunction::SII(SIIReader::new(timer));
+        //        *self = InnerFunction::Sii(SiiReader::new(timer));
         //    }
         //    Self::AlStateTransfer(al_transfer) => {
-        //        *self = InnerFunction::SII(SIIReader::new(al_transfer.take_timer()));
+        //        *self = InnerFunction::Sii(SiiReader::new(al_transfer.take_timer()));
         //    }
-        //    Self::SII(_) => unreachable!(),
+        //    Self::Sii(_) => unreachable!(),
         //}
     }
 
@@ -886,7 +1063,7 @@ impl InnerFunction {
         //        *self = InnerFunction::AlStateTransfer(AlStateTransfer::new(timer));
         //    }
         //    Self::AlStateTransfer(_) => unreachable!(),
-        //    Self::SII(sii) => {
+        //    Self::Sii(sii) => {
         //        *self = InnerFunction::AlStateTransfer(AlStateTransfer::new(sii.take_timer()));
         //    }
         //}
@@ -900,8 +1077,8 @@ impl InnerFunction {
     //    }
     //}
 
-    fn sii(&mut self) -> Option<&mut SIIReader> {
-        if let Self::SII(sii) = self {
+    fn sii(&mut self) -> Option<&mut SiiReader> {
+        if let Self::Sii(sii) = self {
             Some(sii)
         } else {
             None
