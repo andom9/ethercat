@@ -2,6 +2,7 @@ use ethercat_master::arch::*;
 use ethercat_master::cyclic::sii_reader;
 use ethercat_master::interface::*;
 use ethercat_master::master::*;
+use ethercat_master::slave::AlState;
 use ethercat_master::slave::Slave;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
@@ -108,16 +109,27 @@ fn main() {
 
 fn simple_test(interf_name: &str) {
     let timer = Timer::new();
-    let mut buf = [0; 1500];
     let device = PnetDevice::open(&interf_name);
+    let mtu = device.max_transmission_unit();
+    let mut buf = Vec::with_capacity(mtu);
+    for _ in 0..mtu {
+        buf.push(0);
+    }
     let mut iface = EtherCatInterface::new(device, timer, &mut buf);
     let mut slave_buf: [Option<Slave>; 10] = Default::default();
 
     let mut master = EtherCatMaster::initilize(&mut iface, &mut slave_buf).unwrap();
 
     let (eeprom_data, size) = master
-        .read_sii(SlaveAddress::SlavePosition(0), sii_reader::sii_reg::ProductCode::ADDRESS)
+        .read_sii(
+            SlaveAddress::SlavePosition(0),
+            sii_reader::sii_reg::ProductCode::ADDRESS,
+        )
         .unwrap();
     println!("product code: {:x}", eeprom_data.sii_data());
     println!("read_size: {}", size);
+
+    let alstate = master.transfer_al_state(None, AlState::Init).unwrap();
+    println!("al_state: {:?}", alstate);
+
 }

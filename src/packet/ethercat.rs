@@ -169,13 +169,13 @@ pub enum CommandType {
     /// All slaves write a logical OR of the data from the memory area and the data from the EtherCat datagram to the EtherCat datagram; all slaves write data to the memory area. BRW is typically not used. All slaves increment the Position field.
     BRW,
     /// Logical Memory Read
-    /// A slave writes data it has read to the EtherCat datagram if the address received matches one of the FMMU areas configured for reading.
+    /// A slave writes data it has read to the EtherCat datagram if the address received matches one of the Fmmu areas configured for reading.
     LRD,
     /// Logical Memory Write
-    /// Slaves write data to their memory area if the address received matches one of the FMMU areas configured for writing.
+    /// Slaves write data to their memory area if the address received matches one of the Fmmu areas configured for writing.
     LWR,
     /// Logical Memory Read Write
-    /// A slave writes data it has read to the EtherCat datagram if the address received matches one of the FMMU areas configured for reading. Slaves write data to their memory area if the address received matches one of the FMMU areas configured for writing.
+    /// A slave writes data it has read to the EtherCat datagram if the address received matches one of the Fmmu areas configured for reading. Slaves write data to their memory area if the address received matches one of the Fmmu areas configured for writing.
     LRW,
     /// Auto Increment Read Multiple Write
     /// A slave increments the Address field. A slave writes data it has read to the EtherCat datagram when the address received is zero, otherwise it writes data to the memory area.

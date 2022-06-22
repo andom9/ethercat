@@ -90,7 +90,10 @@ impl<'a> MailboxReader<'a> {
 
     pub fn mailbox_header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
         let mut header = [0; MailboxHeader::SIZE];
-        header.iter_mut().zip(&self.buffer).for_each(|(h, b)| *h = *b);
+        header
+            .iter_mut()
+            .zip(&self.buffer)
+            .for_each(|(h, b)| *h = *b);
         MailboxHeader(header)
     }
 
@@ -199,9 +202,9 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
     ) {
         if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            //if *command != self.command {
-            //    self.state = State::Error(EcError::UnexpectedCommand);
-            //}
+            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+                self.state = State::Error(EcError::UnexpectedCommand);
+            }
             let wkc = *wkc;
             match self.state {
                 State::Idle => {}

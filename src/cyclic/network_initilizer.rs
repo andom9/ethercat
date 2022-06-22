@@ -45,6 +45,7 @@ pub struct NetworkInitilizer {
     command: Command,
     buffer: [u8; buffer_size()],
     num_slaves: u16,
+    lost_count: usize,
 }
 
 impl NetworkInitilizer {
@@ -55,6 +56,7 @@ impl NetworkInitilizer {
             command: Command::default(),
             buffer: [0; buffer_size()],
             num_slaves: 0,
+            lost_count: 0,
         }
     }
 
@@ -63,6 +65,7 @@ impl NetworkInitilizer {
         self.command = Command::default();
 
         self.state = State::CountSlaves;
+        self.lost_count = 0;
     }
 
     pub fn wait(&mut self) -> Option<Result<(), EcError<Error>>> {
@@ -88,9 +91,6 @@ impl CyclicProcess for NetworkInitilizer {
             State::Error(_) => None,
             State::CountSlaves => {
                 let command = Command::new(CommandType::BWR, 0, DlControl::ADDRESS);
-                //let command = Command::new_write(self.slave_address, );
-                //self.buffer.fill(0);
-                //Some((command, &self.buffer[..1]))
                 self.buffer.fill(0);
                 // ループポートを設定する。
                 // ・EtherCat以外のフレームを削除する。
@@ -99,8 +99,6 @@ impl CyclicProcess for NetworkInitilizer {
                 let mut dl_control = DlControl(&mut self.buffer);
                 dl_control.set_forwarding_rule(true);
                 dl_control.set_tx_buffer_size(7);
-                dl_control.set_enable_alias_address(false);
-                //log::info!("{:?}", self.buffer);
                 Some((command, &self.buffer[..DlControl::SIZE]))
             }
             State::StartInitSlaves(count) => {
@@ -126,13 +124,20 @@ impl CyclicProcess for NetworkInitilizer {
 
         let wkc = if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, wkc, .. } = recv_data;
-            //if *command != self.command {
-            //    self.state = State::Error(EcError::UnexpectedCommand);
-            //}
+            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+                self.state = State::Error(EcError::UnexpectedCommand);
+            }
             *wkc
         } else {
-            self.state = State::Error(EcError::LostCommand);
-            return;
+            //self.state = State::Error(EcError::LostCommand);
+            //return;
+            if self.lost_count > 0 {
+                self.state = State::Error(EcError::LostCommand);
+                return;
+            } else {
+                self.lost_count += 1;
+                return;
+            }
         };
 
         match &mut self.state {

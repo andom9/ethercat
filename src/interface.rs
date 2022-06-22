@@ -1,5 +1,4 @@
 use crate::arch::{CountDown, Device};
-use crate::error::EcError;
 use crate::ethercat_frame::*;
 use crate::packet::ethercat::*;
 use crate::util::*;
@@ -16,9 +15,9 @@ pub enum Error {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Command {
-    c_type: CommandType,
-    adp: u16,
-    ado: u16,
+    pub c_type: CommandType,
+    pub adp: u16,
+    pub ado: u16,
 }
 
 impl Default for Command {
@@ -69,7 +68,7 @@ where
     timer: T,
     buffer: &'a mut [u8],
     data_size: usize,
-    buffer_size: usize,
+    capacity: usize,
     should_recv_frames: usize,
 }
 
@@ -79,19 +78,19 @@ where
     T: CountDown,
 {
     pub fn new(ethdev: D, timer: T, buffer: &'a mut [u8]) -> Self {
-        let buffer_size = buffer.len();
+        let capacity = buffer.len().min(ethdev.max_transmission_unit());
         Self {
             ethdev,
             timer,
             buffer,
             data_size: 0,
-            buffer_size,
+            capacity,
             should_recv_frames: 0,
         }
     }
 
     pub fn remainig_capacity(&self) -> usize {
-        self.buffer_size - self.data_size - EtherCatHeader::SIZE - WKC_LENGTH
+        self.capacity - self.data_size - EtherCatHeader::SIZE - WKC_LENGTH
     }
 
     pub fn add_command<F: FnOnce(&mut [u8])>(
@@ -101,7 +100,7 @@ where
         data_size: usize,
         data_writer: F,
     ) -> Result<(), Error> {
-        if self.data_size + EtherCatHeader::SIZE + data_size + WKC_LENGTH > self.buffer_size {
+        if self.data_size + EtherCatHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
             return Err(Error::LargeDate);
         }
 
@@ -415,9 +414,9 @@ impl Default for SlaveAddress {
 //    read_sii_control, SiiControl, ADDRESS;
 //    read_sii_address, SiiAddress, ADDRESS;
 //    read_sii_data, SiiData, ADDRESS;
-//    read_fmmu0, FMMURegister, ADDRESS0;
-//    read_fmmu1, FMMURegister, ADDRESS1;
-//    read_fmmu2, FMMURegister, ADDRESS2;
+//    read_fmmu0, FmmuRegister, ADDRESS0;
+//    read_fmmu1, FmmuRegister, ADDRESS1;
+//    read_fmmu2, FmmuRegister, ADDRESS2;
 //    read_sm0, SyncManagerRegister, ADDRESS0;
 //    read_sm1, SyncManagerRegister, ADDRESS1;
 //    read_sm2, SyncManagerRegister, ADDRESS2;
@@ -454,9 +453,9 @@ impl Default for SlaveAddress {
 //    write_sii_control, SiiControl, ADDRESS;
 //    write_sii_address, SiiAddress, ADDRESS;
 //    write_sii_data, SiiData, ADDRESS;
-//    write_fmmu0, FMMURegister, ADDRESS0;
-//    write_fmmu1, FMMURegister, ADDRESS1;
-//    write_fmmu2, FMMURegister, ADDRESS2;
+//    write_fmmu0, FmmuRegister, ADDRESS0;
+//    write_fmmu1, FmmuRegister, ADDRESS1;
+//    write_fmmu2, FmmuRegister, ADDRESS2;
 //    write_sm0, SyncManagerRegister, ADDRESS0;
 //    write_sm1, SyncManagerRegister, ADDRESS1;
 //    write_sm2, SyncManagerRegister, ADDRESS2;

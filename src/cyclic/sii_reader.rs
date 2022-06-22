@@ -165,9 +165,9 @@ impl CyclicProcess for SiiReader {
     ) {
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            //if command != self.command {
-            //    self.state = State::Error(EcError::UnexpectedCommand);
-            //}
+            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+                self.state = State::Error(EcError::UnexpectedCommand);
+            }
             if wkc != 1 {
                 self.state = State::Error(EcError::UnexpectedWKC(wkc));
             }
@@ -236,7 +236,11 @@ impl CyclicProcess for SiiReader {
                 }
             }
             State::Read => {
-                self.sii_data.0.iter_mut().zip(data).for_each(|(b,d)| *b=*d);
+                self.sii_data
+                    .0
+                    .iter_mut()
+                    .zip(data)
+                    .for_each(|(b, d)| *b = *d);
                 self.state = State::ResetOwnership;
             }
             State::ResetOwnership => {

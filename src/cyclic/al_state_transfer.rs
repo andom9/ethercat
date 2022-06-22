@@ -175,9 +175,9 @@ impl CyclicProcess for AlStateTransfer {
         //log::info!("{:?}",self.state);
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            //if command != self.command {
-            //    self.state = State::Error(EcError::UnexpectedCommand);
-            //}
+            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+                self.state = State::Error(EcError::UnexpectedCommand);
+            }
             if self.slave_address.is_some() && wkc != 1 {
                 self.state = State::Error(EcError::UnexpectedWKC(wkc));
             } else if self.slave_address.is_none() && wkc != desc.len() as u16 {

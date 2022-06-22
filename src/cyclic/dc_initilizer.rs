@@ -181,9 +181,9 @@ impl CyclicProcess for DcInitializer {
     ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
-            //if command != self.command {
-            //    self.state = State::Error(EcError::UnexpectedCommand);
-            //}
+            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+                self.state = State::Error(EcError::UnexpectedCommand);
+            }
             (data, wkc)
         } else {
             self.state = State::Error(EcError::LostCommand);

@@ -2,7 +2,7 @@ use crate::interface;
 
 #[derive(Debug, Clone)]
 pub enum EcError<E> {
-    //UnexpectedCommand,
+    UnexpectedCommand,
     LostCommand,
     UnexpectedWKC(u16),
     Interface(interface::Error),

@@ -7,12 +7,12 @@ bitfield! {
     pub u8, ethercat_type, _: 8*1-1, 8*0;
     pub u8, revision, _: 8*2-1, 8*1;
     pub u16, build_number, _: 8*4-1, 8*2;
-    /// Number of supported FMMU entities
+    /// Number of supported Fmmu entities
     pub u8, number_of_supported_fmmu_entities, _: 8*5-1, 8*4;
     /// Number of supported Sync Manager channels
     pub u8, number_of_supported_sm_channels, _: 8*6-1, 8*5;
     pub u8, ram_size, _: 8*7-1, 8*6;
-    /// FMMU bit operation not supported
+    /// Fmmu bit operation not supported
     pub fmmu_bit_operation_not_supported, _: 8*8;
     /// Dc supported
     pub dc_supported, _: 8*8+2;
@@ -30,10 +30,10 @@ bitfield! {
     pub not_lrw_supported, _: 8*9+1;
     /// BRW, APWR, FPRW not supported
     pub not_bafrw_supported, _: 8*9+2;
-    /// Special FMMU Sync Manager configuration.
-    /// FMMU0: RxPDO,
-    /// FMMU1: TxPDO,
-    /// FMMU2: Sync Manager1,
+    /// Special Fmmu Sync Manager configuration.
+    /// Fmmu0: RxPDO,
+    /// Fmmu1: TxPDO,
+    /// Fmmu2: Sync Manager1,
     /// Sync Manager0: Write Mailbox,
     /// Sync Manager1: Read Mailbox,
     /// Sync Manager2: rx data buffer,
@@ -317,7 +317,7 @@ impl SiiData<[u8; 8]> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct FMMURegister([u8]);
+    pub struct FmmuRegister([u8]);
     pub u32, logical_start_address, set_logical_start_address: 8*4-1, 8*0;
     pub u16, length, set_length: 8*6-1, 8*4;
     pub u8, logical_start_bit, set_logical_start_bit: 8*6+2, 8*6;
@@ -329,7 +329,7 @@ bitfield! {
     pub enable, set_enable: 8*12;
 }
 
-impl FMMURegister<[u8; 16]> {
+impl FmmuRegister<[u8; 16]> {
     pub const ADDRESS: u16 = 0x0600;
     //pub const ADDRESS1: u16 = 0x0610;
     //pub const ADDRESS2: u16 = 0x0620;

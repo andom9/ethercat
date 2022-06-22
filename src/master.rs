@@ -16,6 +16,7 @@ use crate::interface::EtherCatInterface;
 use crate::interface::SlaveAddress;
 use crate::network::*;
 use crate::register::datalink::SiiData;
+use crate::slave::AlState;
 use crate::slave::Slave;
 use core::time::Duration;
 use paste::paste;
@@ -55,7 +56,7 @@ where
             cyclic.poll(
                 &mut network,
                 EtherCatSystemTime(count),
-                Duration::from_millis(10000),
+                Duration::from_millis(1000),
             )?;
             let net_init = cyclic.get_unit(&handle).unwrap().network_initilizer();
             match net_init.wait() {
@@ -91,9 +92,43 @@ where
         let handle = self.add_sii_reader(unit).unwrap();
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(100))?;
+            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
             let sii_reader = self.get_sii_reader(&handle).unwrap();
             match sii_reader.wait() {
+                Some(Ok(data)) => return Ok(data),
+                None => {}
+                Some(Err(other)) => return Err(other.into()),
+            }
+            count += 1000;
+        }
+    }
+
+    pub fn read_al_state(&mut self, slave_address: Option<SlaveAddress>) -> Result<(AlState, Option<AlStatusCode>), EcError<()>>{
+        let mut unit = AlStateReader::new();
+        unit.start(slave_address);
+        let handle = self.add_al_state_reader(unit).unwrap();
+        let mut count = 0;
+        loop {
+            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let al_state_reader = self.get_al_state_reader(&handle).unwrap();
+            match al_state_reader.wait() {
+                Some(Ok(data)) => return Ok(data),
+                None => {}
+                Some(Err(other)) => return Err(other.into()),
+            }
+            count += 1000;
+        }
+    }
+
+    pub fn transfer_al_state(&mut self, slave_address: Option<SlaveAddress>, target_al_state: AlState) -> Result<AlState, EcError<al_state_transfer::Error>>{
+        let mut unit = AlStateTransfer::new();
+        unit.start(slave_address, target_al_state);
+        let handle = self.add_al_state_transfer(unit).unwrap();
+        let mut count = 0;
+        loop {
+            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let al_state_transfer = self.get_al_state_transfer(&handle).unwrap();
+            match al_state_transfer.wait() {
                 Some(Ok(data)) => return Ok(data),
                 None => {}
                 Some(Err(other)) => return Err(other.into()),

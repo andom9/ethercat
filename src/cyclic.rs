@@ -198,7 +198,11 @@ where
         recv_timeout: I,
     ) -> Result<(), interface::Error> {
         let Self { iface, units, .. } = self;
-        iface.poll(recv_timeout)?;
+        match iface.poll(recv_timeout) {
+            Ok(_) => {}
+            Err(interface::Error::RecieveTimeout) => {}
+            Err(err) => return Err(err),
+        }
         let pdus = iface.consume_commands();
         let mut last_index = 0;
         for pdu in pdus {
