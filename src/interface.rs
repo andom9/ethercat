@@ -226,7 +226,7 @@ where
         while 0 < *should_recv_frames {
             if ethdev
                 .recv(|frame| {
-                    //info!("something receive");
+                    info!("something receive");
                     let eth = EthernetHeader(&frame);
                     if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
                         //info!("{} {}", eth.source(), SRC_MAC);

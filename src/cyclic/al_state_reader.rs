@@ -87,7 +87,7 @@ impl CyclicProcess for AlStateReader {
         &mut self,
         recv_data: Option<ReceivedData>,
         desc: &mut NetworkDescription,
-        sys_time: EtherCatSystemTime,
+        _: EtherCatSystemTime,
     ) {
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;

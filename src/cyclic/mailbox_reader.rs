@@ -74,17 +74,11 @@ impl<'a> MailboxReader<'a> {
         }
     }
 
-    pub fn start(&mut self, slave_address: SlaveAddress, wait_full: bool) {
-        self.timer_start = EtherCatSystemTime(0);
-        self.command = Command::default();
-        self.slave_address = slave_address;
-        self.buffer.fill(0);
-        self.timeout_ns = MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
-        self.state = State::CheckMailboxFull;
-        self.wait_full = wait_full;
+    pub fn buffer(&self) -> &[u8] {
+        self.recv_buf
     }
 
-    pub fn buffer(&self) -> &[u8] {
+    pub fn take_buffer(self) -> &'a mut [u8] {
         self.recv_buf
     }
 
@@ -100,6 +94,16 @@ impl<'a> MailboxReader<'a> {
     pub fn mailbox_data(&self) -> &[u8] {
         let len = MailboxHeader(&self.buffer).length() as usize;
         &self.buffer[MailboxHeader::SIZE..MailboxHeader::SIZE + len]
+    }
+
+    pub fn start(&mut self, slave_address: SlaveAddress, wait_full: bool) {
+        self.timer_start = EtherCatSystemTime(0);
+        self.command = Command::default();
+        self.slave_address = slave_address;
+        self.buffer.fill(0);
+        self.timeout_ns = MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
+        self.state = State::CheckMailboxFull;
+        self.wait_full = wait_full;
     }
 
     pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<Error>>> {

@@ -7,7 +7,7 @@
 #![no_std]
 pub mod arch;
 pub mod cyclic;
-mod error;
+pub mod error;
 pub mod ethercat_frame;
 pub mod interface;
 pub mod master;

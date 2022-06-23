@@ -65,7 +65,9 @@ impl<'a> MailboxWriter<'a> {
     }
 
     pub fn set_header(&mut self, mailbox_header: MailboxHeader<[u8; MailboxHeader::SIZE]>) {
+        log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
         self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
+        log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
     }
 
     pub fn header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
@@ -76,6 +78,10 @@ impl<'a> MailboxWriter<'a> {
         header
     }
 
+    pub fn take_buffer(self) -> &'a mut [u8] {
+        self.send_buf
+    }
+
     pub fn start(
         &mut self,
         slave_address: SlaveAddress,
@@ -83,13 +89,16 @@ impl<'a> MailboxWriter<'a> {
         //data: &[u8],
         //timeout_ms: u32,
         wait_empty: bool,
+        //clear_buffer: bool,
     ) {
         //self.mailbox_header = mailbox_header;
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
         self.buffer.fill(0);
-        self.send_buf.fill(0);
+        //if clear_buffer {
+        //    self.send_buf.fill(0);
+        //}
         //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
         //self.send_buf
         //    .iter_mut()
@@ -117,6 +126,7 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
+        log::info!("send {:?}", self.state);
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -162,6 +172,7 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
                 self.command = Command::new_write(self.slave_address, sm.start_address);
                 self.buffer.fill(0);
                 if self.send_buf.len() < sm.size as usize {
+                    log::info!("{}", sm.size);
                     self.state = State::Error(Error::BufferSmall.into());
                     None
                 } else {

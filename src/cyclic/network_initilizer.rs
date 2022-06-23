@@ -84,7 +84,7 @@ impl CyclicProcess for NetworkInitilizer {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
-        //log::info!("send {:?}",self.state);
+        log::info!("send {:?}", self.state);
 
         let command_and_data = match &self.state {
             State::Idle => None,

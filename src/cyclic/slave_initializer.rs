@@ -12,11 +12,11 @@ use crate::network::NetworkDescription;
 use crate::register::{
     application::{
         CyclicOperationStartTime, DcActivation, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
-        Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, Sync0CycleTime,
-        Sync1CycleTime,PdiControl
+        Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, PdiControl,
+        Sync0CycleTime, Sync1CycleTime,
     },
     datalink::{
-        DlControl, DlInformation, DlStatus, DlUserWatchDog, FmmuRegister, FixedStationAddress,
+        DlControl, DlInformation, DlStatus, DlUserWatchDog, FixedStationAddress, FmmuRegister,
         RxErrorCounter, SyncManagerActivation, SyncManagerChannelWatchDog, SyncManagerControl,
         SyncManagerStatus, WatchDogDivider,
     },
@@ -27,8 +27,8 @@ use bit_field::BitField;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    AlStateTransition(EcError<al_state_transfer::Error>),
-    Sii(EcError<sii_reader::Error>),
+    AlStateTransition(al_state_transfer::Error),
+    SiiRead(sii_reader::Error),
     FailedToLoadEEPROM,
 }
 
@@ -38,15 +38,27 @@ impl From<Error> for EcError<Error> {
     }
 }
 
-impl From<EcError<al_state_transfer::Error>> for Error {
+impl From<EcError<al_state_transfer::Error>> for EcError<Error> {
     fn from(err: EcError<al_state_transfer::Error>) -> Self {
-        Self::AlStateTransition(err)
+        match err {
+            EcError::UnitSpecific(err) => EcError::UnitSpecific(Error::AlStateTransition(err)),
+            EcError::Interface(e) => EcError::Interface(e),
+            EcError::LostCommand => EcError::LostCommand,
+            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
+            EcError::UnexpectedWKC(wkc) => EcError::UnexpectedWKC(wkc),
+        }
     }
 }
 
-impl From<EcError<sii_reader::Error>> for Error {
+impl From<EcError<sii_reader::Error>> for EcError<Error> {
     fn from(err: EcError<sii_reader::Error>) -> Self {
-        Self::Sii(err)
+        match err {
+            EcError::UnitSpecific(err) => EcError::UnitSpecific(Error::SiiRead(err)),
+            EcError::Interface(e) => EcError::Interface(e),
+            EcError::LostCommand => EcError::LostCommand,
+            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
+            EcError::UnexpectedWKC(wkc) => EcError::UnexpectedWKC(wkc),
+        }
     }
 }
 
@@ -147,7 +159,7 @@ impl CyclicProcess for SlaveInitilizer {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
-        //log::info!("send {:?}",self.state);
+        log::info!("send {:?}", self.state);
 
         let command_and_data = match self.state {
             State::Idle => None,
@@ -441,7 +453,7 @@ impl CyclicProcess for SlaveInitilizer {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
-        //log::info!("recv {:?}",self.state);
+        log::info!("recv {:?}", self.state);
         let data = if let Some(ref recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -475,7 +487,7 @@ impl CyclicProcess for SlaveInitilizer {
                     Some(Ok(_)) => unreachable!(),
                     None => self.state = State::RequestInitState(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::AlStateTransition(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -548,7 +560,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetVenderID(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -563,7 +575,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetProductCode(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -578,7 +590,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetRevision(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -592,7 +604,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetProtocol(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -619,7 +631,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetRxMailboxSize(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -639,7 +651,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetRxMailboxOffset(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -664,7 +676,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetTxMailboxSize(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }
@@ -687,7 +699,7 @@ impl CyclicProcess for SlaveInitilizer {
                     }
                     None => self.state = State::GetTxMailboxOffset(false),
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Sii(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }

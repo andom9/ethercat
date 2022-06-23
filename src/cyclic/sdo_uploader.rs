@@ -12,10 +12,10 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Mailbox(EcError<mailbox_reader::Error>),
+    Mailbox(mailbox_reader::Error),
     MailboxAlreadyExisted,
     AbortCode(AbortCode),
-    UnexpectedResponse,
+    UnexpectedCommandSpecifier,
 }
 
 impl From<Error> for EcError<Error> {
@@ -24,15 +24,21 @@ impl From<Error> for EcError<Error> {
     }
 }
 
-impl From<EcError<mailbox_reader::Error>> for Error {
+impl From<EcError<mailbox_reader::Error>> for EcError<Error> {
     fn from(err: EcError<mailbox_reader::Error>) -> Self {
-        Self::Mailbox(err)
+        match err {
+            EcError::UnitSpecific(err) => EcError::UnitSpecific(Error::Mailbox(err)),
+            EcError::Interface(e) => EcError::Interface(e),
+            EcError::LostCommand => EcError::LostCommand,
+            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
+            EcError::UnexpectedWKC(wkc) => EcError::UnexpectedWKC(wkc),
+        }
     }
 }
 
 #[derive(Debug)]
 enum State {
-    Error(Error),
+    Error(EcError<Error>),
     Idle,
     Complete,
     CheckMailboxEmpty,
@@ -54,6 +60,7 @@ pub struct SdoUploader<'a> {
     writer: MailboxWriter<'a>,
     mailbox_count: u8,
     mb_length: usize,
+    //header: [u8; CoeHeader::SIZE + SdoHeader::SIZE],
 }
 
 impl<'a> SdoUploader<'a> {
@@ -68,6 +75,7 @@ impl<'a> SdoUploader<'a> {
             writer,
             mailbox_count: 0,
             mb_length: 0,
+            //header: [0; CoeHeader::SIZE + SdoHeader::SIZE],
         }
     }
 
@@ -75,8 +83,8 @@ impl<'a> SdoUploader<'a> {
         &self.reader
     }
 
-    pub fn sdo_data(&self) -> &[u8] {
-        let sdo_header = SdoHeader(&self.reader.buffer()[MailboxHeader::SIZE..]);
+    pub fn sdo_data_from_slice(slice: &[u8]) -> &[u8] {
+        let sdo_header = SdoHeader(&slice[MailboxHeader::SIZE + CoeHeader::SIZE..]);
 
         // expedited
         if sdo_header.transfer_type() {
@@ -87,18 +95,29 @@ impl<'a> SdoUploader<'a> {
                 4 => 1,
                 _ => 0,
             };
-            &self.reader.buffer()[MailboxHeader::SIZE + SdoHeader::SIZE
-                ..MailboxHeader::SIZE + SdoHeader::SIZE + size]
+            &slice[MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE
+                ..MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE + size]
         // normal
         } else {
             let mut complete_size = [0; 4];
-            let buf = &self.reader.buffer()
-                [MailboxHeader::SIZE + SdoHeader::SIZE..MailboxHeader::SIZE + SdoHeader::SIZE + 4];
+            let buf = &slice[MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE
+                ..MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE + 4];
+
             complete_size.iter_mut().zip(buf).for_each(|(s, b)| *s = *b);
             let size = u32::from_le_bytes(complete_size) as usize;
-            &self.reader.buffer()[MailboxHeader::SIZE + SdoHeader::SIZE + 4
+            log::info!("{:?}", complete_size);
+            &slice[MailboxHeader::SIZE + SdoHeader::SIZE + 4
                 ..MailboxHeader::SIZE + SdoHeader::SIZE + size + 4]
         }
+    }
+
+    pub fn sdo_data(&self) -> &[u8] {
+        Self::sdo_data_from_slice(&self.reader.buffer())
+    }
+
+    pub fn take_buffer(self) -> (&'a mut [u8], &'a mut [u8]) {
+        let Self { writer, reader, .. } = self;
+        (writer.take_buffer(), reader.take_buffer())
     }
 
     pub fn start(&mut self, slave_address: SlaveAddress, index: u16, sub_index: u8) {
@@ -112,6 +131,12 @@ impl<'a> SdoUploader<'a> {
         sdo.set_size_indicator(false);
         sdo.set_index(index);
         sdo.set_sub_index(sub_index);
+
+        self.writer.set_data_to_write(|buf| buf.fill(0));
+
+        self.writer
+            .set_data_to_write(|buf| buf.iter_mut().zip(sdo_header).for_each(|(b, d)| *b = d));
+
         self.mb_length = 4 + sdo_header.len();
         self.slave_address = slave_address;
         self.state = State::CheckMailboxEmpty;
@@ -133,6 +158,8 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
+        log::info!("send {:?}", self.state);
+
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -144,6 +171,7 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
             State::WriteUploadRequest(is_first) => {
                 if is_first {
                     if let Some(slave) = desc.slave_mut(self.slave_address) {
+                        self.writer.start(self.slave_address, true);
                         slave.increment_mb_count();
                         self.mailbox_count = slave.mailbox_count;
                         let mut mb_header = MailboxHeader::new();
@@ -153,10 +181,10 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
                         mb_header.set_length(self.mb_length as u16);
                         mb_header.set_prioriry(0);
                         self.writer.set_header(mb_header);
-                        self.writer.start(self.slave_address, true);
                     } else {
-                        self.state =
-                            State::Error(Error::Mailbox(mailbox_reader::Error::NoSlave.into()));
+                        self.state = State::Error(
+                            Error::Mailbox(mailbox_reader::Error::NoSlave.into()).into(),
+                        );
                         return None;
                     }
                 }
@@ -177,6 +205,8 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
         desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
+        log::info!("recv {:?}", self.state);
+
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
@@ -185,7 +215,7 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
                 self.reader.recieve_and_process(recv_data, desc, sys_time);
                 match self.reader.wait() {
                     Some(Ok(_)) => {
-                        self.state = State::Error(Error::MailboxAlreadyExisted);
+                        self.state = State::Error(Error::MailboxAlreadyExisted.into());
                     }
                     Some(Err(EcError::UnitSpecific(mailbox_reader::Error::MailboxEmpty))) => {
                         self.state = State::WriteUploadRequest(true)
@@ -208,7 +238,9 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
                 self.reader.recieve_and_process(recv_data, desc, sys_time);
                 match self.reader.wait() {
                     Some(Ok(_)) => {
-                        let sdo_header = SdoHeader(&self.reader.buffer()[MailboxHeader::SIZE..]);
+                        let sdo_header = SdoHeader(
+                            &self.reader.buffer()[MailboxHeader::SIZE + CoeHeader::SIZE..],
+                        );
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];
                             for (code, data) in abort_code
@@ -218,9 +250,10 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
                                 *code = *data;
                             }
                             let abort_code = AbortCode::from(u32::from_le_bytes(abort_code));
-                            self.state = State::Error(Error::AbortCode(abort_code))
+                            self.state = State::Error(Error::AbortCode(abort_code).into())
                         } else if sdo_header.command_specifier() != 2 {
-                            self.state = State::Error(Error::UnexpectedResponse)
+                            log::info!("{}", sdo_header.command_specifier());
+                            self.state = State::Error(Error::UnexpectedCommandSpecifier.into())
                         } else {
                             self.state = State::Complete;
                         }

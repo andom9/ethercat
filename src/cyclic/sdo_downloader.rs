@@ -14,10 +14,10 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Mailbox(EcError<mailbox_reader::Error>),
+    Mailbox(mailbox_reader::Error),
     MailboxAlreadyExisted,
     AbortCode(AbortCode),
-    UnexpectedResponse,
+    UnexpectedCommandSpecifier,
 }
 
 impl From<Error> for EcError<Error> {
@@ -26,15 +26,21 @@ impl From<Error> for EcError<Error> {
     }
 }
 
-impl From<EcError<mailbox_reader::Error>> for Error {
+impl From<EcError<mailbox_reader::Error>> for EcError<Error> {
     fn from(err: EcError<mailbox_reader::Error>) -> Self {
-        Self::Mailbox(err)
+        match err {
+            EcError::UnitSpecific(err) => EcError::UnitSpecific(Error::Mailbox(err)),
+            EcError::Interface(e) => EcError::Interface(e),
+            EcError::LostCommand => EcError::LostCommand,
+            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
+            EcError::UnexpectedWKC(wkc) => EcError::UnexpectedWKC(wkc),
+        }
     }
 }
 
 #[derive(Debug)]
 enum State {
-    Error(Error),
+    Error(EcError<Error>),
     Idle,
     Complete,
     CheckMailboxEmpty,
@@ -56,6 +62,7 @@ pub struct SdoDownloader<'a> {
     writer: MailboxWriter<'a>,
     mailbox_count: u8,
     mb_length: usize,
+    //header: [u8; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE],
 }
 
 impl<'a> SdoDownloader<'a> {
@@ -70,11 +77,17 @@ impl<'a> SdoDownloader<'a> {
             writer,
             mailbox_count: 0,
             mb_length: 0,
+            //header: [0; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE],
         }
     }
 
     pub fn mailbox_reader(&self) -> &MailboxReader {
         &self.reader
+    }
+
+    pub fn take_buffer(self) -> (&'a mut [u8], &'a mut [u8]) {
+        let Self { writer, reader, .. } = self;
+        (writer.take_buffer(), reader.take_buffer())
     }
 
     pub fn start(&mut self, slave_address: SlaveAddress, index: u16, sub_index: u8, data: &[u8]) {
@@ -91,6 +104,18 @@ impl<'a> SdoDownloader<'a> {
         let data_len = data.len();
         SdoDownloadNormalHeader(&mut sdo_header[CoeHeader::SIZE + SdoHeader::SIZE..])
             .set_complete_size(data_len as u32);
+
+        self.writer.set_data_to_write(|buf| buf.fill(0));
+
+        self.writer
+            .set_data_to_write(|buf| buf.iter_mut().zip(sdo_header).for_each(|(b, d)| *b = d));
+
+        self.writer.set_data_to_write(|buf| {
+            buf.iter_mut()
+                .skip(sdo_header.len())
+                .zip(data)
+                .for_each(|(b, d)| *b = *d)
+        });
 
         self.mb_length = data_len + sdo_header.len();
 
@@ -125,6 +150,7 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
             State::WriteDownloadRequest(is_first) => {
                 if is_first {
                     if let Some(slave) = desc.slave_mut(self.slave_address) {
+                        self.writer.start(self.slave_address, true);
                         slave.increment_mb_count();
                         self.mailbox_count = slave.mailbox_count;
                         let mut mb_header = MailboxHeader::new();
@@ -134,7 +160,6 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
                         mb_header.set_length(self.mb_length as u16);
                         mb_header.set_prioriry(0);
                         self.writer.set_header(mb_header);
-                        self.writer.start(self.slave_address, true);
                     } else {
                         self.state = State::Error(
                             Error::Mailbox(mailbox_reader::Error::NoSlave.into()).into(),
@@ -167,7 +192,7 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
                 self.reader.recieve_and_process(recv_data, desc, sys_time);
                 match self.reader.wait() {
                     Some(Ok(_)) => {
-                        self.state = State::Error(Error::MailboxAlreadyExisted);
+                        self.state = State::Error(Error::MailboxAlreadyExisted.into());
                     }
                     Some(Err(EcError::UnitSpecific(mailbox_reader::Error::MailboxEmpty))) => {
                         self.state = State::WriteDownloadRequest(true)
@@ -190,7 +215,9 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
                 self.reader.recieve_and_process(recv_data, desc, sys_time);
                 match self.reader.wait() {
                     Some(Ok(_)) => {
-                        let sdo_header = SdoHeader(&self.reader.buffer()[MailboxHeader::SIZE..]);
+                        let sdo_header = SdoHeader(
+                            &self.reader.buffer()[MailboxHeader::SIZE + CoeHeader::SIZE..],
+                        );
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];
                             for (code, data) in abort_code
@@ -200,9 +227,9 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
                                 *code = *data;
                             }
                             let abort_code = AbortCode::from(u32::from_le_bytes(abort_code));
-                            self.state = State::Error(Error::AbortCode(abort_code))
+                            self.state = State::Error(Error::AbortCode(abort_code).into())
                         } else if sdo_header.command_specifier() != 3 {
-                            self.state = State::Error(Error::UnexpectedResponse)
+                            self.state = State::Error(Error::UnexpectedCommandSpecifier.into())
                         } else {
                             self.state = State::Complete;
                         }

@@ -57,6 +57,12 @@ enum Unit<C: CyclicProcess> {
     Unit((C, bool)),
 }
 
+impl<C: CyclicProcess> From<C> for Unit<C> {
+    fn from(unit: C) -> Self {
+        Self::Unit((unit, false))
+    }
+}
+
 impl<C: CyclicProcess> Unit<C> {
     fn take(self) -> C {
         if let Self::Unit((c, _)) = self {
@@ -74,24 +80,24 @@ impl<C: CyclicProcess> Default for Unit<C> {
 }
 
 #[derive(Debug)]
-pub struct CyclicUnits<'a, D, C, T, const U: usize>
+pub struct CyclicUnits<'a, D, C, T>
 where
     D: Device,
     C: CyclicProcess,
     T: CountDown,
 {
-    iface: &'a mut EtherCatInterface<'a, D, T>,
-    units: Vec<Unit<C>, U>,
+    iface: EtherCatInterface<'a, D, T>,
+    units: Vec<Unit<C>, 10>,
     free_unit: UnitHandle,
 }
 
-impl<'a, D, C, T, const U: usize> CyclicUnits<'a, D, C, T, U>
+impl<'a, D, C, T> CyclicUnits<'a, D, C, T>
 where
     D: Device,
     C: CyclicProcess,
     T: CountDown,
 {
-    pub fn new(iface: &'a mut EtherCatInterface<'a, D, T>) -> Self {
+    pub fn new(iface: EtherCatInterface<'a, D, T>) -> Self {
         Self {
             iface,
             units: Vec::default(),

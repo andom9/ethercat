@@ -22,23 +22,23 @@ use core::time::Duration;
 use paste::paste;
 
 #[derive(Debug)]
-pub struct EtherCatMaster<'a, D, T>
+pub struct EtherCatMaster<'packet, 'mb, 'slave, D, T>
 where
     D: Device,
     T: CountDown,
 {
-    cyclic: CyclicUnits<'a, D, CyclicUnitType<'a>, T, 4>,
-    network: NetworkDescription<'a>,
+    cyclic: CyclicUnits<'packet, D, CyclicUnitType<'mb>, T>,
+    network: NetworkDescription<'slave>,
 }
 
-impl<'a, D, T> EtherCatMaster<'a, D, T>
+impl<'packet, 'mb, 'slave, D, T> EtherCatMaster<'packet, 'mb, 'slave, D, T>
 where
     D: Device,
     T: CountDown,
 {
     pub fn initilize(
-        iface: &'a mut EtherCatInterface<'a, D, T>,
-        slave_buf: &'a mut [Option<Slave>],
+        iface: EtherCatInterface<'packet, D, T>,
+        slave_buf: &'slave mut [Option<Slave>],
     ) -> Result<Self, EcError<network_initilizer::Error>> {
         let mut cyclic = CyclicUnits::new(iface);
         let mut network = NetworkDescription::new(slave_buf);
@@ -92,27 +92,45 @@ where
         let handle = self.add_sii_reader(unit).unwrap();
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            if let Err(err) = self.poll(EtherCatSystemTime(count), Duration::from_millis(1000)) {
+                self.remove_sii_reader(handle).unwrap();
+                return Err(err.into());
+            }
             let sii_reader = self.get_sii_reader(&handle).unwrap();
             match sii_reader.wait() {
-                Some(Ok(data)) => return Ok(data),
+                Some(Ok(data)) => {
+                    self.remove_sii_reader(handle).unwrap();
+                    return Ok(data);
+                }
                 None => {}
-                Some(Err(other)) => return Err(other.into()),
+                Some(Err(other)) => {
+                    self.remove_sii_reader(handle).unwrap();
+                    return Err(other.into());
+                }
             }
             count += 1000;
         }
     }
 
-    pub fn read_al_state(&mut self, slave_address: Option<SlaveAddress>) -> Result<(AlState, Option<AlStatusCode>), EcError<()>>{
+    pub fn read_al_state(
+        &mut self,
+        slave_address: Option<SlaveAddress>,
+    ) -> Result<(AlState, Option<AlStatusCode>), EcError<()>> {
         let mut unit = AlStateReader::new();
         unit.start(slave_address);
         let handle = self.add_al_state_reader(unit).unwrap();
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            if let Err(err) = self.poll(EtherCatSystemTime(count), Duration::from_millis(1000)) {
+                self.remove_al_state_reader(handle).unwrap();
+                return Err(err.into());
+            }
             let al_state_reader = self.get_al_state_reader(&handle).unwrap();
             match al_state_reader.wait() {
-                Some(Ok(data)) => return Ok(data),
+                Some(Ok(data)) => {
+                    self.remove_al_state_reader(handle).unwrap();
+                    return Ok(data);
+                }
                 None => {}
                 Some(Err(other)) => return Err(other.into()),
             }
@@ -120,21 +138,82 @@ where
         }
     }
 
-    pub fn transfer_al_state(&mut self, slave_address: Option<SlaveAddress>, target_al_state: AlState) -> Result<AlState, EcError<al_state_transfer::Error>>{
+    pub fn transfer_al_state(
+        &mut self,
+        slave_address: Option<SlaveAddress>,
+        target_al_state: AlState,
+    ) -> Result<AlState, EcError<al_state_transfer::Error>> {
         let mut unit = AlStateTransfer::new();
         unit.start(slave_address, target_al_state);
         let handle = self.add_al_state_transfer(unit).unwrap();
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            if let Err(err) = self.poll(EtherCatSystemTime(count), Duration::from_millis(1000)) {
+                self.remove_al_state_transfer(handle).unwrap();
+                return Err(err.into());
+            }
             let al_state_transfer = self.get_al_state_transfer(&handle).unwrap();
             match al_state_transfer.wait() {
-                Some(Ok(data)) => return Ok(data),
+                Some(Ok(data)) => {
+                    self.remove_al_state_transfer(handle).unwrap();
+                    return Ok(data);
+                }
                 None => {}
                 Some(Err(other)) => return Err(other.into()),
             }
             count += 1000;
         }
+    }
+
+    pub fn read_sdo(
+        &mut self,
+        handle: &SdoUploaderHandle,
+        slave_address: SlaveAddress,
+        sdo_index: u16,
+        sdo_sub_index: u8,
+    ) -> Result<(), EcError<sdo_uploader::Error>> {
+        let sdo_uploader = self.get_sdo_uploader(&handle).unwrap();
+        sdo_uploader.start(slave_address, sdo_index, sdo_sub_index);
+        let mut count = 0;
+        loop {
+            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let sdo_uploader = self.get_sdo_uploader(&handle).unwrap();
+            match sdo_uploader.wait() {
+                Some(Ok(_)) => {
+                    break;
+                }
+                None => {}
+                Some(Err(other)) => return Err(other.into()),
+            }
+            count += 1000;
+        }
+        Ok(())
+    }
+
+    pub fn write_sdo(
+        &mut self,
+        handle: &SdoDownloaderHandle,
+        slave_address: SlaveAddress,
+        sdo_index: u16,
+        sdo_sub_index: u8,
+        data: &[u8],
+    ) -> Result<(), EcError<sdo_downloader::Error>> {
+        let sdo_downloader = self.get_sdo_downloader(&handle).unwrap();
+        sdo_downloader.start(slave_address, sdo_index, sdo_sub_index, data);
+        let mut count = 0;
+        loop {
+            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let sdo_downloader = self.get_sdo_downloader(&handle).unwrap();
+            match sdo_downloader.wait() {
+                Some(Ok(_)) => {
+                    break;
+                }
+                None => {}
+                Some(Err(other)) => return Err(other.into()),
+            }
+            count += 1000;
+        }
+        Ok(())
     }
 }
 
@@ -216,7 +295,7 @@ macro_rules! define_cyclic_unit {
                 }
             }
 
-            impl<'a, D, T> EtherCatMaster<'a, D, T>
+            impl<'packet, 'mb, 'slave,  D, T> EtherCatMaster<'packet, 'mb, 'slave, D, T>
             where
                 D: Device,
                 T: CountDown,
@@ -253,7 +332,7 @@ macro_rules! define_cyclic_unit_with_lifetime {
             }
 
             impl<'a> CyclicUnitType<'a> {
-                fn $unit_name_snake(&'a mut self) -> &mut $unit_name_pascal {
+                fn $unit_name_snake(&mut self) -> &mut $unit_name_pascal<'a> {
                     if let CyclicUnitType::$unit_name_pascal(ref mut unit) = self {
                         unit
                     } else {
@@ -269,23 +348,23 @@ macro_rules! define_cyclic_unit_with_lifetime {
                 }
             }
 
-            impl<'a, D, T> EtherCatMaster<'a, D, T>
+            impl<'packet, 'mb, 'slave, D, T> EtherCatMaster<'packet, 'mb, 'slave, D, T>
             where
                 D: Device,
                 T: CountDown,
             {
-                pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal<'a>) -> Option<[<$unit_name_pascal Handle>]>{
+                pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal<'mb>) -> Option<[<$unit_name_pascal Handle>]>{
                     match self.cyclic.add_unit($unit_name_snake.into()){
                         Ok(handle) => Some([<$unit_name_pascal Handle>](handle)),
                         Err(_) => None
                     }
                 }
 
-                pub fn [<get_ $unit_name_snake>](&'a mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal<'a>>{
+                pub fn [<get_ $unit_name_snake>](&mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal<'mb>>{
                     self.cyclic.get_unit(&handle.0).map(|unit| unit.$unit_name_snake())
                 }
 
-                pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal<'a>>{
+                pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal<'mb>>{
                     self.cyclic.remove_unit(handle.0).map(|unit| unit.[<into_ $unit_name_snake>]())
                 }
             }
