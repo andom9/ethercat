@@ -31,8 +31,8 @@ bitfield! {
     /// BRW, APWR, FPRW not supported
     pub not_bafrw_supported, _: 8*9+2;
     /// Special Fmmu Sync Manager configuration.
-    /// Fmmu0: RxPDO,
-    /// Fmmu1: TxPDO,
+    /// Fmmu0: RxPdo,
+    /// Fmmu1: TxPdo,
     /// Fmmu2: Sync Manager1,
     /// Sync Manager0: Write Mailbox,
     /// Sync Manager1: Read Mailbox,

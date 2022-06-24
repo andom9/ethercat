@@ -1,4 +1,4 @@
-use super::mailbox_reader::Error;
+use super::mailbox::Error;
 use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::network::NetworkDescription;
 use crate::packet::ethercat::MailboxHeader;
@@ -56,30 +56,48 @@ impl<'a> MailboxWriter<'a> {
         }
     }
 
-    pub fn set_data_to_write<F: FnOnce(&mut [u8])>(&mut self, data_writer: F) {
-        data_writer(&mut self.send_buf[MailboxHeader::SIZE..]);
-    }
+    //pub fn set_data_to_write<F: FnOnce(&mut [u8])>(&mut self, data_writer: F) {
+    //    data_writer(&mut self.send_buf[MailboxHeader::SIZE..]);
+    //}
 
-    pub fn data_to_write(&self) -> &[u8] {
-        &self.send_buf[MailboxHeader::SIZE..]
-    }
+    //pub fn data_to_write(&self) -> &[u8] {
+    //    &self.send_buf[MailboxHeader::SIZE..]
+    //}
 
-    pub fn set_header(&mut self, mailbox_header: MailboxHeader<[u8; MailboxHeader::SIZE]>) {
-        log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
-        self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
-        log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
-    }
+    //pub fn set_header(&mut self, mailbox_header: MailboxHeader<[u8; MailboxHeader::SIZE]>) {
+    //    log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
+    //    self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
+    //    log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
+    //}
 
-    pub fn header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
-        let mut header = MailboxHeader::new();
-        header
-            .0
-            .copy_from_slice(&self.send_buf[..MailboxHeader::SIZE]);
-        header
-    }
+    //pub fn header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
+    //    let mut header = MailboxHeader::new();
+    //    header
+    //        .0
+    //        .copy_from_slice(&self.send_buf[..MailboxHeader::SIZE]);
+    //    header
+    //}
 
     pub fn take_buffer(self) -> &'a mut [u8] {
         self.send_buf
+    }
+
+    pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
+        MailboxHeader(&self.send_buf[..MailboxHeader::SIZE])
+    }
+
+    pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
+        MailboxHeader(&mut self.send_buf[..MailboxHeader::SIZE])
+    }
+
+    pub fn mailbox_data(&self) -> &[u8] {
+        //let len = MailboxHeader(&self.buffer).length() as usize;
+        &self.send_buf[MailboxHeader::SIZE..]
+    }
+
+    pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
+        //let len = MailboxHeader(&self.buffer).length() as usize;
+        &mut self.send_buf[MailboxHeader::SIZE..]
     }
 
     pub fn start(

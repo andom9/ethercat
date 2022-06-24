@@ -113,7 +113,7 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct SlaveInitilizer {
+pub struct SlaveInitializer {
     inner: InnerFunction,
     slave_address: SlaveAddress,
     state: State,
@@ -122,7 +122,7 @@ pub struct SlaveInitilizer {
     slave_info: Option<Slave>,
 }
 
-impl SlaveInitilizer {
+impl SlaveInitializer {
     pub fn new() -> Self {
         Self {
             inner: InnerFunction::This,
@@ -153,7 +153,7 @@ impl SlaveInitilizer {
     }
 }
 
-impl CyclicProcess for SlaveInitilizer {
+impl CyclicProcess for SlaveInitializer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,

@@ -1,5 +1,5 @@
 use super::slave_initializer;
-use crate::cyclic::slave_initializer::SlaveInitilizer;
+use crate::cyclic::slave_initializer::SlaveInitializer;
 use crate::cyclic::CyclicProcess;
 use crate::error::EcError;
 use crate::interface::Command;
@@ -39,8 +39,8 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct NetworkInitilizer {
-    initilizer: SlaveInitilizer,
+pub struct NetworkInitializer {
+    initilizer: SlaveInitializer,
     state: State,
     command: Command,
     buffer: [u8; buffer_size()],
@@ -48,10 +48,10 @@ pub struct NetworkInitilizer {
     lost_count: usize,
 }
 
-impl NetworkInitilizer {
+impl NetworkInitializer {
     pub fn new() -> Self {
         Self {
-            initilizer: SlaveInitilizer::new(),
+            initilizer: SlaveInitializer::new(),
             state: State::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -78,7 +78,7 @@ impl NetworkInitilizer {
     }
 }
 
-impl CyclicProcess for NetworkInitilizer {
+impl CyclicProcess for NetworkInitializer {
     fn next_command(
         &mut self,
         desc: &mut NetworkDescription,

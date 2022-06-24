@@ -1,9 +1,11 @@
 use crate::arch::*;
 use crate::cyclic::al_state_reader::*;
 use crate::cyclic::al_state_transfer::*;
+use crate::cyclic::mailbox::*;
 use crate::cyclic::mailbox_reader::*;
 use crate::cyclic::mailbox_writer::*;
 use crate::cyclic::network_initilizer::*;
+use crate::cyclic::sdo::*;
 use crate::cyclic::sdo_downloader::*;
 use crate::cyclic::sdo_uploader::*;
 use crate::cyclic::sii_reader;
@@ -43,7 +45,7 @@ where
         let mut cyclic = CyclicUnits::new(iface);
         let mut network = NetworkDescription::new(slave_buf);
         let handle = cyclic
-            .add_unit(CyclicUnitType::NetworkInitilizer(NetworkInitilizer::new()))
+            .add_unit(CyclicUnitType::NetworkInitializer(NetworkInitializer::new()))
             .unwrap();
         cyclic
             .get_unit(&handle)
@@ -167,17 +169,17 @@ where
 
     pub fn read_sdo(
         &mut self,
-        handle: &SdoUploaderHandle,
+        handle: &SdoUnitHandle,
         slave_address: SlaveAddress,
         sdo_index: u16,
         sdo_sub_index: u8,
-    ) -> Result<(), EcError<sdo_uploader::Error>> {
-        let sdo_uploader = self.get_sdo_uploader(&handle).unwrap();
-        sdo_uploader.start(slave_address, sdo_index, sdo_sub_index);
+    ) -> Result<(), EcError<sdo::Error>> {
+        let sdo_unit = self.get_sdo_unit(&handle).unwrap();
+        sdo_unit.start_to_read(slave_address, sdo_index, sdo_sub_index);
         let mut count = 0;
         loop {
             self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_uploader = self.get_sdo_uploader(&handle).unwrap();
+            let sdo_uploader = self.get_sdo_unit(&handle).unwrap();
             match sdo_uploader.wait() {
                 Some(Ok(_)) => {
                     break;
@@ -192,18 +194,18 @@ where
 
     pub fn write_sdo(
         &mut self,
-        handle: &SdoDownloaderHandle,
+        handle: &SdoUnitHandle,
         slave_address: SlaveAddress,
         sdo_index: u16,
         sdo_sub_index: u8,
         data: &[u8],
-    ) -> Result<(), EcError<sdo_downloader::Error>> {
-        let sdo_downloader = self.get_sdo_downloader(&handle).unwrap();
-        sdo_downloader.start(slave_address, sdo_index, sdo_sub_index, data);
+    ) -> Result<(), EcError<sdo::Error>> {
+        let sdo_unit = self.get_sdo_unit(&handle).unwrap();
+        sdo_unit.start_to_write(slave_address, sdo_index, sdo_sub_index, data);
         let mut count = 0;
         loop {
             self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_downloader = self.get_sdo_downloader(&handle).unwrap();
+            let sdo_downloader = self.get_sdo_unit(&handle).unwrap();
             match sdo_downloader.wait() {
                 Some(Ok(_)) => {
                     break;
@@ -219,14 +221,16 @@ where
 
 #[derive(Debug)]
 pub enum CyclicUnitType<'a> {
-    NetworkInitilizer(NetworkInitilizer),
+    NetworkInitializer(NetworkInitializer),
     SiiReader(SiiReader),
     AlStateReader(AlStateReader),
     AlStateTransfer(AlStateTransfer),
     MailboxReader(MailboxReader<'a>),
     MailboxWriter(MailboxWriter<'a>),
+    MailboxUnit(MailboxUnit<'a>),
     SdoDownloader(SdoDownloader<'a>),
     SdoUploader(SdoUploader<'a>),
+    SdoUnit(SdoUnit<'a>),
 }
 
 impl<'a> CyclicProcess for CyclicUnitType<'a> {
@@ -240,9 +244,11 @@ impl<'a> CyclicProcess for CyclicUnitType<'a> {
             Self::AlStateTransfer(unit) => unit.next_command(desc, sys_time),
             Self::MailboxReader(unit) => unit.next_command(desc, sys_time),
             Self::MailboxWriter(unit) => unit.next_command(desc, sys_time),
-            Self::NetworkInitilizer(unit) => unit.next_command(desc, sys_time),
+            Self::MailboxUnit(unit) => unit.next_command(desc, sys_time),
+            Self::NetworkInitializer(unit) => unit.next_command(desc, sys_time),
             Self::SdoDownloader(unit) => unit.next_command(desc, sys_time),
             Self::SdoUploader(unit) => unit.next_command(desc, sys_time),
+            Self::SdoUnit(unit) => unit.next_command(desc, sys_time),
             Self::SiiReader(unit) => unit.next_command(desc, sys_time),
         }
     }
@@ -258,9 +264,11 @@ impl<'a> CyclicProcess for CyclicUnitType<'a> {
             Self::AlStateTransfer(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
             Self::MailboxReader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
             Self::MailboxWriter(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::NetworkInitilizer(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
+            Self::MailboxUnit(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
+            Self::NetworkInitializer(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
             Self::SdoDownloader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
             Self::SdoUploader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
+            Self::SdoUnit(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
             Self::SiiReader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
         }
     }
@@ -372,11 +380,13 @@ macro_rules! define_cyclic_unit_with_lifetime {
     };
 }
 
-define_cyclic_unit!(network_initilizer, NetworkInitilizer);
+define_cyclic_unit!(network_initilizer, NetworkInitializer);
 define_cyclic_unit!(sii_reader, SiiReader);
 define_cyclic_unit!(al_state_transfer, AlStateTransfer);
 define_cyclic_unit!(al_state_reader, AlStateReader);
 define_cyclic_unit_with_lifetime!(mailbox_reader, MailboxReader);
 define_cyclic_unit_with_lifetime!(mailbox_writer, MailboxWriter);
+define_cyclic_unit_with_lifetime!(mailbox_unit, MailboxUnit);
 define_cyclic_unit_with_lifetime!(sdo_downloader, SdoDownloader);
 define_cyclic_unit_with_lifetime!(sdo_uploader, SdoUploader);
+define_cyclic_unit_with_lifetime!(sdo_unit, SdoUnit);

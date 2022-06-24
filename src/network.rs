@@ -173,7 +173,7 @@ fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
 ) {
     let mut offset = 0;
     for slave in slaves {
-        //先にRxPDOを並べているとする
+        //先にRxPdoを並べているとする
         if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
             for pdo_mapping in sm_in.iter_mut() {
                 for pdo in pdo_mapping.entries.iter_mut() {
@@ -185,7 +185,7 @@ fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
             }
         }
 
-        //RxPDOの後にTxPDOを並べているとする
+        //RxPdoの後にTxPdoを並べているとする
         if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
             for pdo_mapping in sm_out.iter_mut() {
                 for pdo in pdo_mapping.entries.iter_mut() {

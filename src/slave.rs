@@ -33,8 +33,8 @@ pub struct Slave {
     pub error: Option<SlaveError>,
     pub al_state: AlState,
     pub mailbox_count: u8,
-    pub rx_pdo_mapping: Option<&'static mut [PDOMapping]>,
-    pub tx_pdo_mapping: Option<&'static mut [PDOMapping]>,
+    pub rx_pdo_mapping: Option<&'static mut [PdoMapping]>,
+    pub tx_pdo_mapping: Option<&'static mut [PdoMapping]>,
     pub linked_ports: [bool; 4],
 
     // for Dc init
@@ -87,8 +87,8 @@ pub struct SlaveInfo {
     pub support_coe: bool,
 
     pub strict_al_control: bool,
-    pub enable_dc_sync_outputs: bool,
-    pub enable_dc_latch_inputs: bool,
+    //pub enable_dc_sync_outputs: bool,
+    //pub enable_dc_latch_inputs: bool,
 }
 
 impl SlaveInfo {
@@ -183,13 +183,13 @@ impl Default for OperationMode {
 }
 
 #[derive(Debug)]
-pub struct PDOMapping {
+pub struct PdoMapping {
     //pub(crate) index: u16,
-    pub(crate) entries: &'static mut [PDOEntry],
+    pub(crate) entries: &'static mut [PdoEntry],
 }
 
 #[derive(Debug)]
-pub struct PDOEntry {
+pub struct PdoEntry {
     pub(crate) index: u16,
     pub(crate) sub_index: u8,
     pub(crate) byte_length: u8, // NOTE: not bit length

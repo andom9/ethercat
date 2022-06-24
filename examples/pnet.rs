@@ -1,17 +1,8 @@
 use ethercat_master::arch::*;
-use ethercat_master::cyclic;
-use ethercat_master::cyclic::mailbox_reader;
-use ethercat_master::cyclic::mailbox_reader::MailboxReader;
-use ethercat_master::cyclic::sdo_downloader;
-use ethercat_master::cyclic::sdo_downloader::SdoDownloader;
-use ethercat_master::cyclic::sdo_uploader;
-use ethercat_master::cyclic::sdo_uploader::SdoUploader;
+use ethercat_master::cyclic::sdo::SdoUnit;
 use ethercat_master::cyclic::sii_reader;
-use ethercat_master::cyclic::CyclicUnits;
-use ethercat_master::cyclic::EtherCatSystemTime;
 use ethercat_master::interface::*;
 use ethercat_master::master::EtherCatMaster;
-//use ethercat_master::master::*;
 use ethercat_master::slave::AlState;
 use ethercat_master::slave::Slave;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
@@ -121,16 +112,13 @@ fn simple_test(interf_name: &str) {
     let timer = Timer::new();
     let device = PnetDevice::open(&interf_name);
     let mtu = device.max_transmission_unit();
-    let mut buf = vec![0; mtu];
-    let mut sdo_up_send_buf = vec![0; 1024];
-    let mut sdo_up_recv_buf = vec![0; 1024];
-    let mut sdo_down_send_buf = vec![0; 1024];
-    let mut sdo_down_recv_buf = vec![0; 1024];
+    let mut command_buf = vec![0; mtu];
+    let mut sdo_buf = vec![0; 1024];
 
-    let iface = EtherCatInterface::new(device, timer, &mut buf);
+    let iface = EtherCatInterface::new(device, timer, &mut command_buf);
     let mut slave_buf: [Option<Slave>; 10] = Default::default();
 
-    dbg!("crate masetr");
+    dbg!("crate master");
     let mut master = EtherCatMaster::initilize(iface, &mut slave_buf).unwrap();
     dbg!("done");
 
@@ -151,46 +139,22 @@ fn simple_test(interf_name: &str) {
     let alstate = master.read_al_state(None).unwrap();
     println!("al_state: {:?}", alstate);
 
-    //let mut unit = SdoUploader::new(&mut sdo_send_buf, &mut sdo_recv_buf);
-    //unit.start(SlaveAddress::SlavePosition(0), 0x1000, 0x00);
-    //let handle = master.add_sdo_uploader(unit).unwrap();
-    //let mut count = 0;
-    //loop {
-    //    master
-    //        .poll(EtherCatSystemTime(count), Duration::from_millis(1000))
-    //        .unwrap();
-    //    let sdo_uploader = master.get_sdo_uploader(&handle).unwrap();
-    //    match sdo_uploader.wait() {
-    //        Some(Ok(_)) => {
-    //            break;
-    //        }
-    //        None => {}
-    //        Some(Err(other)) => panic!("sdo error {:?}", other), //return Err(other.into()),
-    //    }
-    //    count += 1000;
-    //}
-    //let sdo_uploader = master.remove_sdo_uploader(handle).unwrap();
-    //let sdo_data = sdo_uploader.sdo_data();
-    //println!("sdo data: {:?}", sdo_data);
-
-    let sdo_uploader = SdoUploader::new(&mut sdo_up_send_buf, &mut sdo_up_recv_buf);
-    let sdo_uploader_handle = master.add_sdo_uploader(sdo_uploader).unwrap();
+    let sdo_unit = SdoUnit::new(&mut sdo_buf);
+    let sdo_unit_handle = master.add_sdo_unit(sdo_unit).unwrap();
     master
         .read_sdo(
-            &sdo_uploader_handle,
+            &sdo_unit_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
         )
         .unwrap();
-    let sdo_uploader = master.get_sdo_uploader(&sdo_uploader_handle).unwrap();
-    println!("sdo data: {:x?}", sdo_uploader.sdo_data());
+    let sdo_unit = master.get_sdo_unit(&sdo_unit_handle).unwrap();
+    println!("sdo data: {:x?}", sdo_unit.sdo_data());
 
-    let sdo_downloader = SdoDownloader::new(&mut sdo_down_send_buf, &mut sdo_down_recv_buf);
-    let sdo_downloader_handle = master.add_sdo_downloader(sdo_downloader).unwrap();
     master
         .write_sdo(
-            &sdo_downloader_handle,
+            &sdo_unit_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
@@ -200,13 +164,13 @@ fn simple_test(interf_name: &str) {
 
     master
         .read_sdo(
-            &sdo_uploader_handle,
+            &sdo_unit_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
         )
         .unwrap();
-    let sdo_uploader = master.get_sdo_uploader(&sdo_uploader_handle).unwrap();
-    let data = sdo_uploader.sdo_data();
+    let sdo_unit = master.get_sdo_unit(&sdo_unit_handle).unwrap();
+    let data = sdo_unit.sdo_data();
     println!("sdo data: 0x{:x?}", u16::from_le_bytes([data[0], data[1]]));
 }

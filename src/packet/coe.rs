@@ -23,10 +23,10 @@ pub enum CoeServiceType {
     Emmergency = 1,
     SdoReq,
     SdoRes,
-    TxPDO,
-    RxPDO,
-    TxPDORemoteReq,
-    RxPDORemoteReq,
+    TxPdo,
+    RxPdo,
+    TxPdoRemoteReq,
+    RxPdoRemoteReq,
     SdoInfo,
 }
 
@@ -74,10 +74,10 @@ pub enum AbortCode {
     SubIndexCannotBeWritten = 0x06_01_00_03,
     NotSupportForVariableLength = 0x06_01_00_04,
     LengthExceedsMailboxSize = 0x06_01_00_05,
-    ObjectMappedToRxPDO = 0x06_01_00_06,
+    ObjectMappedToRxPdo = 0x06_01_00_06,
     DoesNotExistInDict = 0x06_02_00_00,
-    UnableToMapToPDO = 0x06_04_00_41,
-    PDOLimit = 0x06_04_00_42,
+    UnableToMapToPdo = 0x06_04_00_41,
+    PdoLimit = 0x06_04_00_42,
     ParameterIncompatibilities = 0x06_04_00_43,
     DeviceIncompatibilities = 0x06_04_00_47,
     FailureDueToWriteProtect = 0x06_06_00_00,
@@ -117,14 +117,14 @@ impl From<u32> for AbortCode {
             AbortCode::SubIndexCannotBeWritten
         } else if value == AbortCode::LengthExceedsMailboxSize as u32 {
             AbortCode::LengthExceedsMailboxSize
-        } else if value == AbortCode::ObjectMappedToRxPDO as u32 {
-            AbortCode::ObjectMappedToRxPDO
+        } else if value == AbortCode::ObjectMappedToRxPdo as u32 {
+            AbortCode::ObjectMappedToRxPdo
         } else if value == AbortCode::DoesNotExistInDict as u32 {
             AbortCode::DoesNotExistInDict
-        } else if value == AbortCode::UnableToMapToPDO as u32 {
-            AbortCode::UnableToMapToPDO
-        } else if value == AbortCode::PDOLimit as u32 {
-            AbortCode::PDOLimit
+        } else if value == AbortCode::UnableToMapToPdo as u32 {
+            AbortCode::UnableToMapToPdo
+        } else if value == AbortCode::PdoLimit as u32 {
+            AbortCode::PdoLimit
         } else if value == AbortCode::ParameterIncompatibilities as u32 {
             AbortCode::ParameterIncompatibilities
         } else if value == AbortCode::DeviceIncompatibilities as u32 {

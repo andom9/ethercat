@@ -10,7 +10,7 @@ This crate's goal is to provide a library that allows easy construction of a cla
   - [ ] Error Handling
   - [x] EtherCat Frame Types
 - Process Data Exchange
-  - [ ] Cyclic PDO
+  - [ ] Cyclic Pdo
 - Network Configuration
   - [ ] Online Scanning
   - [ ] Compare Network Configuration
