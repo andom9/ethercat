@@ -1,7 +1,5 @@
 use bitfield::*;
 
-//pub const COE_HEADER_LENGTH: usize = 2;
-
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct CoeHeader([u8]);

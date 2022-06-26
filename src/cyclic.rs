@@ -5,6 +5,7 @@ pub mod mailbox;
 pub mod mailbox_reader;
 pub mod mailbox_writer;
 pub mod network_initilizer;
+pub mod ram_access_unit;
 pub mod sdo;
 pub mod sdo_downloader;
 pub mod sdo_uploader;
@@ -18,16 +19,15 @@ use crate::interface::*;
 use crate::network::*;
 use crate::packet::*;
 use core::time::Duration;
-use heapless::Vec;
 
 ///EtherCat system time is expressed in nanoseconds elapsed since January 1, 2000.
 #[derive(Debug, Clone, Copy)]
 pub struct EtherCatSystemTime(pub u64);
 
 pub trait CyclicProcess {
-    fn next_command(
+    fn next_command<'a, 'b, 'c>(
         &mut self,
-        desc: &mut NetworkDescription,
+        desc: &mut NetworkDescription<'a, 'b, 'c>,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])>;
     fn recieve_and_process(
@@ -46,33 +46,17 @@ pub struct ReceivedData<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnitHandle(u8);
-impl UnitHandle {
-    fn index(&self) -> usize {
-        self.0 as usize
+pub struct UnitHandle(usize);
+impl From<UnitHandle> for usize {
+    fn from(handle: UnitHandle) -> Self {
+        handle.0
     }
 }
 
 #[derive(Debug)]
-enum Unit<C: CyclicProcess> {
+pub enum Unit<C: CyclicProcess> {
     NextFreeUnit(UnitHandle),
     Unit((C, bool)),
-}
-
-impl<C: CyclicProcess> From<C> for Unit<C> {
-    fn from(unit: C) -> Self {
-        Self::Unit((unit, false))
-    }
-}
-
-impl<C: CyclicProcess> Unit<C> {
-    fn take(self) -> C {
-        if let Self::Unit((c, _)) = self {
-            c
-        } else {
-            panic!()
-        }
-    }
 }
 
 impl<C: CyclicProcess> Default for Unit<C> {
@@ -81,35 +65,51 @@ impl<C: CyclicProcess> Default for Unit<C> {
     }
 }
 
+impl<C: CyclicProcess> From<C> for Unit<C> {
+    fn from(unit: C) -> Self {
+        Self::Unit((unit, false))
+    }
+}
+
 #[derive(Debug)]
-pub struct CyclicUnits<'a, D, C, T>
+pub struct CyclicUnits<'packet, 'units, D, C, T>
 where
     D: Device,
     C: CyclicProcess,
     T: CountDown,
 {
-    iface: EtherCatInterface<'a, D, T>,
-    units: Vec<Unit<C>, 10>,
+    iface: EtherCatInterface<'packet, D, T>,
+    //units: Vec<Unit<C>, 8>,
+    units: &'units mut [Unit<C>],
     free_unit: UnitHandle,
 }
 
-impl<'a, D, C, T> CyclicUnits<'a, D, C, T>
+impl<'packet, 'units, D, C, T> CyclicUnits<'packet, 'units, D, C, T>
 where
     D: Device,
     C: CyclicProcess,
     T: CountDown,
 {
-    pub fn new(iface: EtherCatInterface<'a, D, T>) -> Self {
+    pub fn new(iface: EtherCatInterface<'packet, D, T>, units: &'units mut [Unit<C>]) -> Self {
+        units
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, unit)| *unit = Unit::NextFreeUnit(UnitHandle(i + 1)));
         Self {
             iface,
-            units: Vec::default(),
+            //units: Vec::default(),
+            units,
             free_unit: UnitHandle(0),
         }
     }
 
+    pub fn take_resources(self) -> (EtherCatInterface<'packet, D, T>, &'units mut [Unit<C>]) {
+        (self.iface, self.units)
+    }
+
     pub fn add_unit(&mut self, unit: C) -> Result<UnitHandle, C> {
         let index = self.free_unit.clone();
-        if let Some(unit_enum) = self.units.get_mut(index.index()) {
+        if let Some(unit_enum) = self.units.get_mut(index.0) {
             if let Unit::NextFreeUnit(next) = unit_enum {
                 self.free_unit = next.clone();
                 *unit_enum = Unit::Unit((unit, false));
@@ -118,16 +118,17 @@ where
                 unreachable!()
             }
         } else {
-            self.units
-                .push(Unit::Unit((unit, false)))
-                .map_err(|u| u.take())?;
-            self.free_unit = UnitHandle(index.0 + 1);
-            Ok(index)
+            //self.units
+            //    .push(Unit::Unit((unit, false)))
+            //    .map_err(|u| u.take())?;
+            //self.free_unit = UnitHandle(index.0 + 1);
+            //Ok(index)
+            Err(unit)
         }
     }
 
     pub fn remove_unit(&mut self, unit_handle: UnitHandle) -> Option<C> {
-        if let Some(unit_enum) = self.units.get_mut(unit_handle.index()) {
+        if let Some(unit_enum) = self.units.get_mut(unit_handle.0) {
             match unit_enum {
                 Unit::Unit(_) => {
                     let mut next = Unit::NextFreeUnit(self.free_unit.clone());
@@ -147,7 +148,7 @@ where
     }
 
     pub fn get_unit(&mut self, unit_handle: &UnitHandle) -> Option<&mut C> {
-        match self.units.get_mut(unit_handle.index()) {
+        match self.units.get_mut(unit_handle.0) {
             Some(Unit::Unit((ref mut unit, _))) => Some(unit),
             _ => None,
         }
@@ -216,14 +217,14 @@ where
         for pdu in pdus {
             let index = pdu.index() as usize;
             for j in last_index..index {
-                if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j as u8)) {
+                if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j)) {
                     if *sent {
                         unit.recieve_and_process(None, desc, sys_time);
                         *sent = false;
                     }
                 }
             }
-            if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(index as u8)) {
+            if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(index)) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
                     Command::new(CommandType::new(pdu.command_type()), pdu.adp(), pdu.ado());
@@ -239,7 +240,7 @@ where
             last_index = index + 1;
         }
         for j in last_index..units.len() {
-            if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j as u8)) {
+            if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j)) {
                 if *sent {
                     unit.recieve_and_process(None, desc, sys_time);
                     *sent = false;
@@ -250,11 +251,11 @@ where
     }
 }
 
-fn get_unit_with_sent_flag<C: CyclicProcess, const U: usize>(
-    units: &mut Vec<Unit<C>, U>,
+fn get_unit_with_sent_flag<C: CyclicProcess>(
+    units: &mut [Unit<C>],
     unit_handle: UnitHandle,
 ) -> Option<(&mut C, &mut bool)> {
-    match units.get_mut(unit_handle.index()) {
+    match units.get_mut(unit_handle.0) {
         Some(Unit::Unit((ref mut unit, ref mut sent))) => Some((unit, sent)),
         _ => None,
     }

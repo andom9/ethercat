@@ -33,7 +33,6 @@ pub struct SdoUploader<'a> {
     mailbox: MailboxUnit<'a>,
     mailbox_count: u8,
     mb_length: usize,
-    //sdo_header:[u8; CoeHeader::SIZE + SdoHeader::SIZE],
 }
 
 impl<'a> SdoUploader<'a> {
@@ -46,17 +45,12 @@ impl<'a> SdoUploader<'a> {
             mailbox,
             mailbox_count: 0,
             mb_length: 0,
-            //sdo_header:[0; CoeHeader::SIZE + SdoHeader::SIZE],
         }
     }
 
     pub fn mailbox(&self) -> &MailboxUnit {
         &self.mailbox
     }
-
-    //pub fn sdo_data_from_slice(slice: &[u8]) -> &[u8] {
-    //
-    //}
 
     pub fn sdo_data(&self) -> &[u8] {
         let sdo_header = SdoHeader(&self.mailbox.mailbox_data()[CoeHeader::SIZE..]);
@@ -120,11 +114,6 @@ impl<'a> SdoUploader<'a> {
             .iter_mut()
             .zip(sdo_header)
             .for_each(|(b, d)| *b = d);
-        //self.writer.set_data_to_write(|buf| buf.fill(0));
-        //self.mailbox.mailbox_data_mut().iter_mut().for_each(|b|*b=0);
-        //self.mailbox.mailbox_header_mut().0.iter_mut().for_each(|b|*b=0);
-
-        //self.mailbox.mailbox_data_mut().iter_mut().zip(sdo_header).for_each(|(b, d)| *b = d);
 
         self.mb_length = 4 + sdo_header.len();
         self.slave_address = slave_address;
@@ -135,7 +124,6 @@ impl<'a> SdoUploader<'a> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone().into())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -163,7 +151,7 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
                 if is_first {
                     if let Some(slave) = desc.slave_mut(self.slave_address) {
                         slave.increment_mb_count();
-                        self.mailbox_count = slave.mailbox_count;
+                        self.mailbox_count = slave.status.mailbox_count;
                         let mut mb_header = MailboxHeader::new();
                         mb_header.set_address(0);
                         mb_header.set_count(self.mailbox_count);
@@ -187,15 +175,6 @@ impl<'a> CyclicProcess for SdoUploader<'a> {
             }
             State::ReadUploadResponse(is_first) => {
                 if is_first {
-                    //self.mailbox
-                    //    .mailbox_data_mut()
-                    //    .iter_mut()
-                    //    .for_each(|b| *b = 0);
-                    //self.mailbox
-                    //    .mailbox_header_mut()
-                    //    .0
-                    //    .iter_mut()
-                    //    .for_each(|b| *b = 0);
                     self.mailbox.start_to_read(self.slave_address, true);
                 }
                 self.mailbox.next_command(desc, sys_time)

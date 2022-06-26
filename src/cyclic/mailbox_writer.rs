@@ -56,28 +56,6 @@ impl<'a> MailboxWriter<'a> {
         }
     }
 
-    //pub fn set_data_to_write<F: FnOnce(&mut [u8])>(&mut self, data_writer: F) {
-    //    data_writer(&mut self.send_buf[MailboxHeader::SIZE..]);
-    //}
-
-    //pub fn data_to_write(&self) -> &[u8] {
-    //    &self.send_buf[MailboxHeader::SIZE..]
-    //}
-
-    //pub fn set_header(&mut self, mailbox_header: MailboxHeader<[u8; MailboxHeader::SIZE]>) {
-    //    log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
-    //    self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
-    //    log::info!("{:?}", &self.send_buf[..MailboxHeader::SIZE]);
-    //}
-
-    //pub fn header(&self) -> MailboxHeader<[u8; MailboxHeader::SIZE]> {
-    //    let mut header = MailboxHeader::new();
-    //    header
-    //        .0
-    //        .copy_from_slice(&self.send_buf[..MailboxHeader::SIZE]);
-    //    header
-    //}
-
     pub fn take_buffer(self) -> &'a mut [u8] {
         self.send_buf
     }
@@ -91,38 +69,18 @@ impl<'a> MailboxWriter<'a> {
     }
 
     pub fn mailbox_data(&self) -> &[u8] {
-        //let len = MailboxHeader(&self.buffer).length() as usize;
         &self.send_buf[MailboxHeader::SIZE..]
     }
 
     pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-        //let len = MailboxHeader(&self.buffer).length() as usize;
         &mut self.send_buf[MailboxHeader::SIZE..]
     }
 
-    pub fn start(
-        &mut self,
-        slave_address: SlaveAddress,
-        //mailbox_header: MailboxPdu<[u8; MailboxHeader::SIZE]>,
-        //data: &[u8],
-        //timeout_ms: u32,
-        wait_empty: bool,
-        //clear_buffer: bool,
-    ) {
-        //self.mailbox_header = mailbox_header;
+    pub fn start(&mut self, slave_address: SlaveAddress, wait_empty: bool) {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
         self.buffer.fill(0);
-        //if clear_buffer {
-        //    self.send_buf.fill(0);
-        //}
-        //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&mailbox_header.0);
-        //self.send_buf
-        //    .iter_mut()
-        //    .skip(MailboxHeader::SIZE)
-        //    .zip(data.iter())
-        //    .for_each(|(buf, data)| *buf = *data);
         self.timeout_ns = MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
         self.state = State::CheckMailboxEmpty;
         self.wait_full = wait_empty;
@@ -132,7 +90,6 @@ impl<'a> MailboxWriter<'a> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -194,7 +151,6 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
                     self.state = State::Error(Error::BufferSmall.into());
                     None
                 } else {
-                    //self.send_buf[..MailboxHeader::SIZE].copy_from_slice(&self.mailbox_header.0);
                     Some((self.command, &self.send_buf[..sm.size as usize]))
                 }
             }

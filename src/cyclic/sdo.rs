@@ -97,16 +97,11 @@ impl<'a> SdoUnit<'a> {
         }
     }
 
-    pub fn start_to_read(
-        &mut self,
-        slave_address: SlaveAddress,
-        sdo_index: u16,
-        sdo_sub_index: u8,
-    ) {
+    pub fn start_to_read(&mut self, slave_address: SlaveAddress, index: u16, sub_index: u8) {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut reader = SdoUploader::new(buf);
-        reader.start(slave_address, sdo_index, sdo_sub_index);
+        reader.start(slave_address, index, sub_index);
         self.inner = Inner::Reader(reader);
         self.state = State::Processing;
     }
@@ -114,14 +109,14 @@ impl<'a> SdoUnit<'a> {
     pub fn start_to_write(
         &mut self,
         slave_address: SlaveAddress,
-        sdo_index: u16,
-        sdo_sub_index: u8,
+        index: u16,
+        sub_index: u8,
         data: &[u8],
     ) {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut writer = SdoDownloader::new(buf);
-        writer.start(slave_address, sdo_index, sdo_sub_index, data);
+        writer.start(slave_address, index, sub_index, data);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
     }

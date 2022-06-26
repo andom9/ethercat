@@ -35,7 +35,6 @@ pub struct SdoDownloader<'a> {
     mailbox: MailboxUnit<'a>,
     mailbox_count: u8,
     mb_length: usize,
-    //sdo_header: [u8; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE],
 }
 
 impl<'a> SdoDownloader<'a> {
@@ -48,7 +47,6 @@ impl<'a> SdoDownloader<'a> {
             mailbox,
             mailbox_count: 0,
             mb_length: 0,
-            //sdo_header: [0; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE],
         }
     }
 
@@ -98,17 +96,6 @@ impl<'a> SdoDownloader<'a> {
             .skip(sdo_header.len())
             .zip(data)
             .for_each(|(b, d)| *b = *d);
-        //self.writer.set_data_to_write(|buf| buf.fill(0));
-
-        //self.writer
-        //    .set_data_to_write(|buf| buf.iter_mut().zip(sdo_header).for_each(|(b, d)| *b = d));
-
-        //self.writer.set_data_to_write(|buf| {
-        //    buf.iter_mut()
-        //        .skip(sdo_header.len())
-        //        .zip(data)
-        //        .for_each(|(b, d)| *b = *d)
-        //});
 
         self.mb_length = data_len + sdo_header.len();
 
@@ -120,7 +107,6 @@ impl<'a> SdoDownloader<'a> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone().into())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -145,7 +131,7 @@ impl<'a> CyclicProcess for SdoDownloader<'a> {
                     if let Some(slave) = desc.slave_mut(self.slave_address) {
                         self.mailbox.start_to_write(self.slave_address, true);
                         slave.increment_mb_count();
-                        self.mailbox_count = slave.mailbox_count;
+                        self.mailbox_count = slave.status.mailbox_count;
                         let mut mb_header = MailboxHeader::new();
                         mb_header.set_address(0);
                         mb_header.set_count(self.mailbox_count);

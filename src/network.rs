@@ -1,24 +1,18 @@
 use crate::{interface::SlaveAddress, slave::*};
 
 pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
-//const SLAVE_SIZE: usize = core::mem::size_of::<Option<Slave>>();
-//pub const EMPTY_SLAVE_PORT_CONTEXT: Option<SlavePort> = None;
-//pub const EMPTY_SLAVE_Dc_CONTEXT: Option<SlaveDc> = None;
 
 #[derive(Debug)]
-pub struct NetworkDescription<'a> {
-    slaves: &'a mut [Option<Slave>],
+pub struct NetworkDescription<'a, 'b, 'c> {
+    slaves: &'a mut [Option<Slave<'b, 'c>>],
     push_count: usize,
-    //max_push: usize,
 }
 
-impl<'a> NetworkDescription<'a> {
-    pub fn new(slave_buf: &'a mut [Option<Slave>]) -> Self {
-        //let len1 = slave_buf.iter_mut().map(|buf| *buf = None).count();
+impl<'a, 'b, 'c> NetworkDescription<'a, 'b, 'c> {
+    pub fn new(slave_buf: &'a mut [Option<Slave<'b, 'c>>]) -> Self {
         Self {
             slaves: slave_buf,
             push_count: 0,
-            //max_push: len1,
         }
     }
 
@@ -27,7 +21,7 @@ impl<'a> NetworkDescription<'a> {
         self.push_count = 0;
     }
 
-    pub(crate) fn push_slave(&mut self, slave: Slave) -> Result<(), Slave> {
+    pub(crate) fn push_slave(&mut self, slave: Slave<'b, 'c>) -> Result<(), Slave<'b, 'c>> {
         if self.slaves.len() <= self.push_count {
             Err(slave)
         } else {
@@ -41,7 +35,7 @@ impl<'a> NetworkDescription<'a> {
         self.push_count
     }
 
-    pub fn slave(&self, addr: SlaveAddress) -> Option<&Slave> {
+    pub fn slave(&self, addr: SlaveAddress) -> Option<&Slave<'b, 'c>> {
         let addr = match addr {
             SlaveAddress::SlavePosition(n) => n,
             SlaveAddress::StationAddress(n) => {
@@ -59,7 +53,7 @@ impl<'a> NetworkDescription<'a> {
         }
     }
 
-    pub(crate) fn slave_mut(&mut self, addr: SlaveAddress) -> Option<&mut Slave> {
+    pub fn slave_mut(&mut self, addr: SlaveAddress) -> Option<&mut Slave<'b, 'c>> {
         let addr = match addr {
             SlaveAddress::SlavePosition(n) => n,
             SlaveAddress::StationAddress(n) => {
@@ -77,37 +71,42 @@ impl<'a> NetworkDescription<'a> {
         }
     }
 
-    //pub fn slaves(&self) -> &[Option<Slave>] {
-    //    self.slaves
-    //}
-
-    pub fn slaves(&self) -> impl Iterator<Item = &Slave> {
+    pub fn slaves(&self) -> impl Iterator<Item = &Slave<'b, 'c>> {
         self.slaves.iter().filter_map(|s| s.as_ref())
     }
 
-    pub fn recieved_ports(&self) -> RecievedPorts {
+    pub fn slaves_mut(&mut self) -> impl Iterator<Item = &mut Slave<'b, 'c>> {
+        self.slaves.iter_mut().filter_map(|s| s.as_mut())
+    }
+
+    pub fn recieved_ports(&'a self) -> RecievedPorts<'a, 'b, 'c> {
         let Self { slaves, .. } = self;
         RecievedPorts::new(slaves)
     }
 
-    pub(crate) fn read_and_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
-        let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
-        read_and_write_pdo_buffer(pdo_buffer, iter);
-    }
+    //pub(crate) fn read_and_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
+    //    let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
+    //    read_and_write_pdo_buffer(pdo_buffer, iter);
+    //}
 }
 
 #[derive(Debug)]
-pub struct RecievedPorts<'a> {
-    slaves: &'a [Option<Slave>],
+pub struct RecievedPorts<'a, 'b, 'c> {
+    slaves: &'a [Option<Slave<'b, 'c>>],
     position: u16,
     length: usize,
 }
 
-impl<'a> RecievedPorts<'a> {
-    fn new(slaves: &'a [Option<Slave>]) -> Self {
+impl<'a, 'b, 'c> RecievedPorts<'a, 'b, 'c> {
+    fn new(slaves: &'a [Option<Slave<'b, 'c>>]) -> RecievedPorts<'a, 'b, 'c> {
         let mut length = 0;
         for slave in slaves.iter().filter_map(|s| s.as_ref()) {
-            let current_port = slave.linked_ports.iter().position(|p| *p).unwrap_or(4);
+            let current_port = slave
+                .status
+                .linked_ports
+                .iter()
+                .position(|p| *p)
+                .unwrap_or(4);
             let mut dc = slave.dc_context.borrow_mut();
             dc.current_port = current_port as u8;
             length += 1;
@@ -127,7 +126,7 @@ pub struct RecievedPort {
     pub port: u8,
 }
 
-impl<'a> Iterator for RecievedPorts<'a> {
+impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
     type Item = RecievedPort;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -137,7 +136,7 @@ impl<'a> Iterator for RecievedPorts<'a> {
 
             let current_port_tmp = dc.current_port;
 
-            let linked_ports = slave.linked_ports;
+            let linked_ports = slave.status.linked_ports;
             if let Some(next_port) =
                 linked_ports
                     .iter()
@@ -167,33 +166,33 @@ impl<'a> Iterator for RecievedPorts<'a> {
     }
 }
 
-fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
-    pdo_buffer: &mut [u8],
-    slaves: S,
-) {
-    let mut offset = 0;
-    for slave in slaves {
-        //先にRxPdoを並べているとする
-        if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
-            for pdo_mapping in sm_in.iter_mut() {
-                for pdo in pdo_mapping.entries.iter_mut() {
-                    let byte_length = pdo.byte_length as usize;
-                    pdo.data
-                        .copy_from_slice(&pdo_buffer[offset..offset + byte_length]);
-                    offset += byte_length;
-                }
-            }
-        }
-
-        //RxPdoの後にTxPdoを並べているとする
-        if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
-            for pdo_mapping in sm_out.iter_mut() {
-                for pdo in pdo_mapping.entries.iter_mut() {
-                    let byte_length = pdo.byte_length as usize;
-                    pdo_buffer[offset..offset + byte_length].copy_from_slice(pdo.data);
-                    offset += byte_length;
-                }
-            }
-        }
-    }
-}
+//fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
+//    pdo_buffer: &mut [u8],
+//    slaves: S,
+//) {
+//    let mut offset = 0;
+//    for slave in slaves {
+//        //先にRxPdoを並べているとする
+//        if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
+//            //for pdo_mapping in sm_in.iter_mut() {
+//            for pdo in sm_in.entries.iter_mut() {
+//                let byte_length = pdo.byte_length as usize;
+//                pdo.data
+//                    .copy_from_slice(&pdo_buffer[offset..offset + byte_length]);
+//                offset += byte_length;
+//            }
+//            //}
+//        }
+//
+//        //RxPdoの後にTxPdoを並べているとする
+//        if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
+//            //for pdo_mapping in sm_out.iter_mut() {
+//            for pdo in sm_out.entries.iter_mut() {
+//                let byte_length = pdo.byte_length as usize;
+//                pdo_buffer[offset..offset + byte_length].copy_from_slice(pdo.data);
+//                offset += byte_length;
+//            }
+//            //}
+//        }
+//    }
+//}

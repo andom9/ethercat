@@ -38,7 +38,6 @@ enum State {
     SetReadOperation,
     Wait,
     Read,
-    ResetOwnership,
     Complete,
 }
 
@@ -88,7 +87,6 @@ impl SiiReader {
         match &self.state {
             State::Complete => Some(Ok((self.sii_data.clone(), self.read_size))),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -145,14 +143,14 @@ impl CyclicProcess for SiiReader {
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SiiData::SIZE]))
             }
-            State::ResetOwnership => {
-                self.buffer.fill(0);
-                let mut sii_access = SiiAccess(&mut self.buffer);
-                sii_access.set_owner(true);
-                sii_access.set_reset_access(false);
-                self.command = Command::new_write(self.slave_address, SiiAccess::ADDRESS);
-                Some((self.command, &self.buffer[..SiiAccess::SIZE]))
-            }
+            //State::ResetOwnership => {
+            //    self.buffer.fill(0);
+            //    let mut sii_access = SiiAccess(&mut self.buffer);
+            //    sii_access.set_owner(true);
+            //    sii_access.set_reset_access(false);
+            //    self.command = Command::new_write(self.slave_address, SiiAccess::ADDRESS);
+            //    Some((self.command, &self.buffer[..SiiAccess::SIZE]))
+            //}
             State::Complete => None,
         }
     }
@@ -241,11 +239,11 @@ impl CyclicProcess for SiiReader {
                     .iter_mut()
                     .zip(data)
                     .for_each(|(b, d)| *b = *d);
-                self.state = State::ResetOwnership;
-            }
-            State::ResetOwnership => {
                 self.state = State::Complete;
             }
+            //State::ResetOwnership => {
+            //    self.state = State::Complete;
+            //}
             State::Complete => {}
         }
     }

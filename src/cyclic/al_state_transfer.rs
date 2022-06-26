@@ -7,6 +7,7 @@ use crate::interface::{Command, SlaveAddress};
 use crate::network::NetworkDescription;
 use crate::packet::ethercat::CommandType;
 use crate::register::application::{AlControl, AlStatus};
+use crate::register::datalink::SiiAccess;
 use crate::slave::AlState;
 use crate::util::const_max;
 use core::convert::TryFrom;
@@ -52,9 +53,11 @@ enum State {
     Idle,
     Read,
     ResetError(AlState),
-    Complete,
+    OffAck(AlState),
+    ResetSiiOwnership,
     Request,
     Poll,
+    Complete,
 }
 
 #[derive(Debug)]
@@ -95,7 +98,6 @@ impl AlStateTransfer {
         match &self.state {
             State::Complete => Some(Ok(self.current_al_state)),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -130,6 +132,30 @@ impl CyclicProcess for AlStateTransfer {
                 al_control.set_state(current_al_state as u8);
                 al_control.set_acknowledge(true);
                 Some((self.command, &self.buffer[..AlControl::SIZE]))
+            }
+            State::OffAck(current_al_state) => {
+                if let Some(slave_address) = self.slave_address {
+                    self.command = Command::new_write(slave_address, AlControl::ADDRESS);
+                } else {
+                    self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS);
+                }
+                self.buffer.fill(0);
+                let mut al_control = AlControl(&mut self.buffer);
+                al_control.set_state(current_al_state as u8);
+                al_control.set_acknowledge(false);
+                Some((self.command, &self.buffer[..AlControl::SIZE]))
+            }
+            State::ResetSiiOwnership => {
+                self.buffer.fill(0);
+                let mut sii_access = SiiAccess(&mut self.buffer);
+                sii_access.set_owner(true);
+                sii_access.set_reset_access(false);
+                if let Some(slave_address) = self.slave_address {
+                    self.command = Command::new_write(slave_address, SiiAccess::ADDRESS);
+                } else {
+                    self.command = Command::new(CommandType::BWR, 0, SiiAccess::ADDRESS);
+                }
+                Some((self.command, &self.buffer[..SiiAccess::SIZE]))
             }
             State::Request => {
                 self.buffer.fill(0);
@@ -200,12 +226,18 @@ impl CyclicProcess for AlStateTransfer {
                 if al_state == self.target_al {
                     self.state = State::Complete;
                 } else if al_status.change_err() {
-                    self.state = State::ResetError(al_state);
+                    let non_mixed_al_state = match al_state {
+                        AlState::InvalidOrMixed => AlState::Init,
+                        _ => al_state,
+                    };
+                    self.state = State::ResetError(non_mixed_al_state);
                 } else {
-                    self.state = State::Request;
+                    self.state = State::ResetSiiOwnership;
                 }
             }
-            State::ResetError(_) => self.state = State::Read,
+            State::ResetError(al_state) => self.state = State::OffAck(al_state),
+            State::OffAck(_) => self.state = State::Read,
+            State::ResetSiiOwnership => self.state = State::Request,
             State::Request => {
                 self.timer_start = sys_time;
                 self.state = State::Poll;
@@ -235,5 +267,6 @@ const fn buffer_size() -> usize {
     let mut size = 0;
     size = const_max(size, AlStatus::SIZE);
     size = const_max(size, AlControl::SIZE);
+    size = const_max(size, SiiAccess::SIZE);
     size
 }

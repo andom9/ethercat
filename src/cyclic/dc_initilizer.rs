@@ -243,11 +243,13 @@ impl CyclicProcess for DcInitializer {
 
                     if self.first_dc_slave.is_some() && self.first_dc_slave.unwrap() < *pos {
                         let first_recieved_port = slave
+                            .status
                             .linked_ports
                             .iter()
                             .position(|is_active| *is_active)
                             .unwrap();
                         let last_recieved_port = slave
+                            .status
                             .linked_ports
                             .iter()
                             .enumerate()
@@ -272,6 +274,7 @@ impl CyclicProcess for DcInitializer {
                         let parent = desc.slave(SlaveAddress::SlavePosition(parent_pos)).unwrap();
                         let parent_dc = parent.dc_context.borrow();
                         let parent_next_port = parent
+                            .status
                             .linked_ports
                             .iter()
                             .enumerate()

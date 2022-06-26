@@ -68,10 +68,6 @@ impl<'a> MailboxReader<'a> {
         }
     }
 
-    //pub fn buffer(&self) -> &[u8] {
-    //    self.recv_buf
-    //}
-
     pub fn take_buffer(self) -> &'a mut [u8] {
         self.recv_buf
     }
@@ -85,12 +81,10 @@ impl<'a> MailboxReader<'a> {
     }
 
     pub fn mailbox_data(&self) -> &[u8] {
-        //let len = MailboxHeader(&self.buffer).length() as usize;
         &self.recv_buf[MailboxHeader::SIZE..]
     }
 
     pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-        //let len = MailboxHeader(&self.buffer).length() as usize;
         &mut self.recv_buf[MailboxHeader::SIZE..]
     }
 
@@ -108,7 +102,6 @@ impl<'a> MailboxReader<'a> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }

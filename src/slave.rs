@@ -20,50 +20,88 @@ pub enum SlaveError {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SlaveID {
+pub struct SlaveId {
     pub vender_id: u16,
     pub product_code: u16,
     pub revision_number: u16,
 }
 
-#[derive(Debug, Default)]
-pub struct Slave {
-    pub configured_address: u16,
-    pub info: SlaveInfo,
+#[derive(Debug, Clone, Default)]
+pub struct SlaveStatus {
     pub error: Option<SlaveError>,
     pub al_state: AlState,
-    pub mailbox_count: u8,
-    pub rx_pdo_mapping: Option<&'static mut [PdoMapping]>,
-    pub tx_pdo_mapping: Option<&'static mut [PdoMapping]>,
+    pub(crate) mailbox_count: u8,
     pub linked_ports: [bool; 4],
+}
+
+#[derive(Debug, Default)]
+pub struct Slave<'a, 'b> {
+    pub(crate) info: SlaveInfo,
+    pub(crate) status: SlaveStatus,
+    pub(crate) pdo_mappings: Option<SlavePdo<'a, 'b>>,
 
     // for Dc init
     pub(crate) dc_context: RefCell<DcContext>,
 }
 
-impl Slave {
+impl<'a, 'b> Slave<'a, 'b> {
     pub(crate) fn increment_mb_count(&mut self) {
-        if self.mailbox_count < 7 {
-            self.mailbox_count += 1;
+        if self.status.mailbox_count < 7 {
+            self.status.mailbox_count += 1;
         } else {
-            self.mailbox_count = 1;
+            self.status.mailbox_count = 1;
+        }
+    }
+
+    pub fn info(&self) -> &SlaveInfo {
+        &self.info
+    }
+
+    pub fn status(&self) -> &SlaveStatus {
+        &self.status
+    }
+
+    pub fn pdo_mappings(&self) -> Option<&SlavePdo<'a, 'b>> {
+        self.pdo_mappings.as_ref()
+    }
+
+    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+        if let Some(ref mut pdo_mappings) = self.pdo_mappings {
+            pdo_mappings.rx_mapping = mappings;
+        } else {
+            self.pdo_mappings = Some(SlavePdo {
+                rx_mapping: mappings,
+                tx_mapping: &[],
+            });
+        }
+    }
+
+    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+        if let Some(ref mut pdo_mappings) = self.pdo_mappings {
+            pdo_mappings.tx_mapping = mappings;
+        } else {
+            self.pdo_mappings = Some(SlavePdo {
+                tx_mapping: mappings,
+                rx_mapping: &[],
+            });
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct DcContext {
     pub parent_port: Option<(u16, u8)>,
     pub current_port: u8,
     pub recieved_port_time: [u32; 4],
     pub delay: u32,
-    //pub recieved_time: u64,
     pub offset: u64,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
-    pub id: SlaveID,
+    pub configured_address: u16,
+
+    pub id: SlaveId,
     pub ports: [Option<PortPhysics>; 4],
     pub ram_size_kb: u8,
 
@@ -73,10 +111,7 @@ pub struct SlaveInfo {
     pub pdo_start_address: Option<u16>,
     pub pdo_ram_size: u16,
 
-    pub sm0: Option<SyncManager>, //sm0
-    pub sm1: Option<SyncManager>, //sm1
-    pub sm2: Option<SyncManager>, //sm1
-    pub sm3: Option<SyncManager>, //sm1
+    pub sm: [Option<SyncManager>; 4],
 
     pub support_dc: bool,
     pub is_dc_range_64bits: bool,
@@ -87,36 +122,24 @@ pub struct SlaveInfo {
     pub support_coe: bool,
 
     pub strict_al_control: bool,
-    //pub enable_dc_sync_outputs: bool,
-    //pub enable_dc_latch_inputs: bool,
 }
 
 impl SlaveInfo {
     pub(crate) fn mailbox_rx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        if let Some(SyncManager::MailboxRx(sm)) = self.sm0 {
-            Some((0, sm))
-        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm1 {
-            Some((1, sm))
-        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm2 {
-            Some((2, sm))
-        } else if let Some(SyncManager::MailboxRx(sm)) = self.sm3 {
-            Some((3, sm))
-        } else {
-            None
+        for (i, sm) in self.sm.iter().enumerate() {
+            if let Some(SyncManager::MailboxRx(sm)) = sm {
+                return Some((i as u16, *sm));
+            }
         }
+        None
     }
     pub(crate) fn mailbox_tx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        if let Some(SyncManager::MailboxTx(sm)) = self.sm0 {
-            Some((0, sm))
-        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm1 {
-            Some((1, sm))
-        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm2 {
-            Some((2, sm))
-        } else if let Some(SyncManager::MailboxTx(sm)) = self.sm3 {
-            Some((3, sm))
-        } else {
-            None
+        for (i, sm) in self.sm.iter().enumerate() {
+            if let Some(SyncManager::MailboxTx(sm)) = sm {
+                return Some((i as u16, *sm));
+            }
         }
+        None
     }
 }
 
@@ -183,15 +206,21 @@ impl Default for OperationMode {
 }
 
 #[derive(Debug)]
-pub struct PdoMapping {
-    //pub(crate) index: u16,
-    pub(crate) entries: &'static mut [PdoEntry],
+pub struct SlavePdo<'a, 'b> {
+    pub rx_mapping: &'a [PdoMapping<'b>],
+    pub tx_mapping: &'a [PdoMapping<'b>],
+}
+
+#[derive(Debug)]
+pub struct PdoMapping<'a> {
+    pub is_fixed: bool,
+    pub index: u16,
+    pub entries: &'a [PdoEntry],
 }
 
 #[derive(Debug)]
 pub struct PdoEntry {
-    pub(crate) index: u16,
-    pub(crate) sub_index: u8,
-    pub(crate) byte_length: u8, // NOTE: not bit length
-    pub(crate) data: &'static mut [u8],
+    pub index: u16,
+    pub sub_index: u8,
+    pub bit_length: usize,
 }

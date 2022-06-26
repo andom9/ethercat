@@ -55,7 +55,6 @@ impl AlStateReader {
                 self.current_al_status_code.clone(),
             ))),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted),
             _ => None,
         }
     }

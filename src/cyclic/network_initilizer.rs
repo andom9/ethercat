@@ -6,6 +6,7 @@ use crate::interface::Command;
 use crate::network::NetworkDescription;
 use crate::packet::ethercat::CommandType;
 use crate::register::datalink::DlControl;
+use crate::slave::Slave;
 
 use super::EtherCatSystemTime;
 use super::ReceivedData;
@@ -72,7 +73,6 @@ impl NetworkInitializer {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
-            //State::Idle => Err(EcError::NotStarted.into()),
             _ => None,
         }
     }
@@ -160,8 +160,12 @@ impl CyclicProcess for NetworkInitializer {
             State::WaitInitSlaves(count) => {
                 self.initilizer
                     .recieve_and_process(recv_data, desc, sys_time);
+
                 match self.initilizer.wait() {
-                    Some(Ok(Some(slave))) => {
+                    Some(Ok(Some((slave_info, slave_status)))) => {
+                        let mut slave = Slave::default();
+                        slave.info = slave_info;
+                        slave.status = slave_status;
                         if desc.push_slave(slave).is_err() {
                             self.state = State::Error(Error::TooManySlaves.into());
                         } else if *count + 1 < self.num_slaves {

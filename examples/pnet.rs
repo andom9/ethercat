@@ -1,8 +1,12 @@
 use ethercat_master::arch::*;
 use ethercat_master::cyclic::sdo::SdoUnit;
 use ethercat_master::cyclic::sii_reader;
+use ethercat_master::cyclic::sii_reader::SiiReader;
+use ethercat_master::cyclic::Unit;
 use ethercat_master::interface::*;
+use ethercat_master::master::CyclicUnitType;
 use ethercat_master::master::EtherCatMaster;
+use ethercat_master::network::NetworkDescription;
 use ethercat_master::slave::AlState;
 use ethercat_master::slave::Slave;
 use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
@@ -94,6 +98,24 @@ fn main() {
     env::set_var("RUST_LOG", "info");
     env_logger::init();
 
+    let device_size = core::mem::size_of::<PnetDevice>();
+    println!("device size {}", device_size);
+
+    let timer_size = core::mem::size_of::<Timer>();
+    println!("timer size {}", timer_size);
+
+    let size = core::mem::size_of::<EtherCatMaster<PnetDevice, Timer>>();
+    println!("master size {}", size);
+
+    let size = core::mem::size_of::<CyclicUnitType>();
+    println!("units size {}", size);
+    let size = core::mem::size_of::<SiiReader>();
+    println!("units size {}", size);
+    let size = core::mem::size_of::<NetworkDescription>();
+    println!("net size {}", size);
+
+    //panic!();
+
     let args: Vec<String> = env::args().collect();
 
     if let Some(name) = args.get(1) {
@@ -109,18 +131,20 @@ fn main() {
 }
 
 fn simple_test(interf_name: &str) {
+    dbg!("prepare resources");
     let timer = Timer::new();
     let device = PnetDevice::open(&interf_name);
-    let mtu = device.max_transmission_unit();
-    let mut command_buf = vec![0; mtu];
-    let mut sdo_buf = vec![0; 1024];
-
-    let iface = EtherCatInterface::new(device, timer, &mut command_buf);
-    let mut slave_buf: [Option<Slave>; 10] = Default::default();
+    let mut pdu_buf = vec![0; device.max_transmission_unit()];
+    let mut mb_buf = vec![0; 1488];
+    let mut units_buf: Box<[Unit<CyclicUnitType>; 10]> = Default::default();
+    let mut slave_buf: Box<[Option<Slave>; 10]> = Default::default();
+    let iface = EtherCatInterface::new(device, timer, &mut pdu_buf);
 
     dbg!("crate master");
-    let mut master = EtherCatMaster::initilize(iface, &mut slave_buf).unwrap();
+    let mut master =
+        EtherCatMaster::initilize(iface, slave_buf.as_mut(), units_buf.as_mut()).unwrap();
     dbg!("done");
+    let sdo_unit_handle = master.add_sdo_unit(SdoUnit::new(&mut mb_buf)).unwrap();
 
     let (eeprom_data, size) = master
         .read_sii(
@@ -139,8 +163,6 @@ fn simple_test(interf_name: &str) {
     let alstate = master.read_al_state(None).unwrap();
     println!("al_state: {:?}", alstate);
 
-    let sdo_unit = SdoUnit::new(&mut sdo_buf);
-    let sdo_unit_handle = master.add_sdo_unit(sdo_unit).unwrap();
     master
         .read_sdo(
             &sdo_unit_handle,
