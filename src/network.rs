@@ -84,10 +84,31 @@ impl<'a, 'b, 'c> NetworkDescription<'a, 'b, 'c> {
         RecievedPorts::new(slaves)
     }
 
-    //pub(crate) fn read_and_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
-    //    let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
-    //    read_and_write_pdo_buffer(pdo_buffer, iter);
-    //}
+    pub(crate) fn calculate_pdo_entry_positions_in_pdo_image(&mut self) {
+        let mut start_addess = 0;
+        //let mut start_bit=0;
+        for slave in self.slaves_mut() {
+            if slave.pdo_mappings.is_none() {
+                continue;
+            }
+            let pdo_mappings = slave.pdo_mappings.as_mut().unwrap();
+            //先にRxPdoを並べる
+            for rx_pdo in pdo_mappings.rx_mapping.iter_mut() {
+                for pdo in rx_pdo.entries.iter_mut() {
+                    pdo.logical_start_address = Some(start_addess);
+                    start_addess += pdo.byte_length();
+                }
+            }
+
+            //RxPdoの後にTxPdoを並べる
+            for tx_pdo in pdo_mappings.tx_mapping.iter_mut() {
+                for pdo in tx_pdo.entries.iter_mut() {
+                    pdo.logical_start_address = Some(start_addess);
+                    start_addess += pdo.byte_length();
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -165,34 +186,3 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
         None
     }
 }
-
-//fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
-//    pdo_buffer: &mut [u8],
-//    slaves: S,
-//) {
-//    let mut offset = 0;
-//    for slave in slaves {
-//        //先にRxPdoを並べているとする
-//        if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
-//            //for pdo_mapping in sm_in.iter_mut() {
-//            for pdo in sm_in.entries.iter_mut() {
-//                let byte_length = pdo.byte_length as usize;
-//                pdo.data
-//                    .copy_from_slice(&pdo_buffer[offset..offset + byte_length]);
-//                offset += byte_length;
-//            }
-//            //}
-//        }
-//
-//        //RxPdoの後にTxPdoを並べているとする
-//        if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
-//            //for pdo_mapping in sm_out.iter_mut() {
-//            for pdo in sm_out.entries.iter_mut() {
-//                let byte_length = pdo.byte_length as usize;
-//                pdo_buffer[offset..offset + byte_length].copy_from_slice(pdo.data);
-//                offset += byte_length;
-//            }
-//            //}
-//        }
-//    }
-//}

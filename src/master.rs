@@ -16,6 +16,7 @@ use crate::interface::SlaveAddress;
 use crate::network::*;
 use crate::register::datalink::SiiData;
 use crate::slave::AlState;
+use crate::slave::PdoMapping;
 use crate::slave::Slave;
 use core::time::Duration;
 use paste::paste;
@@ -218,6 +219,28 @@ where
             count += 1000;
         }
         Ok(())
+    }
+
+    pub fn configure_pdo_mappings(&mut self, sdo_unit_handle: &SdoUnitHandle) -> Result<(), EcError<sdo::Error>> {
+        let Self { network, .. } = self;
+        network.calculate_pdo_entry_positions_in_pdo_image();
+        for pdo_maps in network
+            .slaves()
+            .into_iter()
+            .filter_map(|s| s.pdo_mappings())
+        {
+            //PDOエントリーの割り当て
+            for rx_pdo_map in pdo_maps.rx_mapping.iter() {
+                let PdoMapping {
+                    is_fixed,
+                    index,
+                    entries,
+                } = rx_pdo_map;
+                self.write_sdo(sdo_unit_handle, SlaveAddress::SlavePosition(0), *index, 0, &[0])?;
+            }
+        }
+
+        todo!()
     }
 }
 

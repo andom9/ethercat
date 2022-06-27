@@ -65,24 +65,26 @@ impl<'a, 'b> Slave<'a, 'b> {
         self.pdo_mappings.as_ref()
     }
 
-    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
         if let Some(ref mut pdo_mappings) = self.pdo_mappings {
             pdo_mappings.rx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
+                //logical_start_address_and_bit: None,
                 rx_mapping: mappings,
-                tx_mapping: &[],
+                tx_mapping: &mut [],
             });
         }
     }
 
-    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
         if let Some(ref mut pdo_mappings) = self.pdo_mappings {
             pdo_mappings.tx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
+                //logical_start_address_and_bit: None,
                 tx_mapping: mappings,
-                rx_mapping: &[],
+                rx_mapping: &mut [],
             });
         }
     }
@@ -207,20 +209,94 @@ impl Default for OperationMode {
 
 #[derive(Debug)]
 pub struct SlavePdo<'a, 'b> {
-    pub rx_mapping: &'a [PdoMapping<'b>],
-    pub tx_mapping: &'a [PdoMapping<'b>],
+    pub rx_mapping: &'a mut [PdoMapping<'b>],
+    pub tx_mapping: &'a mut [PdoMapping<'b>],
 }
 
 #[derive(Debug)]
 pub struct PdoMapping<'a> {
     pub is_fixed: bool,
     pub index: u16,
-    pub entries: &'a [PdoEntry],
+    pub entries: &'a mut [PdoEntry],
 }
 
 #[derive(Debug)]
 pub struct PdoEntry {
-    pub index: u16,
-    pub sub_index: u8,
-    pub bit_length: usize,
+    pub(crate) logical_start_address: Option<u16>,
+    pub(crate) index: u16,
+    pub(crate) sub_index: u8,
+    pub(crate) bit_length: u16,
+}
+impl PdoEntry {
+    pub fn new(index: u16, sub_index: u8, bit_length: u16) -> Self {
+        PdoEntry {
+            logical_start_address: None,
+            index,
+            sub_index,
+            bit_length,
+        }
+    }
+
+    pub fn index(&self) -> u16 {
+        self.index
+    }
+
+    pub fn sub_index(&self) -> u8 {
+        self.sub_index
+    }
+
+    pub fn bit_length(&self) -> u16 {
+        self.bit_length
+    }
+
+    pub(crate) fn byte_length(&self) -> u16 {
+        if self.bit_length % 8 == 0 {
+            self.bit_length / 8
+        } else {
+            self.bit_length / 8 + 1
+        }
+    }
+
+    pub fn read<'a>(&self, logical_image: &'a [u8]) -> Option<&'a [u8]> {
+        let size = self.byte_length() as usize;
+        if self.logical_start_address.is_none() {
+            return None;
+        }
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        if logical_image.get(logical_start_address + size).is_none() {
+            return None;
+        }
+        Some(&logical_image[logical_start_address..logical_start_address + size])
+    }
+
+    pub fn read_unchecked<'a>(&self, logical_image: &'a [u8]) -> &'a [u8] {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        &logical_image[logical_start_address..logical_start_address + size]
+    }
+
+    pub fn write<'a>(&self, logical_image: &'a mut [u8], data: &[u8]) -> Option<()> {
+        let size = self.byte_length() as usize;
+        if self.logical_start_address.is_none() {
+            return None;
+        }
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        if logical_image.get(logical_start_address + size).is_none() {
+            return None;
+        }
+        logical_image[logical_start_address..logical_start_address + size]
+            .iter_mut()
+            .zip(data)
+            .for_each(|(image, data)| *image = *data);
+        Some(())
+    }
+
+    pub fn write_unchecked<'a>(&self, logical_image: &'a mut [u8], data: &[u8]) {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        logical_image[logical_start_address..logical_start_address + size]
+            .iter_mut()
+            .zip(data)
+            .for_each(|(image, data)| *image = *data);
+    }
 }
