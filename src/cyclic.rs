@@ -27,13 +27,13 @@ pub struct EtherCatSystemTime(pub u64);
 pub trait CyclicProcess {
     fn next_command<'a, 'b, 'c>(
         &mut self,
-        desc: &mut NetworkDescription<'a, 'b, 'c>,
+        //desc: &mut NetworkDescription<'a, 'b, 'c>,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])>;
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     );
 }
@@ -156,14 +156,18 @@ where
 
     pub fn poll<I: Into<Duration>>(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
         recv_timeout: I,
     ) -> Result<(), interface::Error> {
         let timeout: Duration = recv_timeout.into();
         loop {
-            let is_all_commands_enqueued = self.enqueue_commands(desc, sys_time)?;
-            self.process(desc, sys_time, timeout)?;
+            //let is_all_commands_enqueued = self.enqueue_commands(desc, sys_time)?;
+            let is_all_commands_enqueued = self.enqueue_commands(sys_time)?;
+
+            //self.process(desc, sys_time, timeout)?;
+            self.process(sys_time, timeout)?;
+
             if is_all_commands_enqueued {
                 break;
             }
@@ -173,7 +177,7 @@ where
 
     fn enqueue_commands(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Result<bool, interface::Error> {
         let mut complete = true;
@@ -182,7 +186,8 @@ where
                 if *sent {
                     continue;
                 }
-                if let Some((command, data)) = unit.next_command(desc, sys_time) {
+                //if let Some((command, data)) = unit.next_command(desc, sys_time) {
+                if let Some((command, data)) = unit.next_command(sys_time) {
                     let len = data.len();
                     if self.iface.remainig_capacity() < len {
                         complete = false;
@@ -202,7 +207,7 @@ where
 
     fn process<I: Into<Duration>>(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
         recv_timeout: I,
     ) -> Result<(), interface::Error> {
@@ -219,7 +224,9 @@ where
             for j in last_index..index {
                 if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j)) {
                     if *sent {
-                        unit.recieve_and_process(None, desc, sys_time);
+                        //unit.recieve_and_process(None, desc, sys_time);
+                        unit.recieve_and_process(None, sys_time);
+
                         *sent = false;
                     }
                 }
@@ -234,7 +241,9 @@ where
                     wkc,
                 };
                 assert!(*sent);
-                unit.recieve_and_process(Some(recv_data), desc, sys_time);
+                //unit.recieve_and_process(Some(recv_data), desc, sys_time);
+                unit.recieve_and_process(Some(recv_data), sys_time);
+
                 *sent = false;
             }
             last_index = index + 1;
@@ -242,7 +251,9 @@ where
         for j in last_index..units.len() {
             if let Some((unit, sent)) = get_unit_with_sent_flag(units, UnitHandle(j)) {
                 if *sent {
-                    unit.recieve_and_process(None, desc, sys_time);
+                    //unit.recieve_and_process(None, desc, sys_time);
+                    unit.recieve_and_process(None, sys_time);
+
                     *sent = false;
                 }
             }

@@ -13,9 +13,11 @@ use crate::interface;
 use crate::interface::Command;
 use crate::interface::EtherCatInterface;
 use crate::interface::SlaveAddress;
+use crate::interface::TargetSlave;
 use crate::network::*;
 use crate::register::datalink::SiiData;
 use crate::slave::AlState;
+use crate::slave::PdoMapping;
 use crate::slave::Slave;
 use core::time::Duration;
 use paste::paste;
@@ -44,7 +46,9 @@ where
         let mut units_tmp = [Unit::default()];
         let mut cyclic = CyclicUnits::new(iface, &mut units_tmp);
         let mut network = NetworkDescription::new(slave_buf);
-        let handle = cyclic.add_unit(NetworkInitializer::new()).unwrap();
+        let handle = cyclic
+            .add_unit(NetworkInitializer::new(&mut network))
+            .unwrap();
         cyclic
             .get_unit(&handle)
             .unwrap()
@@ -53,11 +57,7 @@ where
 
         let mut count = 0;
         loop {
-            cyclic.poll(
-                &mut network,
-                EtherCatSystemTime(count),
-                Duration::from_millis(1000),
-            )?;
+            cyclic.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
             let net_init = cyclic.get_unit(&handle).unwrap(); //.network_initilizer();
             match net_init.wait() {
                 None => {}
@@ -79,7 +79,7 @@ where
         sys_time: EtherCatSystemTime,
         recv_timeout: I,
     ) -> Result<(), interface::Error> {
-        self.cyclic.poll(&mut self.network, sys_time, recv_timeout)
+        self.cyclic.poll(sys_time, recv_timeout)
     }
 
     pub fn network(&self) -> &NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry> {
@@ -118,7 +118,7 @@ where
 
     pub fn read_al_state(
         &mut self,
-        slave_address: Option<SlaveAddress>,
+        slave_address: TargetSlave,
     ) -> Result<(AlState, Option<AlStatusCode>), EcError<()>> {
         let mut unit = AlStateReader::new();
         unit.start(slave_address);
@@ -144,7 +144,7 @@ where
 
     pub fn transfer_al_state(
         &mut self,
-        slave_address: Option<SlaveAddress>,
+        slave_address: TargetSlave,
         target_al_state: AlState,
     ) -> Result<AlState, EcError<al_state_transfer::Error>> {
         let mut unit = AlStateTransfer::new();
@@ -176,12 +176,16 @@ where
         index: u16,
         sub_index: u8,
     ) -> Result<(), EcError<sdo::Error>> {
-        let sdo_unit = self.get_sdo_unit(&handle).unwrap();
-        sdo_unit.start_to_read(slave_address, index, sub_index);
+        let Self {
+            network, cyclic, ..
+        } = self;
+        let slave = network.slave(slave_address).unwrap().info();
+        let sdo_unit = cyclic.get_sdo_unit(&handle).unwrap();
+        sdo_unit.start_to_read(&slave, index, sub_index);
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_uploader = self.get_sdo_unit(&handle).unwrap();
+            cyclic.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let sdo_uploader = cyclic.get_sdo_unit(&handle).unwrap();
             match sdo_uploader.wait() {
                 Some(Ok(_)) => {
                     break;
@@ -202,12 +206,16 @@ where
         sub_index: u8,
         data: &[u8],
     ) -> Result<(), EcError<sdo::Error>> {
-        let sdo_unit = self.get_sdo_unit(&handle).unwrap();
-        sdo_unit.start_to_write(slave_address, index, sub_index, data);
+        let Self {
+            network, cyclic, ..
+        } = self;
+        let slave = network.slave(slave_address).unwrap().info();
+        let sdo_unit = cyclic.get_sdo_unit(&handle).unwrap();
+        sdo_unit.start_to_write(&slave, index, sub_index, data);
         let mut count = 0;
         loop {
-            self.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_downloader = self.get_sdo_unit(&handle).unwrap();
+            cyclic.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
+            let sdo_downloader = cyclic.get_sdo_unit(&handle).unwrap();
             match sdo_downloader.wait() {
                 Some(Ok(_)) => {
                     break;
@@ -218,6 +226,31 @@ where
             count += 1000;
         }
         Ok(())
+    }
+
+    pub fn configure_pdo_mappings(
+        &mut self,
+        sdo_unit_handle: &SdoUnitHandle,
+    ) -> Result<(), EcError<sdo::Error>> {
+        let Self { network, .. } = self;
+        network.calculate_pdo_entry_positions_in_pdo_image();
+        for pdo_maps in network
+            .slaves()
+            .into_iter()
+            .filter_map(|s| s.pdo_mappings())
+        {
+            //PDOエントリーの割り当て
+            for rx_pdo_map in pdo_maps.rx_mapping.iter() {
+                let PdoMapping {
+                    is_fixed,
+                    index,
+                    entries,
+                } = rx_pdo_map;
+                //self.write_sdo(sdo_unit_handle, SlaveAddress::SlavePosition(0), *index, 0, &[0])?;
+            }
+        }
+
+        todo!()
     }
 }
 
@@ -234,32 +267,32 @@ pub enum CyclicUnitType<'a> {
 impl<'a> CyclicProcess for CyclicUnitType<'a> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self {
-            Self::RamAccessUnit(unit) => unit.next_command(desc, sys_time),
-            Self::AlStateReader(unit) => unit.next_command(desc, sys_time),
-            Self::AlStateTransfer(unit) => unit.next_command(desc, sys_time),
-            Self::MailboxUnit(unit) => unit.next_command(desc, sys_time),
-            Self::SdoUnit(unit) => unit.next_command(desc, sys_time),
-            Self::SiiReader(unit) => unit.next_command(desc, sys_time),
+            Self::RamAccessUnit(unit) => unit.next_command(sys_time),
+            Self::AlStateReader(unit) => unit.next_command(sys_time),
+            Self::AlStateTransfer(unit) => unit.next_command(sys_time),
+            Self::MailboxUnit(unit) => unit.next_command(sys_time),
+            Self::SdoUnit(unit) => unit.next_command(sys_time),
+            Self::SiiReader(unit) => unit.next_command(sys_time),
         }
     }
 
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         match self {
-            Self::RamAccessUnit(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::AlStateReader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::AlStateTransfer(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::MailboxUnit(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::SdoUnit(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
-            Self::SiiReader(unit) => unit.recieve_and_process(recv_data, desc, sys_time),
+            Self::RamAccessUnit(unit) => unit.recieve_and_process(recv_data, sys_time),
+            Self::AlStateReader(unit) => unit.recieve_and_process(recv_data, sys_time),
+            Self::AlStateTransfer(unit) => unit.recieve_and_process(recv_data, sys_time),
+            Self::MailboxUnit(unit) => unit.recieve_and_process(recv_data, sys_time),
+            Self::SdoUnit(unit) => unit.recieve_and_process(recv_data, sys_time),
+            Self::SiiReader(unit) => unit.recieve_and_process(recv_data, sys_time),
         }
     }
 }
@@ -293,27 +326,44 @@ macro_rules! define_cyclic_unit {
                 }
             }
 
-            impl<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry,  D, T>
-                EtherCatMaster<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry, D, T>
+            impl<'packet, 'units, 'mb, D, T> CyclicUnits<'packet, 'units, D, CyclicUnitType<'mb>, T>
             where
                 D: Device,
                 T: CountDown,
             {
                 pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal) -> Option<[<$unit_name_pascal Handle>]>{
-                    match self.cyclic.add_unit($unit_name_snake.into()){
+                    match self.add_unit($unit_name_snake.into()){
                         Ok(handle) => Some([<$unit_name_pascal Handle>](handle)),
                         Err(_) => None
                     }
                 }
 
                 pub fn [<get_ $unit_name_snake>](&mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal>{
-                    self.cyclic.get_unit(&handle.0).map(|unit| unit.$unit_name_snake())
+                    self.get_unit(&handle.0).map(|unit| unit.$unit_name_snake())
                 }
 
                 pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal>{
-                    self.cyclic.remove_unit(handle.0).map(|unit| unit.[<into_ $unit_name_snake>]())
+                    self.remove_unit(handle.0).map(|unit| unit.[<into_ $unit_name_snake>]())
                 }
             }
+
+            impl<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry, D, T>
+            EtherCatMaster<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry, D, T>
+            where
+                D: Device,
+                T: CountDown,
+            {
+                pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal) -> Option<[<$unit_name_pascal Handle>]>{
+                    self.cyclic.[<add_ $unit_name_snake>]($unit_name_snake)
+                }
+                pub fn [<get_ $unit_name_snake>](&mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal>{
+                    self.cyclic.[<get_ $unit_name_snake>](handle)
+                }
+                pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal>{
+                    self.cyclic.[<remove_ $unit_name_snake>](handle)
+                }
+            }
+
         }
     };
 }
@@ -347,6 +397,27 @@ macro_rules! define_cyclic_unit_with_lifetime {
                 }
             }
 
+            impl<'packet, 'units, 'mb, D, T> CyclicUnits<'packet, 'units, D, CyclicUnitType<'mb>, T>
+            where
+                D: Device,
+                T: CountDown,
+            {
+                pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal<'mb>) -> Option<[<$unit_name_pascal Handle>]>{
+                    match self.add_unit($unit_name_snake.into()){
+                        Ok(handle) => Some([<$unit_name_pascal Handle>](handle)),
+                        Err(_) => None
+                    }
+                }
+
+                pub fn [<get_ $unit_name_snake>](&mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal<'mb>>{
+                    self.get_unit(&handle.0).map(|unit| unit.$unit_name_snake())
+                }
+
+                pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal<'mb>>{
+                    self.remove_unit(handle.0).map(|unit| unit.[<into_ $unit_name_snake>]())
+                }
+            }
+
             impl<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry, D, T>
                 EtherCatMaster<'packet, 'units, 'mb, 'slave, 'pdo_mapping, 'pdo_entry, D, T>
             where
@@ -354,18 +425,13 @@ macro_rules! define_cyclic_unit_with_lifetime {
                 T: CountDown,
             {
                 pub fn [<add_ $unit_name_snake>](&mut self, $unit_name_snake: $unit_name_pascal<'mb>) -> Option<[<$unit_name_pascal Handle>]>{
-                    match self.cyclic.add_unit($unit_name_snake.into()){
-                        Ok(handle) => Some([<$unit_name_pascal Handle>](handle)),
-                        Err(_) => None
-                    }
+                    self.cyclic.[<add_ $unit_name_snake>]($unit_name_snake)
                 }
-
                 pub fn [<get_ $unit_name_snake>](&mut self, handle: &[<$unit_name_pascal Handle>]) -> Option<&mut $unit_name_pascal<'mb>>{
-                    self.cyclic.get_unit(&handle.0).map(|unit| unit.$unit_name_snake())
+                    self.cyclic.[<get_ $unit_name_snake>](handle)
                 }
-
                 pub fn [<remove_ $unit_name_snake>](&mut self, handle: [<$unit_name_pascal Handle>]) -> Option<$unit_name_pascal<'mb>>{
-                    self.cyclic.remove_unit(handle.0).map(|unit| unit.[<into_ $unit_name_snake>]())
+                    self.cyclic.[<remove_ $unit_name_snake>](handle)
                 }
             }
         }

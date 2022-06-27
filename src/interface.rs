@@ -1,6 +1,7 @@
 use crate::arch::{CountDown, Device};
 use crate::ethercat_frame::*;
 use crate::packet::ethercat::*;
+use crate::slave::Slave;
 use crate::util::*;
 use core::time::Duration;
 use log::*;
@@ -282,6 +283,24 @@ impl SlaveAddress {
 impl Default for SlaveAddress {
     fn default() -> Self {
         SlaveAddress::SlavePosition(0)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TargetSlave {
+    Single(SlaveAddress),
+    All(u16),
+}
+
+impl From<SlaveAddress> for TargetSlave {
+    fn from(address: SlaveAddress) -> Self {
+        Self::Single(address)
+    }
+}
+
+impl Default for TargetSlave {
+    fn default() -> Self {
+        Self::Single(SlaveAddress::default())
     }
 }
 

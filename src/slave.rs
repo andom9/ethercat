@@ -1,5 +1,5 @@
-use crate::register::datalink::PortPhysics;
-use core::cell::RefCell;
+use crate::{interface::SlaveAddress, register::datalink::PortPhysics};
+use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
 pub enum SlaveError {
@@ -26,18 +26,9 @@ pub struct SlaveId {
     pub revision_number: u16,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct SlaveStatus {
-    pub error: Option<SlaveError>,
-    pub al_state: AlState,
-    pub(crate) mailbox_count: u8,
-    pub linked_ports: [bool; 4],
-}
-
 #[derive(Debug, Default)]
 pub struct Slave<'a, 'b> {
     pub(crate) info: SlaveInfo,
-    pub(crate) status: SlaveStatus,
     pub(crate) pdo_mappings: Option<SlavePdo<'a, 'b>>,
 
     // for Dc init
@@ -45,44 +36,32 @@ pub struct Slave<'a, 'b> {
 }
 
 impl<'a, 'b> Slave<'a, 'b> {
-    pub(crate) fn increment_mb_count(&mut self) {
-        if self.status.mailbox_count < 7 {
-            self.status.mailbox_count += 1;
-        } else {
-            self.status.mailbox_count = 1;
-        }
-    }
-
     pub fn info(&self) -> &SlaveInfo {
         &self.info
-    }
-
-    pub fn status(&self) -> &SlaveStatus {
-        &self.status
     }
 
     pub fn pdo_mappings(&self) -> Option<&SlavePdo<'a, 'b>> {
         self.pdo_mappings.as_ref()
     }
 
-    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
         if let Some(ref mut pdo_mappings) = self.pdo_mappings {
             pdo_mappings.rx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
                 rx_mapping: mappings,
-                tx_mapping: &[],
+                tx_mapping: &mut [],
             });
         }
     }
 
-    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a [PdoMapping<'b>]) {
+    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
         if let Some(ref mut pdo_mappings) = self.pdo_mappings {
             pdo_mappings.tx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
                 tx_mapping: mappings,
-                rx_mapping: &[],
+                rx_mapping: &mut [],
             });
         }
     }
@@ -99,8 +78,14 @@ pub(crate) struct DcContext {
 
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
-    pub configured_address: u16,
+    // status
+    pub(crate) error: Option<SlaveError>,
+    pub(crate) al_state: AlState,
+    pub(crate) mailbox_count: Cell<u8>,
+    pub(crate) linked_ports: [bool; 4],
 
+    // info
+    pub configured_address: u16,
     pub id: SlaveId,
     pub ports: [Option<PortPhysics>; 4],
     pub ram_size_kb: u8,
@@ -111,7 +96,7 @@ pub struct SlaveInfo {
     pub pdo_start_address: Option<u16>,
     pub pdo_ram_size: u16,
 
-    pub sm: [Option<SyncManager>; 4],
+    pub sm: [Option<SyncManagerType>; 4],
 
     pub support_dc: bool,
     pub is_dc_range_64bits: bool,
@@ -125,18 +110,41 @@ pub struct SlaveInfo {
 }
 
 impl SlaveInfo {
-    pub(crate) fn mailbox_rx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        for (i, sm) in self.sm.iter().enumerate() {
-            if let Some(SyncManager::MailboxRx(sm)) = sm {
-                return Some((i as u16, *sm));
+    pub fn al_state(&self) -> AlState {
+        self.al_state
+    }
+    pub(crate) fn mailbox_count(&self) -> u8 {
+        self.mailbox_count.get()
+    }
+    pub fn linked_ports(&self) -> [bool; 4] {
+        self.linked_ports
+    }
+    pub(crate) fn increment_mb_count(&self) -> u8 {
+        let count = self.mailbox_count();
+        if count < 7 {
+            self.mailbox_count.set(count + 1);
+        } else {
+            self.mailbox_count.set(1);
+        }
+        self.mailbox_count()
+    }
+
+    pub fn slave_address(&self) -> SlaveAddress {
+        SlaveAddress::StationAddress(self.configured_address)
+    }
+
+    pub(crate) fn mailbox_rx_sm(&self) -> Option<SyncManager> {
+        for sm in self.sm.iter() {
+            if let Some(SyncManagerType::MailboxRx(sm)) = sm {
+                return Some(*sm);
             }
         }
         None
     }
-    pub(crate) fn mailbox_tx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        for (i, sm) in self.sm.iter().enumerate() {
-            if let Some(SyncManager::MailboxTx(sm)) = sm {
-                return Some((i as u16, *sm));
+    pub(crate) fn mailbox_tx_sm(&self) -> Option<SyncManager> {
+        for sm in self.sm.iter() {
+            if let Some(SyncManagerType::MailboxTx(sm)) = sm {
+                return Some(*sm);
             }
         }
         None
@@ -178,15 +186,16 @@ impl Default for AlState {
 }
 
 #[derive(Debug, Clone)]
-pub enum SyncManager {
-    MailboxRx(MailboxSyncManager),
-    MailboxTx(MailboxSyncManager),
+pub enum SyncManagerType {
+    MailboxRx(SyncManager),
+    MailboxTx(SyncManager),
     ProcessDataRx,
     ProcessDataTx,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct MailboxSyncManager {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncManager {
+    pub number: u8,
     pub size: u16,
     pub start_address: u16,
 }
@@ -207,20 +216,94 @@ impl Default for OperationMode {
 
 #[derive(Debug)]
 pub struct SlavePdo<'a, 'b> {
-    pub rx_mapping: &'a [PdoMapping<'b>],
-    pub tx_mapping: &'a [PdoMapping<'b>],
+    pub rx_mapping: &'a mut [PdoMapping<'b>],
+    pub tx_mapping: &'a mut [PdoMapping<'b>],
 }
 
 #[derive(Debug)]
 pub struct PdoMapping<'a> {
     pub is_fixed: bool,
     pub index: u16,
-    pub entries: &'a [PdoEntry],
+    pub entries: &'a mut [PdoEntry],
 }
 
 #[derive(Debug)]
 pub struct PdoEntry {
-    pub index: u16,
-    pub sub_index: u8,
-    pub bit_length: usize,
+    pub(crate) logical_start_address: Option<u16>,
+    pub(crate) index: u16,
+    pub(crate) sub_index: u8,
+    pub(crate) bit_length: u16,
+}
+impl PdoEntry {
+    pub fn new(index: u16, sub_index: u8, bit_length: u16) -> Self {
+        PdoEntry {
+            logical_start_address: None,
+            index,
+            sub_index,
+            bit_length,
+        }
+    }
+
+    pub fn index(&self) -> u16 {
+        self.index
+    }
+
+    pub fn sub_index(&self) -> u8 {
+        self.sub_index
+    }
+
+    pub fn bit_length(&self) -> u16 {
+        self.bit_length
+    }
+
+    pub(crate) fn byte_length(&self) -> u16 {
+        if self.bit_length % 8 == 0 {
+            self.bit_length / 8
+        } else {
+            self.bit_length / 8 + 1
+        }
+    }
+
+    pub fn read<'a>(&self, logical_image: &'a [u8]) -> Option<&'a [u8]> {
+        let size = self.byte_length() as usize;
+        if self.logical_start_address.is_none() {
+            return None;
+        }
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        if logical_image.get(logical_start_address + size).is_none() {
+            return None;
+        }
+        Some(&logical_image[logical_start_address..logical_start_address + size])
+    }
+
+    pub fn read_unchecked<'a>(&self, logical_image: &'a [u8]) -> &'a [u8] {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        &logical_image[logical_start_address..logical_start_address + size]
+    }
+
+    pub fn write<'a>(&self, logical_image: &'a mut [u8], data: &[u8]) -> Option<()> {
+        let size = self.byte_length() as usize;
+        if self.logical_start_address.is_none() {
+            return None;
+        }
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        if logical_image.get(logical_start_address + size).is_none() {
+            return None;
+        }
+        logical_image[logical_start_address..logical_start_address + size]
+            .iter_mut()
+            .zip(data)
+            .for_each(|(image, data)| *image = *data);
+        Some(())
+    }
+
+    pub fn write_unchecked<'a>(&self, logical_image: &'a mut [u8], data: &[u8]) {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_start_address.unwrap() as usize;
+        logical_image[logical_start_address..logical_start_address + size]
+            .iter_mut()
+            .zip(data)
+            .for_each(|(image, data)| *image = *data);
+    }
 }

@@ -1,7 +1,6 @@
 use crate::cyclic::CyclicProcess;
 use crate::error::EcError;
 use crate::interface::{Command, SlaveAddress};
-use crate::network::NetworkDescription;
 use crate::register::datalink::{SiiAccess, SiiAddress, SiiControl, SiiData};
 use crate::util::const_max;
 
@@ -95,7 +94,7 @@ impl SiiReader {
 impl CyclicProcess for SiiReader {
     fn next_command(
         &mut self,
-        _: &mut NetworkDescription,
+        //_: &mut NetworkDescription,
         _: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
@@ -158,7 +157,7 @@ impl CyclicProcess for SiiReader {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        _: &mut NetworkDescription,
+        //_: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         let data = if let Some(recv_data) = recv_data {

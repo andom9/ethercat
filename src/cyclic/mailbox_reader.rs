@@ -1,6 +1,6 @@
 use super::{mailbox, CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::network::NetworkDescription;
 use crate::packet::ethercat::{MailboxErrorResponse, MailboxHeader, MailboxType};
+use crate::slave::{SlaveInfo, SyncManager};
 use crate::{
     error::EcError,
     interface::{Command, SlaveAddress},
@@ -51,6 +51,9 @@ pub struct MailboxReader<'a> {
     activation_buf: SyncManagerActivation<[u8; SyncManagerActivation::SIZE]>,
     timeout_ns: u64,
     wait_full: bool,
+    sm_ado_offset: u16,
+    sm_size: u16,
+    sm_start_address: u16,
 }
 
 impl<'a> MailboxReader<'a> {
@@ -65,6 +68,9 @@ impl<'a> MailboxReader<'a> {
             activation_buf: SyncManagerActivation([0; SyncManagerActivation::SIZE]),
             timeout_ns: 0,
             wait_full: true,
+            sm_ado_offset: 0,
+            sm_size: 0,
+            sm_start_address: 0,
         }
     }
 
@@ -88,7 +94,7 @@ impl<'a> MailboxReader<'a> {
         &mut self.recv_buf[MailboxHeader::SIZE..]
     }
 
-    pub fn start(&mut self, slave_address: SlaveAddress, wait_full: bool) {
+    pub fn start(&mut self, slave_address: SlaveAddress, tx_sm: SyncManager, wait_full: bool) {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
@@ -96,6 +102,14 @@ impl<'a> MailboxReader<'a> {
         self.timeout_ns = MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
         self.state = State::CheckMailboxFull;
         self.wait_full = wait_full;
+
+        //if let Some((sm_num, sm)) = slave_info.mailbox_tx_sm() {
+        self.sm_ado_offset = tx_sm.number as u16 * 0x08;
+        self.sm_size = tx_sm.size;
+        self.sm_start_address = tx_sm.start_address;
+        //} else {
+        //    self.state = State::Error(mailbox::Error::NoMailbox.into());
+        //}
     }
 
     pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<mailbox::Error>>> {
@@ -110,7 +124,7 @@ impl<'a> MailboxReader<'a> {
 impl<'a> CyclicProcess for MailboxReader<'a> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         log::info!("send {:?}", self.state);
@@ -120,32 +134,21 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
             State::Complete => None,
             State::CheckMailboxFull => {
                 self.timer_start = sys_time;
-                if let Some(slave) = desc.slave(self.slave_address) {
-                    if let Some((sm_num, _)) = slave.info.mailbox_tx_sm() {
-                        self.command = Command::new_read(
-                            self.slave_address,
-                            SyncManagerStatus::ADDRESS + sm_num * 0x08,
-                        );
-                        self.buffer.fill(0);
-                        Some((
-                            self.command,
-                            &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
-                        ))
-                    } else {
-                        self.state = State::Error(mailbox::Error::NoMailbox.into());
-                        None
-                    }
-                } else {
-                    self.state = State::Error(mailbox::Error::NoSlave.into());
-                    None
-                }
-            }
-            State::WaitMailboxFull => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
                 self.command = Command::new_read(
                     self.slave_address,
-                    SyncManagerStatus::ADDRESS + sm_num * 0x08,
+                    SyncManagerStatus::ADDRESS + self.sm_ado_offset,
+                );
+                Some((
+                    self.command,
+                    &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
+                ))
+            }
+            State::WaitMailboxFull => {
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
+                self.command = Command::new_read(
+                    self.slave_address,
+                    SyncManagerStatus::ADDRESS + self.sm_ado_offset,
                 );
                 self.buffer.fill(0);
                 Some((
@@ -154,23 +157,23 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
                 ))
             }
             State::Read => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (_, sm) = slave.info.mailbox_tx_sm().unwrap();
-                self.command = Command::new_read(self.slave_address, sm.start_address);
-                if self.recv_buf.len() < sm.size as usize {
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (_, sm) = slave.info.mailbox_tx_sm().unwrap();
+                self.command = Command::new_read(self.slave_address, self.sm_start_address);
+                if self.recv_buf.len() < self.sm_size as usize {
                     self.state = State::Error(mailbox::Error::BufferSmall.into());
                     None
                 } else {
                     self.recv_buf.fill(0);
-                    Some((self.command, &self.recv_buf[..sm.size as usize]))
+                    Some((self.command, &self.recv_buf[..self.sm_size as usize]))
                 }
             }
             State::RequestRepeat => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
                 self.command = Command::new_write(
                     self.slave_address,
-                    SyncManagerActivation::ADDRESS + sm_num * 0x08,
+                    SyncManagerActivation::ADDRESS + self.sm_ado_offset,
                 );
                 self.buffer.fill(0);
                 self.activation_buf
@@ -178,11 +181,11 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
                 Some((self.command, &self.activation_buf.0))
             }
             State::WaitRepeatAck => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (sm_num, _) = slave.info.mailbox_tx_sm().unwrap();
                 self.command = Command::new_read(
                     self.slave_address,
-                    SyncManagerPdiControl::ADDRESS + sm_num * 0x08,
+                    SyncManagerPdiControl::ADDRESS + self.sm_ado_offset,
                 );
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..SyncManagerPdiControl::SIZE]))
@@ -193,7 +196,7 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        _desc: &mut NetworkDescription,
+        //_desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         if let Some(ref recv_data) = recv_data {

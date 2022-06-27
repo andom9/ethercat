@@ -40,8 +40,9 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct NetworkInitializer {
+pub struct NetworkInitializer<'a, 'b, 'c, 'd> {
     initilizer: SlaveInitializer,
+    network: &'d mut NetworkDescription<'a, 'b, 'c>,
     state: State,
     command: Command,
     buffer: [u8; buffer_size()],
@@ -49,8 +50,8 @@ pub struct NetworkInitializer {
     lost_count: usize,
 }
 
-impl NetworkInitializer {
-    pub fn new() -> Self {
+impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
+    pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
             initilizer: SlaveInitializer::new(),
             state: State::Idle,
@@ -58,7 +59,12 @@ impl NetworkInitializer {
             buffer: [0; buffer_size()],
             num_slaves: 0,
             lost_count: 0,
+            network,
         }
+    }
+
+    pub fn take(self) -> &'d mut NetworkDescription<'a, 'b, 'c> {
+        self.network
     }
 
     pub fn start(&mut self) {
@@ -78,10 +84,10 @@ impl NetworkInitializer {
     }
 }
 
-impl CyclicProcess for NetworkInitializer {
+impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         log::info!("send {:?}", self.state);
@@ -103,9 +109,11 @@ impl CyclicProcess for NetworkInitializer {
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.start(*count);
-                self.initilizer.next_command(desc, sys_time)
+                //self.initilizer.next_command(desc, sys_time)
+                self.initilizer.next_command(sys_time)
             }
-            State::WaitInitSlaves(_) => self.initilizer.next_command(desc, sys_time),
+            //State::WaitInitSlaves(_) => self.initilizer.next_command(desc, sys_time),
+            State::WaitInitSlaves(_) => self.initilizer.next_command(sys_time),
             State::Complete => None,
         };
         if let Some((command, _)) = command_and_data {
@@ -117,7 +125,7 @@ impl CyclicProcess for NetworkInitializer {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         //log::info!("recv {:?}",self.state);
@@ -145,7 +153,7 @@ impl CyclicProcess for NetworkInitializer {
             State::Error(_) => {}
             State::CountSlaves => {
                 self.num_slaves = wkc;
-                desc.clear();
+                self.network.clear();
                 if wkc == 0 {
                     self.state = State::Complete;
                 } else {
@@ -153,20 +161,20 @@ impl CyclicProcess for NetworkInitializer {
                 }
             }
             State::StartInitSlaves(count) => {
-                self.initilizer
-                    .recieve_and_process(recv_data, desc, sys_time);
+                self.initilizer.recieve_and_process(recv_data, sys_time);
+                //.recieve_and_process(recv_data, desc, sys_time);
                 self.state = State::WaitInitSlaves(*count);
             }
             State::WaitInitSlaves(count) => {
-                self.initilizer
-                    .recieve_and_process(recv_data, desc, sys_time);
+                self.initilizer.recieve_and_process(recv_data, sys_time);
+                //.recieve_and_process(recv_data, desc, sys_time);
 
                 match self.initilizer.wait() {
-                    Some(Ok(Some((slave_info, slave_status)))) => {
+                    Some(Ok(Some(slave_info))) => {
                         let mut slave = Slave::default();
                         slave.info = slave_info;
-                        slave.status = slave_status;
-                        if desc.push_slave(slave).is_err() {
+                        //slave.status = slave_status;
+                        if self.network.push_slave(slave).is_err() {
                             self.state = State::Error(Error::TooManySlaves.into());
                         } else if *count + 1 < self.num_slaves {
                             self.state = State::StartInitSlaves(*count + 1);

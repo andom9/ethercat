@@ -2,8 +2,8 @@ use super::EtherCatSystemTime;
 use super::ReceivedData;
 use crate::cyclic::CyclicProcess;
 use crate::error::EcError;
-use crate::interface::{Command, SlaveAddress};
-use crate::network::NetworkDescription;
+use crate::interface::Command;
+use crate::interface::TargetSlave;
 use crate::packet::ethercat::CommandType;
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ enum State {
 #[derive(Debug)]
 pub struct RamAccessUnit {
     state: State,
-    slave_address: Option<SlaveAddress>,
+    slave_address: TargetSlave,
     command: Command,
     buffer: [u8; 16],
     buf_size: usize,
@@ -29,7 +29,7 @@ impl RamAccessUnit {
     pub fn new() -> Self {
         Self {
             state: State::Idle,
-            slave_address: None,
+            slave_address: TargetSlave::default(),
             command: Command::default(),
             buffer: [0; 16],
             buf_size: 0,
@@ -37,12 +37,7 @@ impl RamAccessUnit {
         }
     }
 
-    pub fn start_to_read(
-        &mut self,
-        slave_address: Option<SlaveAddress>,
-        ado: u16,
-        buf_size: usize,
-    ) {
+    pub fn start_to_read(&mut self, slave_address: TargetSlave, ado: u16, buf_size: usize) {
         assert!(buf_size <= 16);
         self.slave_address = slave_address;
         self.state = State::Read;
@@ -52,7 +47,7 @@ impl RamAccessUnit {
         self.ado = ado;
     }
 
-    pub fn start_to_write(&mut self, slave_address: Option<SlaveAddress>, ado: u16, data: &[u8]) {
+    pub fn start_to_write(&mut self, slave_address: TargetSlave, ado: u16, data: &[u8]) {
         let size = data.len();
         assert!(size <= 16);
         self.slave_address = slave_address;
@@ -75,25 +70,31 @@ impl RamAccessUnit {
 impl CyclicProcess for RamAccessUnit {
     fn next_command(
         &mut self,
-        _: &mut NetworkDescription,
+        //_: &mut NetworkDescription,
         _: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_read(slave_address, self.ado);
-                } else {
-                    self.command = Command::new(CommandType::BRD, 0, self.ado);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_read(slave_address, self.ado)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BRD, 0, self.ado)
+                    }
                 }
                 Some((self.command, &self.buffer[..self.buf_size]))
             }
             State::Write => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_write(slave_address, self.ado);
-                } else {
-                    self.command = Command::new(CommandType::BWR, 0, self.ado);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_write(slave_address, self.ado)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BWR, 0, self.ado)
+                    }
                 }
                 Some((self.command, &self.buffer[..self.buf_size]))
             }
@@ -104,7 +105,7 @@ impl CyclicProcess for RamAccessUnit {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         _: EtherCatSystemTime,
     ) {
         let data = if let Some(recv_data) = recv_data {
@@ -112,10 +113,17 @@ impl CyclicProcess for RamAccessUnit {
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
-            if self.slave_address.is_some() && wkc != 1 {
-                self.state = State::Error(EcError::UnexpectedWKC(wkc));
-            } else if self.slave_address.is_none() && wkc != desc.len() as u16 {
-                self.state = State::Error(EcError::UnexpectedWKC(wkc));
+            match self.slave_address {
+                TargetSlave::Single(slave_address) => {
+                    if wkc != 1 {
+                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    }
+                }
+                TargetSlave::All(num_slaves) => {
+                    if wkc != num_slaves {
+                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    }
+                }
             }
             data
         } else {

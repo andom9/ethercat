@@ -1,7 +1,7 @@
 use super::mailbox::Error;
 use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::network::NetworkDescription;
 use crate::packet::ethercat::MailboxHeader;
+use crate::slave::{self, SlaveInfo, SyncManager};
 use crate::{
     error::EcError,
     interface::{Command, SlaveAddress},
@@ -39,6 +39,9 @@ pub struct MailboxWriter<'a> {
     activation_buf: SyncManagerActivation<[u8; SyncManagerActivation::SIZE]>,
     timeout_ns: u64,
     wait_full: bool,
+    sm_ado_offset: u16,
+    sm_size: u16,
+    sm_start_address: u16,
 }
 
 impl<'a> MailboxWriter<'a> {
@@ -53,6 +56,9 @@ impl<'a> MailboxWriter<'a> {
             activation_buf: SyncManagerActivation([0; SyncManagerActivation::SIZE]),
             timeout_ns: 0,
             wait_full: true,
+            sm_ado_offset: 0,
+            sm_size: 0,
+            sm_start_address: 0,
         }
     }
 
@@ -76,7 +82,7 @@ impl<'a> MailboxWriter<'a> {
         &mut self.send_buf[MailboxHeader::SIZE..]
     }
 
-    pub fn start(&mut self, slave_address: SlaveAddress, wait_empty: bool) {
+    pub fn start(&mut self, slave_address: SlaveAddress, rx_sm: SyncManager, wait_empty: bool) {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
@@ -84,6 +90,14 @@ impl<'a> MailboxWriter<'a> {
         self.timeout_ns = MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS as u64 * 1000 * 1000;
         self.state = State::CheckMailboxEmpty;
         self.wait_full = wait_empty;
+
+        //if let Some((sm_num, sm)) = slave_info.mailbox_tx_sm() {
+        self.sm_ado_offset = rx_sm.number as u16 * 0x08;
+        self.sm_size = rx_sm.size;
+        self.sm_start_address = rx_sm.start_address;
+        //} else {
+        //    self.state = State::Error(Error::NoMailbox.into());
+        //}
     }
 
     pub fn wait(&self) -> Option<Result<(), EcError<Error>>> {
@@ -98,7 +112,7 @@ impl<'a> MailboxWriter<'a> {
 impl<'a> CyclicProcess for MailboxWriter<'a> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         log::info!("send {:?}", self.state);
@@ -108,32 +122,21 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
             State::Complete => None,
             State::CheckMailboxEmpty => {
                 self.timer_start = sys_time;
-                if let Some(slave) = desc.slave(self.slave_address) {
-                    if let Some((sm_num, _)) = slave.info.mailbox_rx_sm() {
-                        self.command = Command::new_read(
-                            self.slave_address,
-                            SyncManagerStatus::ADDRESS + sm_num * 0x08,
-                        );
-                        self.buffer.fill(0);
-                        Some((
-                            self.command,
-                            &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
-                        ))
-                    } else {
-                        self.state = State::Error(Error::NoMailbox.into());
-                        None
-                    }
-                } else {
-                    self.state = State::Error(Error::NoSlave.into());
-                    None
-                }
-            }
-            State::WaitMailboxEmpty => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (sm_num, _) = slave.info.mailbox_rx_sm().unwrap();
                 self.command = Command::new_read(
                     self.slave_address,
-                    SyncManagerStatus::ADDRESS + sm_num * 0x08,
+                    SyncManagerStatus::ADDRESS + self.sm_ado_offset,
+                );
+                Some((
+                    self.command,
+                    &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
+                ))
+            }
+            State::WaitMailboxEmpty => {
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (sm_num, _) = slave.info.mailbox_rx_sm().unwrap();
+                self.command = Command::new_read(
+                    self.slave_address,
+                    SyncManagerStatus::ADDRESS + self.sm_ado_offset,
                 );
                 self.buffer.fill(0);
                 Some((
@@ -142,16 +145,16 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
                 ))
             }
             State::Write => {
-                let slave = desc.slave(self.slave_address).unwrap();
-                let (_, sm) = slave.info.mailbox_rx_sm().unwrap();
-                self.command = Command::new_write(self.slave_address, sm.start_address);
+                //let slave = desc.slave(self.slave_address).unwrap();
+                //let (_, sm) = slave.info.mailbox_rx_sm().unwrap();
+                self.command = Command::new_write(self.slave_address, self.sm_start_address);
                 self.buffer.fill(0);
-                if self.send_buf.len() < sm.size as usize {
-                    log::info!("{}", sm.size);
+                if self.send_buf.len() < self.sm_size as usize {
+                    log::info!("{}", self.sm_size);
                     self.state = State::Error(Error::BufferSmall.into());
                     None
                 } else {
-                    Some((self.command, &self.send_buf[..sm.size as usize]))
+                    Some((self.command, &self.send_buf[..self.sm_size as usize]))
                 }
             }
         }
@@ -160,7 +163,7 @@ impl<'a> CyclicProcess for MailboxWriter<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        _desc: &mut NetworkDescription,
+        //_desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         if let Some(ref recv_data) = recv_data {

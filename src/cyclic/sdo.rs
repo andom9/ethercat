@@ -1,8 +1,8 @@
 use super::sdo_downloader::SdoDownloader;
 use super::sdo_uploader::SdoUploader;
 use super::{mailbox, CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::network::NetworkDescription;
 use crate::packet::coe::AbortCode;
+use crate::slave::SlaveInfo;
 use crate::{
     error::EcError,
     interface::{Command, SlaveAddress},
@@ -97,18 +97,18 @@ impl<'a> SdoUnit<'a> {
         }
     }
 
-    pub fn start_to_read(&mut self, slave_address: SlaveAddress, index: u16, sub_index: u8) {
+    pub fn start_to_read(&mut self, slave_info: &SlaveInfo, index: u16, sub_index: u8) {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut reader = SdoUploader::new(buf);
-        reader.start(slave_address, index, sub_index);
+        reader.start(slave_info, index, sub_index);
         self.inner = Inner::Reader(reader);
         self.state = State::Processing;
     }
 
     pub fn start_to_write(
         &mut self,
-        slave_address: SlaveAddress,
+        slave_info: &SlaveInfo,
         index: u16,
         sub_index: u8,
         data: &[u8],
@@ -116,7 +116,7 @@ impl<'a> SdoUnit<'a> {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut writer = SdoDownloader::new(buf);
-        writer.start(slave_address, index, sub_index, data);
+        writer.start(slave_info, index, sub_index, data);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
     }
@@ -133,7 +133,7 @@ impl<'a> SdoUnit<'a> {
 impl<'a> CyclicProcess for SdoUnit<'a> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
@@ -141,8 +141,8 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
             State::Error(_) => None,
             State::Complete => None,
             State::Processing => match &mut self.inner {
-                Inner::Reader(reader) => reader.next_command(desc, sys_time),
-                Inner::Writer(writer) => writer.next_command(desc, sys_time),
+                Inner::Reader(reader) => reader.next_command(sys_time),
+                Inner::Writer(writer) => writer.next_command(sys_time),
                 Inner::Taked => unreachable!(),
             },
         }
@@ -151,7 +151,7 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         match self.state {
@@ -160,7 +160,7 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
             State::Complete => {}
             State::Processing => match &mut self.inner {
                 Inner::Reader(reader) => {
-                    reader.recieve_and_process(recv_data, desc, sys_time);
+                    reader.recieve_and_process(recv_data, sys_time);
                     match reader.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
@@ -168,7 +168,7 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
                     }
                 }
                 Inner::Writer(writer) => {
-                    writer.recieve_and_process(recv_data, desc, sys_time);
+                    writer.recieve_and_process(recv_data, sys_time);
                     match writer.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,

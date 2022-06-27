@@ -17,38 +17,28 @@ const DRIFT_COUNT_MAX: usize = 15000;
 enum State {
     Idle,
     Error(EcError<()>),
-    Complete,
     RequestToLatch(usize),
     CalculateOffset((usize, u16)),
     CalculateDelay((usize, u16)),
     SetOffset(u16),
     SetDelay(u16),
     CompensateDrift(usize),
+    Complete,
 }
 
-//#[derive(Debug, Clone)]
-//pub enum Error {
-//    Common(EcError),
-//}
-
-//impl From<Error> for EcError<Error> {
-//    fn from(err: Error) -> Self {
-//        Self::UnitSpecific(err)
-//    }
-//}
-
-#[derive(Debug, Clone)]
-pub struct DcInitializer {
+#[derive(Debug)]
+pub struct DcInitializer<'a, 'b, 'c, 'd> {
     sys_time: EtherCatSystemTime,
     state: State,
     command: Command,
     buffer: [u8; buffer_size()],
     first_dc_slave: Option<u16>,
     dc_slave_count: usize,
+    network: &'d mut NetworkDescription<'a, 'b, 'c>,
 }
 
-impl DcInitializer {
-    pub fn new() -> Self {
+impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
+    pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
             sys_time: EtherCatSystemTime(0),
             state: State::Idle,
@@ -56,10 +46,11 @@ impl DcInitializer {
             buffer: [0; buffer_size()],
             first_dc_slave: None,
             dc_slave_count: 0,
+            network,
         }
     }
 
-    pub fn start(&mut self, desc: &mut NetworkDescription) {
+    pub fn start(&mut self) {
         self.sys_time = EtherCatSystemTime(0);
         self.command = Command::default();
         self.buffer.fill(0);
@@ -71,10 +62,13 @@ impl DcInitializer {
         let mut last_recv_slave = 0;
         let mut last_recv_port = 0;
         let mut first_slave = None;
-        for recv_port in desc.recieved_ports() {
+        for recv_port in self.network.recieved_ports() {
             let slave_pos = recv_port.position;
             let port_number = recv_port.port;
-            let slave = desc.slave(SlaveAddress::SlavePosition(slave_pos)).unwrap();
+            let slave = self
+                .network
+                .slave(SlaveAddress::SlavePosition(slave_pos))
+                .unwrap();
             let mut dc = slave.dc_context.borrow_mut();
             if slave.info.support_dc && self.first_dc_slave.is_none() {
                 self.first_dc_slave = Some(slave_pos);
@@ -91,14 +85,18 @@ impl DcInitializer {
             last_recv_port = port_number;
         }
         if let Some(first_slave) = first_slave {
-            let first_slave = desc
+            let first_slave = self
+                .network
                 .slave(SlaveAddress::SlavePosition(first_slave))
                 .unwrap();
             let mut dc = first_slave.dc_context.borrow_mut();
             dc.parent_port = None;
         }
-        for i in 0..desc.len() {
-            let slave = desc.slave(SlaveAddress::SlavePosition(i as u16)).unwrap();
+        for i in 0..self.network.len() {
+            let slave = self
+                .network
+                .slave(SlaveAddress::SlavePosition(i as u16))
+                .unwrap();
             if slave.info.support_dc {
                 self.dc_slave_count += 1;
             }
@@ -109,10 +107,10 @@ impl DcInitializer {
     //TODO:Waitがない
 }
 
-impl CyclicProcess for DcInitializer {
+impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //self.network: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match &self.state {
@@ -144,7 +142,10 @@ impl CyclicProcess for DcInitializer {
                     DcSystemTimeOffset::ADDRESS,
                 );
                 self.buffer.fill(0);
-                let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
+                let slave = self
+                    .network
+                    .slave(SlaveAddress::SlavePosition(*pos))
+                    .unwrap();
                 let dc = slave.dc_context.borrow();
                 DcSystemTimeOffset(&mut self.buffer).set_system_time_offset(dc.offset);
                 Some((command, &self.buffer[..DcSystemTimeOffset::SIZE]))
@@ -155,7 +156,10 @@ impl CyclicProcess for DcInitializer {
                     DcSystemTimeTransmissionDelay::ADDRESS,
                 );
                 self.buffer.fill(0);
-                let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
+                let slave = self
+                    .network
+                    .slave(SlaveAddress::SlavePosition(*pos))
+                    .unwrap();
                 let dc = slave.dc_context.borrow();
                 DcSystemTimeTransmissionDelay(&mut self.buffer)
                     .set_system_time_transmission_delay(dc.delay);
@@ -176,7 +180,7 @@ impl CyclicProcess for DcInitializer {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //self.network: &mut NetworkDescription,
         _: EtherCatSystemTime,
     ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
@@ -195,7 +199,7 @@ impl CyclicProcess for DcInitializer {
             State::Error(_) => {}
             State::Complete => {}
             State::RequestToLatch(count) => {
-                if wkc != desc.len() as u16 {
+                if wkc != self.network.len() as u16 {
                     self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     self.state = State::CalculateOffset((*count, 0))
@@ -206,7 +210,10 @@ impl CyclicProcess for DcInitializer {
                     self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let master_time = self.sys_time.0;
-                    let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
+                    let slave = self
+                        .network
+                        .slave(SlaveAddress::SlavePosition(*pos))
+                        .unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
                     let sys_time = DcSystemTime(data);
                     let offset = if master_time > sys_time.local_system_time() {
@@ -220,7 +227,7 @@ impl CyclicProcess for DcInitializer {
                     } else {
                         dc.offset = offset;
                     }
-                    if desc.len() <= (pos + 1) as usize {
+                    if self.network.len() <= (pos + 1) as usize {
                         self.state = State::CalculateOffset((*count, pos + 1));
                     } else {
                         self.state = State::CalculateDelay((*count, 0));
@@ -232,7 +239,10 @@ impl CyclicProcess for DcInitializer {
                     self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
                     let recv_time = DcRecieveTime(data);
-                    let slave = desc.slave(SlaveAddress::SlavePosition(*pos)).unwrap();
+                    let slave = self
+                        .network
+                        .slave(SlaveAddress::SlavePosition(*pos))
+                        .unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
                     dc.recieved_port_time = [
                         recv_time.receive_time_port0(),
@@ -243,13 +253,13 @@ impl CyclicProcess for DcInitializer {
 
                     if self.first_dc_slave.is_some() && self.first_dc_slave.unwrap() < *pos {
                         let first_recieved_port = slave
-                            .status
+                            .info
                             .linked_ports
                             .iter()
                             .position(|is_active| *is_active)
                             .unwrap();
                         let last_recieved_port = slave
-                            .status
+                            .info
                             .linked_ports
                             .iter()
                             .enumerate()
@@ -271,10 +281,13 @@ impl CyclicProcess for DcInitializer {
                             };
 
                         let (parent_pos, parent_port) = dc.parent_port.unwrap();
-                        let parent = desc.slave(SlaveAddress::SlavePosition(parent_pos)).unwrap();
+                        let parent = self
+                            .network
+                            .slave(SlaveAddress::SlavePosition(parent_pos))
+                            .unwrap();
                         let parent_dc = parent.dc_context.borrow();
                         let parent_next_port = parent
-                            .status
+                            .info
                             .linked_ports
                             .iter()
                             .enumerate()
@@ -304,7 +317,7 @@ impl CyclicProcess for DcInitializer {
                             dc.delay = parent_delay + delay_delta;
                         }
                     }
-                    if desc.len() <= (pos + 1) as usize {
+                    if self.network.len() <= (pos + 1) as usize {
                         self.state = State::CalculateDelay((*count, pos + 1));
                     } else if *count < OFFSET_COUNT_MAX {
                         self.state = State::RequestToLatch(*count);
@@ -319,7 +332,8 @@ impl CyclicProcess for DcInitializer {
                 if wkc != 1 {
                     self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
-                    let next_pos = desc
+                    let next_pos = self
+                        .network
                         .slaves()
                         //.iter()
                         //.filter_map(|s| s.as_ref())
@@ -336,7 +350,8 @@ impl CyclicProcess for DcInitializer {
                 if wkc != 1 {
                     self.state = State::Error(EcError::UnexpectedWKC(wkc));
                 } else {
-                    let next_pos = desc
+                    let next_pos = self
+                        .network
                         .slaves()
                         //.iter()
                         //.filter_map(|s| s.as_ref())

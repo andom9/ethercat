@@ -84,10 +84,31 @@ impl<'a, 'b, 'c> NetworkDescription<'a, 'b, 'c> {
         RecievedPorts::new(slaves)
     }
 
-    //pub(crate) fn read_and_write_pdo_buffer(&mut self, pdo_buffer: &mut [u8]) {
-    //    let iter = self.slaves.iter_mut().filter_map(|s| s.as_mut());
-    //    read_and_write_pdo_buffer(pdo_buffer, iter);
-    //}
+    pub(crate) fn calculate_pdo_entry_positions_in_pdo_image(&mut self) {
+        let mut start_addess = 0;
+        //let mut start_bit=0;
+        for slave in self.slaves_mut() {
+            if slave.pdo_mappings.is_none() {
+                continue;
+            }
+            let pdo_mappings = slave.pdo_mappings.as_mut().unwrap();
+            //先にRxPdoを並べる
+            for rx_pdo in pdo_mappings.rx_mapping.iter_mut() {
+                for pdo in rx_pdo.entries.iter_mut() {
+                    pdo.logical_start_address = Some(start_addess);
+                    start_addess += pdo.byte_length();
+                }
+            }
+
+            //RxPdoの後にTxPdoを並べる
+            for tx_pdo in pdo_mappings.tx_mapping.iter_mut() {
+                for pdo in tx_pdo.entries.iter_mut() {
+                    pdo.logical_start_address = Some(start_addess);
+                    start_addess += pdo.byte_length();
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -101,12 +122,7 @@ impl<'a, 'b, 'c> RecievedPorts<'a, 'b, 'c> {
     fn new(slaves: &'a [Option<Slave<'b, 'c>>]) -> RecievedPorts<'a, 'b, 'c> {
         let mut length = 0;
         for slave in slaves.iter().filter_map(|s| s.as_ref()) {
-            let current_port = slave
-                .status
-                .linked_ports
-                .iter()
-                .position(|p| *p)
-                .unwrap_or(4);
+            let current_port = slave.info.linked_ports.iter().position(|p| *p).unwrap_or(4);
             let mut dc = slave.dc_context.borrow_mut();
             dc.current_port = current_port as u8;
             length += 1;
@@ -136,7 +152,7 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
 
             let current_port_tmp = dc.current_port;
 
-            let linked_ports = slave.status.linked_ports;
+            let linked_ports = slave.info.linked_ports;
             if let Some(next_port) =
                 linked_ports
                     .iter()
@@ -165,34 +181,3 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
         None
     }
 }
-
-//fn read_and_write_pdo_buffer<'a, S: IntoIterator<Item = &'a mut Slave>>(
-//    pdo_buffer: &mut [u8],
-//    slaves: S,
-//) {
-//    let mut offset = 0;
-//    for slave in slaves {
-//        //先にRxPdoを並べているとする
-//        if let Some(ref mut sm_in) = slave.rx_pdo_mapping {
-//            //for pdo_mapping in sm_in.iter_mut() {
-//            for pdo in sm_in.entries.iter_mut() {
-//                let byte_length = pdo.byte_length as usize;
-//                pdo.data
-//                    .copy_from_slice(&pdo_buffer[offset..offset + byte_length]);
-//                offset += byte_length;
-//            }
-//            //}
-//        }
-//
-//        //RxPdoの後にTxPdoを並べているとする
-//        if let Some(ref mut sm_out) = slave.tx_pdo_mapping {
-//            //for pdo_mapping in sm_out.iter_mut() {
-//            for pdo in sm_out.entries.iter_mut() {
-//                let byte_length = pdo.byte_length as usize;
-//                pdo_buffer[offset..offset + byte_length].copy_from_slice(pdo.data);
-//                offset += byte_length;
-//            }
-//            //}
-//        }
-//    }
-//}

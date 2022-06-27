@@ -1,3 +1,5 @@
+use crate::interface::SlaveAddress;
+
 pub fn get_ap_adp(slave_number: u16) -> u16 {
     if slave_number == 0 {
         0
