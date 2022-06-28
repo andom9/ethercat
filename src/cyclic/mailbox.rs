@@ -1,19 +1,17 @@
 use super::mailbox_reader::MailboxReader;
 use super::mailbox_writer::MailboxWriter;
 use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::network::NetworkDescription;
+use crate::interface::SlaveAddress;
 use crate::packet::ethercat::{MailboxErrorResponse, MailboxHeader};
-use crate::{
-    error::EcError,
-    interface::{Command, SlaveAddress},
-};
+use crate::slave::{self, SlaveInfo, SyncManager};
+use crate::{error::EcError, interface::Command};
 
 #[derive(Debug, Clone)]
 pub enum Error {
     TimeoutMs(u32),
-    NoMailbox,
+    //NoMailbox,
     MailboxNotAvailable,
-    NoSlave,
+    //NoSlave,
     MailboxEmpty,
     MailboxFull,
     BufferSmall,
@@ -113,20 +111,30 @@ impl<'a> MailboxUnit<'a> {
         }
     }
 
-    pub fn start_to_read(&mut self, slave_address: SlaveAddress, wait_full: bool) {
+    pub fn start_to_read(
+        &mut self,
+        slave_address: SlaveAddress,
+        tx_sm: SyncManager,
+        wait_full: bool,
+    ) {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut reader = MailboxReader::new(buf);
-        reader.start(slave_address, wait_full);
+        reader.start(slave_address, tx_sm, wait_full);
         self.inner = Inner::Reader(reader);
         self.state = State::Processing;
     }
 
-    pub fn start_to_write(&mut self, slave_address: SlaveAddress, wait_full: bool) {
+    pub fn start_to_write(
+        &mut self,
+        slave_address: SlaveAddress,
+        rx_sm: SyncManager,
+        wait_full: bool,
+    ) {
         let inner = core::mem::take(&mut self.inner);
         let buf = inner.take_buffer();
         let mut writer = MailboxWriter::new(buf);
-        writer.start(slave_address, wait_full);
+        writer.start(slave_address, rx_sm, wait_full);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
     }
@@ -143,7 +151,7 @@ impl<'a> MailboxUnit<'a> {
 impl<'a> CyclicProcess for MailboxUnit<'a> {
     fn next_command(
         &mut self,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
@@ -151,8 +159,8 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
             State::Error(_) => None,
             State::Complete => None,
             State::Processing => match &mut self.inner {
-                Inner::Reader(reader) => reader.next_command(desc, sys_time),
-                Inner::Writer(writer) => writer.next_command(desc, sys_time),
+                Inner::Reader(reader) => reader.next_command(sys_time),
+                Inner::Writer(writer) => writer.next_command(sys_time),
                 Inner::Taked => unreachable!(),
             },
         }
@@ -161,7 +169,7 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         match self.state {
@@ -170,7 +178,7 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
             State::Complete => {}
             State::Processing => match &mut self.inner {
                 Inner::Reader(reader) => {
-                    reader.recieve_and_process(recv_data, desc, sys_time);
+                    reader.recieve_and_process(recv_data, sys_time);
                     match reader.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
@@ -178,7 +186,7 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
                     }
                 }
                 Inner::Writer(writer) => {
-                    writer.recieve_and_process(recv_data, desc, sys_time);
+                    writer.recieve_and_process(recv_data, sys_time);
                     match writer.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,

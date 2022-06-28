@@ -144,6 +144,9 @@ fn simple_test(interf_name: &str) {
     let mut master =
         EtherCatMaster::initilize(iface, slave_buf.as_mut(), units_buf.as_mut()).unwrap();
     dbg!("done");
+
+    let slave_count = master.network().len();
+
     let sdo_unit_handle = master.add_sdo_unit(SdoUnit::new(&mut mb_buf)).unwrap();
 
     let (eeprom_data, size) = master
@@ -156,11 +159,16 @@ fn simple_test(interf_name: &str) {
     println!("read_size: {}", size);
 
     let alstate = master
-        .transfer_al_state(None, AlState::PreOperational)
+        .transfer_al_state(
+            TargetSlave::All(slave_count as u16),
+            AlState::PreOperational,
+        )
         .unwrap();
     println!("al_state: {:?}", alstate);
 
-    let alstate = master.read_al_state(None).unwrap();
+    let alstate = master
+        .read_al_state(TargetSlave::All(slave_count as u16))
+        .unwrap();
     println!("al_state: {:?}", alstate);
 
     master

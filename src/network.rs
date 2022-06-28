@@ -122,12 +122,7 @@ impl<'a, 'b, 'c> RecievedPorts<'a, 'b, 'c> {
     fn new(slaves: &'a [Option<Slave<'b, 'c>>]) -> RecievedPorts<'a, 'b, 'c> {
         let mut length = 0;
         for slave in slaves.iter().filter_map(|s| s.as_ref()) {
-            let current_port = slave
-                .status
-                .linked_ports
-                .iter()
-                .position(|p| *p)
-                .unwrap_or(4);
+            let current_port = slave.info.linked_ports.iter().position(|p| *p).unwrap_or(4);
             let mut dc = slave.dc_context.borrow_mut();
             dc.current_port = current_port as u8;
             length += 1;
@@ -157,7 +152,7 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
 
             let current_port_tmp = dc.current_port;
 
-            let linked_ports = slave.status.linked_ports;
+            let linked_ports = slave.info.linked_ports;
             if let Some(next_port) =
                 linked_ports
                     .iter()

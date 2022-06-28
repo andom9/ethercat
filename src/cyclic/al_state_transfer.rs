@@ -3,8 +3,8 @@ use super::EtherCatSystemTime;
 use super::ReceivedData;
 use crate::cyclic::CyclicProcess;
 use crate::error::EcError;
-use crate::interface::{Command, SlaveAddress};
-use crate::network::NetworkDescription;
+use crate::interface::Command;
+use crate::interface::TargetSlave;
 use crate::packet::ethercat::CommandType;
 use crate::register::application::{AlControl, AlStatus};
 use crate::register::datalink::SiiAccess;
@@ -64,7 +64,7 @@ enum State {
 pub struct AlStateTransfer {
     timer_start: EtherCatSystemTime,
     state: State,
-    slave_address: Option<SlaveAddress>,
+    slave_address: TargetSlave,
     target_al: AlState,
     command: Command,
     buffer: [u8; buffer_size()],
@@ -77,7 +77,7 @@ impl AlStateTransfer {
         Self {
             timer_start: EtherCatSystemTime(0),
             state: State::Idle,
-            slave_address: None,
+            slave_address: TargetSlave::default(),
             target_al: AlState::Init,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -86,7 +86,7 @@ impl AlStateTransfer {
         }
     }
 
-    pub fn start(&mut self, slave_address: Option<SlaveAddress>, target_al_state: AlState) {
+    pub fn start(&mut self, slave_address: TargetSlave, target_al_state: AlState) {
         self.slave_address = slave_address;
         self.target_al = target_al_state;
         self.state = State::Read;
@@ -106,26 +106,32 @@ impl AlStateTransfer {
 impl CyclicProcess for AlStateTransfer {
     fn next_command(
         &mut self,
-        _: &mut NetworkDescription,
+        //_: &mut NetworkDescription,
         _: EtherCatSystemTime,
     ) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_read(slave_address, AlStatus::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_read(slave_address, AlStatus::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS)
+                    }
                 }
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..AlStatus::SIZE]))
             }
             State::ResetError(current_al_state) => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_write(slave_address, AlControl::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
+                    }
                 }
                 self.buffer.fill(0);
                 let mut al_control = AlControl(&mut self.buffer);
@@ -134,10 +140,13 @@ impl CyclicProcess for AlStateTransfer {
                 Some((self.command, &self.buffer[..AlControl::SIZE]))
             }
             State::OffAck(current_al_state) => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_write(slave_address, AlControl::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
+                    }
                 }
                 self.buffer.fill(0);
                 let mut al_control = AlControl(&mut self.buffer);
@@ -150,10 +159,13 @@ impl CyclicProcess for AlStateTransfer {
                 let mut sii_access = SiiAccess(&mut self.buffer);
                 sii_access.set_owner(true);
                 sii_access.set_reset_access(false);
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_write(slave_address, SiiAccess::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BWR, 0, SiiAccess::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_write(slave_address, SiiAccess::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BWR, 0, SiiAccess::ADDRESS)
+                    }
                 }
                 Some((self.command, &self.buffer[..SiiAccess::SIZE]))
             }
@@ -162,10 +174,13 @@ impl CyclicProcess for AlStateTransfer {
                 let mut al_control = AlControl(&mut self.buffer);
                 let target_al = self.target_al;
                 al_control.set_state(target_al as u8);
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_write(slave_address, AlControl::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
+                    }
                 }
                 self.timeout_ms = match (self.current_al_state, target_al) {
                     (AlState::PreOperational, AlState::SafeOperational)
@@ -180,10 +195,13 @@ impl CyclicProcess for AlStateTransfer {
                 Some((self.command, &self.buffer[..AlControl::SIZE]))
             }
             State::Poll => {
-                if let Some(slave_address) = self.slave_address {
-                    self.command = Command::new_read(slave_address, AlStatus::ADDRESS);
-                } else {
-                    self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS);
+                match self.slave_address {
+                    TargetSlave::Single(slave_address) => {
+                        self.command = Command::new_read(slave_address, AlStatus::ADDRESS)
+                    }
+                    TargetSlave::All(_num_slaves) => {
+                        self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS)
+                    }
                 }
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..AlStatus::SIZE]))
@@ -195,7 +213,7 @@ impl CyclicProcess for AlStateTransfer {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        desc: &mut NetworkDescription,
+        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         //log::info!("{:?}",self.state);
@@ -204,10 +222,17 @@ impl CyclicProcess for AlStateTransfer {
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
-            if self.slave_address.is_some() && wkc != 1 {
-                self.state = State::Error(EcError::UnexpectedWKC(wkc));
-            } else if self.slave_address.is_none() && wkc != desc.len() as u16 {
-                self.state = State::Error(EcError::UnexpectedWKC(wkc));
+            match self.slave_address {
+                TargetSlave::Single(slave_address) => {
+                    if wkc != 1 {
+                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    }
+                }
+                TargetSlave::All(num_slaves) => {
+                    if wkc != num_slaves {
+                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    }
+                }
             }
             data
         } else {

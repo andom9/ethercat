@@ -1,5 +1,5 @@
-use crate::register::datalink::PortPhysics;
-use core::cell::RefCell;
+use crate::{interface::SlaveAddress, register::datalink::PortPhysics};
+use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
 pub enum SlaveError {
@@ -26,18 +26,9 @@ pub struct SlaveId {
     pub revision_number: u16,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct SlaveStatus {
-    pub error: Option<SlaveError>,
-    pub al_state: AlState,
-    pub(crate) mailbox_count: u8,
-    pub linked_ports: [bool; 4],
-}
-
 #[derive(Debug, Default)]
 pub struct Slave<'a, 'b> {
     pub(crate) info: SlaveInfo,
-    pub(crate) status: SlaveStatus,
     pub(crate) pdo_mappings: Option<SlavePdo<'a, 'b>>,
 
     // for Dc init
@@ -45,20 +36,8 @@ pub struct Slave<'a, 'b> {
 }
 
 impl<'a, 'b> Slave<'a, 'b> {
-    pub(crate) fn increment_mb_count(&mut self) {
-        if self.status.mailbox_count < 7 {
-            self.status.mailbox_count += 1;
-        } else {
-            self.status.mailbox_count = 1;
-        }
-    }
-
     pub fn info(&self) -> &SlaveInfo {
         &self.info
-    }
-
-    pub fn status(&self) -> &SlaveStatus {
-        &self.status
     }
 
     pub fn pdo_mappings(&self) -> Option<&SlavePdo<'a, 'b>> {
@@ -70,7 +49,6 @@ impl<'a, 'b> Slave<'a, 'b> {
             pdo_mappings.rx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
-                //logical_start_address_and_bit: None,
                 rx_mapping: mappings,
                 tx_mapping: &mut [],
             });
@@ -82,7 +60,6 @@ impl<'a, 'b> Slave<'a, 'b> {
             pdo_mappings.tx_mapping = mappings;
         } else {
             self.pdo_mappings = Some(SlavePdo {
-                //logical_start_address_and_bit: None,
                 tx_mapping: mappings,
                 rx_mapping: &mut [],
             });
@@ -101,8 +78,14 @@ pub(crate) struct DcContext {
 
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
-    pub configured_address: u16,
+    // status
+    pub(crate) error: Option<SlaveError>,
+    pub(crate) al_state: AlState,
+    pub(crate) mailbox_count: Cell<u8>,
+    pub(crate) linked_ports: [bool; 4],
 
+    // info
+    pub configured_address: u16,
     pub id: SlaveId,
     pub ports: [Option<PortPhysics>; 4],
     pub ram_size_kb: u8,
@@ -113,7 +96,7 @@ pub struct SlaveInfo {
     pub pdo_start_address: Option<u16>,
     pub pdo_ram_size: u16,
 
-    pub sm: [Option<SyncManager>; 4],
+    pub sm: [Option<SyncManagerType>; 4],
 
     pub support_dc: bool,
     pub is_dc_range_64bits: bool,
@@ -127,18 +110,41 @@ pub struct SlaveInfo {
 }
 
 impl SlaveInfo {
-    pub(crate) fn mailbox_rx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        for (i, sm) in self.sm.iter().enumerate() {
-            if let Some(SyncManager::MailboxRx(sm)) = sm {
-                return Some((i as u16, *sm));
+    pub fn al_state(&self) -> AlState {
+        self.al_state
+    }
+    pub(crate) fn mailbox_count(&self) -> u8 {
+        self.mailbox_count.get()
+    }
+    pub fn linked_ports(&self) -> [bool; 4] {
+        self.linked_ports
+    }
+    pub(crate) fn increment_mb_count(&self) -> u8 {
+        let count = self.mailbox_count();
+        if count < 7 {
+            self.mailbox_count.set(count + 1);
+        } else {
+            self.mailbox_count.set(1);
+        }
+        self.mailbox_count()
+    }
+
+    pub fn slave_address(&self) -> SlaveAddress {
+        SlaveAddress::StationAddress(self.configured_address)
+    }
+
+    pub(crate) fn mailbox_rx_sm(&self) -> Option<SyncManager> {
+        for sm in self.sm.iter() {
+            if let Some(SyncManagerType::MailboxRx(sm)) = sm {
+                return Some(*sm);
             }
         }
         None
     }
-    pub(crate) fn mailbox_tx_sm(&self) -> Option<(u16, MailboxSyncManager)> {
-        for (i, sm) in self.sm.iter().enumerate() {
-            if let Some(SyncManager::MailboxTx(sm)) = sm {
-                return Some((i as u16, *sm));
+    pub(crate) fn mailbox_tx_sm(&self) -> Option<SyncManager> {
+        for sm in self.sm.iter() {
+            if let Some(SyncManagerType::MailboxTx(sm)) = sm {
+                return Some(*sm);
             }
         }
         None
@@ -180,15 +186,16 @@ impl Default for AlState {
 }
 
 #[derive(Debug, Clone)]
-pub enum SyncManager {
-    MailboxRx(MailboxSyncManager),
-    MailboxTx(MailboxSyncManager),
+pub enum SyncManagerType {
+    MailboxRx(SyncManager),
+    MailboxTx(SyncManager),
     ProcessDataRx,
     ProcessDataTx,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct MailboxSyncManager {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncManager {
+    pub number: u8,
     pub size: u16,
     pub start_address: u16,
 }
