@@ -52,7 +52,7 @@ impl AlStateReader {
         match &self.state {
             State::Complete => Some(Ok((
                 self.current_al_state,
-                self.current_al_status_code.clone(),
+                self.current_al_status_code,
             ))),
             State::Error(err) => Some(Err(err.clone())),
             _ => None,
@@ -97,7 +97,7 @@ impl CyclicProcess for AlStateReader {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
             match self.slave_address {
-                TargetSlave::Single(slave_address) => {
+                TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
                         self.state = State::Error(EcError::UnexpectedWKC(wkc));
                     }

@@ -109,7 +109,7 @@ where
                 None => {}
                 Some(Err(other)) => {
                     self.remove_sii_reader(handle).unwrap();
-                    return Err(other.into());
+                    return Err(other);
                 }
             }
             count += 1000;
@@ -136,7 +136,7 @@ where
                     return Ok(data);
                 }
                 None => {}
-                Some(Err(other)) => return Err(other.into()),
+                Some(Err(other)) => return Err(other),
             }
             count += 1000;
         }
@@ -163,7 +163,7 @@ where
                     return Ok(data);
                 }
                 None => {}
-                Some(Err(other)) => return Err(other.into()),
+                Some(Err(other)) => return Err(other),
             }
             count += 1000;
         }
@@ -180,18 +180,18 @@ where
             network, cyclic, ..
         } = self;
         let slave = network.slave(slave_address).unwrap().info();
-        let sdo_unit = cyclic.get_sdo_unit(&handle).unwrap();
-        sdo_unit.start_to_read(&slave, index, sub_index);
+        let sdo_unit = cyclic.get_sdo_unit(handle).unwrap();
+        sdo_unit.start_to_read(slave, index, sub_index);
         let mut count = 0;
         loop {
             cyclic.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_uploader = cyclic.get_sdo_unit(&handle).unwrap();
+            let sdo_uploader = cyclic.get_sdo_unit(handle).unwrap();
             match sdo_uploader.wait() {
                 Some(Ok(_)) => {
                     break;
                 }
                 None => {}
-                Some(Err(other)) => return Err(other.into()),
+                Some(Err(other)) => return Err(other),
             }
             count += 1000;
         }
@@ -210,18 +210,18 @@ where
             network, cyclic, ..
         } = self;
         let slave = network.slave(slave_address).unwrap().info();
-        let sdo_unit = cyclic.get_sdo_unit(&handle).unwrap();
-        sdo_unit.start_to_write(&slave, index, sub_index, data);
+        let sdo_unit = cyclic.get_sdo_unit(handle).unwrap();
+        sdo_unit.start_to_write(slave, index, sub_index, data);
         let mut count = 0;
         loop {
             cyclic.poll(EtherCatSystemTime(count), Duration::from_millis(1000))?;
-            let sdo_downloader = cyclic.get_sdo_unit(&handle).unwrap();
+            let sdo_downloader = cyclic.get_sdo_unit(handle).unwrap();
             match sdo_downloader.wait() {
                 Some(Ok(_)) => {
                     break;
                 }
                 None => {}
-                Some(Err(other)) => return Err(other.into()),
+                Some(Err(other)) => return Err(other),
             }
             count += 1000;
         }
@@ -230,7 +230,7 @@ where
 
     pub fn configure_pdo_mappings(
         &mut self,
-        sdo_unit_handle: &SdoUnitHandle,
+        _sdo_unit_handle: &SdoUnitHandle,
     ) -> Result<(), EcError<sdo::Error>> {
         let Self { network, .. } = self;
         network.calculate_pdo_entry_positions_in_pdo_image();
@@ -242,9 +242,9 @@ where
             //PDOエントリーの割り当て
             for rx_pdo_map in pdo_maps.rx_mapping.iter() {
                 let PdoMapping {
-                    is_fixed,
-                    index,
-                    entries,
+                    is_fixed: _,
+                    index: _,
+                    entries: _,
                 } = rx_pdo_map;
                 //self.write_sdo(sdo_unit_handle, SlaveAddress::SlavePosition(0), *index, 0, &[0])?;
             }

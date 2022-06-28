@@ -1,7 +1,7 @@
 use crate::arch::{CountDown, Device};
 use crate::ethercat_frame::*;
 use crate::packet::ethercat::*;
-use crate::slave::Slave;
+
 use crate::util::*;
 use core::time::Duration;
 use log::*;

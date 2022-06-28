@@ -1,6 +1,6 @@
 use super::{mailbox, CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::packet::ethercat::{MailboxErrorResponse, MailboxHeader, MailboxType};
-use crate::slave::{SlaveInfo, SyncManager};
+use crate::slave::{SyncManager};
 use crate::{
     error::EcError,
     interface::{Command, SlaveAddress},

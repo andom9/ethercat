@@ -266,13 +266,9 @@ impl PdoEntry {
 
     pub fn read<'a>(&self, logical_image: &'a [u8]) -> Option<&'a [u8]> {
         let size = self.byte_length() as usize;
-        if self.logical_start_address.is_none() {
-            return None;
-        }
+        self.logical_start_address?;
         let logical_start_address = self.logical_start_address.unwrap() as usize;
-        if logical_image.get(logical_start_address + size).is_none() {
-            return None;
-        }
+        logical_image.get(logical_start_address + size)?;
         Some(&logical_image[logical_start_address..logical_start_address + size])
     }
 
@@ -284,13 +280,9 @@ impl PdoEntry {
 
     pub fn write<'a>(&self, logical_image: &'a mut [u8], data: &[u8]) -> Option<()> {
         let size = self.byte_length() as usize;
-        if self.logical_start_address.is_none() {
-            return None;
-        }
+        self.logical_start_address?;
         let logical_start_address = self.logical_start_address.unwrap() as usize;
-        if logical_image.get(logical_start_address + size).is_none() {
-            return None;
-        }
+        logical_image.get(logical_start_address + size)?;
         logical_image[logical_start_address..logical_start_address + size]
             .iter_mut()
             .zip(data)

@@ -5,7 +5,7 @@ use crate::packet::coe::AbortCode;
 use crate::slave::SlaveInfo;
 use crate::{
     error::EcError,
-    interface::{Command, SlaveAddress},
+    interface::{Command},
 };
 
 #[derive(Debug, Clone)]
@@ -164,7 +164,7 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
                     match reader.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
-                        Some(Err(err)) => self.state = State::Error(err.into()),
+                        Some(Err(err)) => self.state = State::Error(err),
                     }
                 }
                 Inner::Writer(writer) => {
@@ -172,7 +172,7 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
                     match writer.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
-                        Some(Err(err)) => self.state = State::Error(err.into()),
+                        Some(Err(err)) => self.state = State::Error(err),
                     }
                 }
                 Inner::Taked => unreachable!(),

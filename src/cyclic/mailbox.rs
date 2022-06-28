@@ -3,7 +3,7 @@ use super::mailbox_writer::MailboxWriter;
 use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::interface::SlaveAddress;
 use crate::packet::ethercat::{MailboxErrorResponse, MailboxHeader};
-use crate::slave::{self, SlaveInfo, SyncManager};
+use crate::slave::{SyncManager};
 use crate::{error::EcError, interface::Command};
 
 #[derive(Debug, Clone)]
@@ -182,7 +182,7 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
                     match reader.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
-                        Some(Err(err)) => self.state = State::Error(err.into()),
+                        Some(Err(err)) => self.state = State::Error(err),
                     }
                 }
                 Inner::Writer(writer) => {
@@ -190,7 +190,7 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
                     match writer.wait() {
                         None => {}
                         Some(Ok(_)) => self.state = State::Complete,
-                        Some(Err(err)) => self.state = State::Error(err.into()),
+                        Some(Err(err)) => self.state = State::Error(err),
                     }
                 }
                 Inner::Taked => unreachable!(),

@@ -2,7 +2,7 @@ use super::mailbox;
 use super::mailbox::MailboxUnit;
 use super::sdo::Error;
 use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::network::NetworkDescription;
+
 use crate::packet::coe::{AbortCode, CoeHeader, CoeServiceType, SdoHeader};
 use crate::packet::ethercat::{MailboxHeader, MailboxType};
 use crate::slave::{SlaveInfo, SyncManager};
@@ -133,7 +133,7 @@ impl<'a> SdoUploader<'a> {
     pub fn wait(&mut self) -> Option<Result<(), EcError<Error>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
-            State::Error(err) => Some(Err(err.clone().into())),
+            State::Error(err) => Some(Err(err.clone())),
             _ => None,
         }
     }

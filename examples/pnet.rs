@@ -86,7 +86,7 @@ impl Device for PnetDevice {
     where
         F: FnOnce(&[u8]) -> Option<R>,
     {
-        self.rx.next().ok().map(|buf| f(buf)).flatten()
+        self.rx.next().ok().and_then(f)
     }
 
     fn max_transmission_unit(&self) -> usize {
@@ -119,7 +119,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if let Some(name) = args.get(1) {
-        simple_test(&name);
+        simple_test(name);
     } else {
         println!("Specify the name of network interface as an argument from the following.");
         for (i, interface) in datalink::interfaces().iter().enumerate() {
@@ -133,7 +133,7 @@ fn main() {
 fn simple_test(interf_name: &str) {
     dbg!("prepare resources");
     let timer = Timer::new();
-    let device = PnetDevice::open(&interf_name);
+    let device = PnetDevice::open(interf_name);
     let mut pdu_buf = vec![0; device.max_transmission_unit()];
     let mut mb_buf = vec![0; 1488];
     let mut units_buf: Box<[Unit<CyclicUnitType>; 10]> = Default::default();

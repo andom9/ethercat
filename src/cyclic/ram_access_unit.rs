@@ -114,7 +114,7 @@ impl CyclicProcess for RamAccessUnit {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
             match self.slave_address {
-                TargetSlave::Single(slave_address) => {
+                TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
                         self.state = State::Error(EcError::UnexpectedWKC(wkc));
                     }

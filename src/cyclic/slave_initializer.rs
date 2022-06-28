@@ -127,9 +127,8 @@ impl SlaveInitializer {
         self.slave_address = SlaveAddress::SlavePosition(slave_position);
         self.state = State::SetLoopPort;
         self.slave_info = Some(SlaveInfo::default());
-        self.slave_info
-            .as_mut()
-            .map(|slave| slave.mailbox_count.set(1));
+        if let Some(slave) = self.slave_info
+            .as_mut() { slave.mailbox_count.set(1) }
     }
 
     pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, EcError<Error>>> {
@@ -675,7 +674,7 @@ impl CyclicProcess for SlaveInitializer {
                             _ => {}
                         }
                         set_process_data_sm_size_offset(
-                            &mut self.slave_info.as_mut().unwrap(),
+                            self.slave_info.as_mut().unwrap(),
                         );
 
                         self.state = State::SetSmControl(0);
