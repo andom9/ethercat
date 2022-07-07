@@ -1,14 +1,12 @@
-use super::al_state_reader::AlStatusCode;
-use super::EtherCatSystemTime;
-use super::ReceivedData;
-use crate::cyclic::CyclicProcess;
+use super::super::EtherCatSystemTime;
+use super::super::ReceivedData;
+use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use crate::interface::Command;
-use crate::interface::TargetSlave;
-use crate::packet::ethercat::CommandType;
-use crate::register::application::{AlControl, AlStatus};
-use crate::register::datalink::SiiAccess;
-use crate::slave::AlState;
+use super::super::interface::*;
+use crate::register::AlStatusCode;
+use crate::register::{AlControl, AlStatus};
+use crate::register::SiiAccess;
+use crate::slave_network::AlState;
 use crate::util::const_max;
 use core::convert::TryFrom;
 
@@ -36,20 +34,20 @@ const fn max_timeout_ms() -> u32 {
 }
 
 #[derive(Debug, Clone)]
-pub enum Error {
+pub enum AlStateTransferError {
     TimeoutMs(u32),
     AlStatusCode((AlState, AlStatusCode)),
 }
 
-impl From<Error> for EcError<Error> {
-    fn from(err: Error) -> Self {
-        Self::UnitSpecific(err)
+impl From<AlStateTransferError> for EcError<AlStateTransferError> {
+    fn from(err: AlStateTransferError) -> Self {
+        Self::TaskSpecific(err)
     }
 }
 
 #[derive(Debug)]
 enum State {
-    Error(EcError<Error>),
+    Error(EcError<AlStateTransferError>),
     Idle,
     Read,
     ResetError(AlState),
@@ -94,7 +92,7 @@ impl AlStateTransfer {
         self.command = Command::default();
     }
 
-    pub fn wait(&mut self) -> Option<Result<AlState, EcError<Error>>> {
+    pub fn wait(&mut self) -> Option<Result<AlState, EcError<AlStateTransferError>>> {
         match &self.state {
             State::Complete => Some(Ok(self.current_al_state)),
             State::Error(err) => Some(Err(err.clone())),
@@ -104,35 +102,19 @@ impl AlStateTransfer {
 }
 
 impl CyclicProcess for AlStateTransfer {
-    fn next_command(
-        &mut self,
-        //_: &mut NetworkDescription,
-        _: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+    fn next_command(&mut self, _: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_read(slave_address, AlStatus::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS)
-                    }
-                }
+                self.command = Command::new_read(self.slave_address, AlStatus::ADDRESS);
+
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..AlStatus::SIZE]))
             }
             State::ResetError(current_al_state) => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
-                    }
-                }
+                self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
+
                 self.buffer.fill(0);
                 let mut al_control = AlControl(&mut self.buffer);
                 al_control.set_state(current_al_state as u8);
@@ -140,14 +122,8 @@ impl CyclicProcess for AlStateTransfer {
                 Some((self.command, &self.buffer[..AlControl::SIZE]))
             }
             State::OffAck(current_al_state) => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
-                    }
-                }
+                self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
+
                 self.buffer.fill(0);
                 let mut al_control = AlControl(&mut self.buffer);
                 al_control.set_state(current_al_state as u8);
@@ -159,14 +135,8 @@ impl CyclicProcess for AlStateTransfer {
                 let mut sii_access = SiiAccess(&mut self.buffer);
                 sii_access.set_owner(true);
                 sii_access.set_reset_access(false);
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_write(slave_address, SiiAccess::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BWR, 0, SiiAccess::ADDRESS)
-                    }
-                }
+                self.command = Command::new_write(self.slave_address, SiiAccess::ADDRESS);
+
                 Some((self.command, &self.buffer[..SiiAccess::SIZE]))
             }
             State::Request => {
@@ -174,14 +144,8 @@ impl CyclicProcess for AlStateTransfer {
                 let mut al_control = AlControl(&mut self.buffer);
                 let target_al = self.target_al;
                 al_control.set_state(target_al as u8);
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_write(slave_address, AlControl::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BWR, 0, AlControl::ADDRESS)
-                    }
-                }
+                self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
+
                 self.timeout_ms = match (self.current_al_state, target_al) {
                     (AlState::PreOperational, AlState::SafeOperational)
                     | (_, AlState::Operational) => SAFEOP_OP_TIMEOUT_DEFAULT_MS,
@@ -195,14 +159,7 @@ impl CyclicProcess for AlStateTransfer {
                 Some((self.command, &self.buffer[..AlControl::SIZE]))
             }
             State::Poll => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_read(slave_address, AlStatus::ADDRESS)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BRD, 0, AlStatus::ADDRESS)
-                    }
-                }
+                self.command = Command::new_read(self.slave_address, AlStatus::ADDRESS);
                 self.buffer.fill(0);
                 Some((self.command, &self.buffer[..AlStatus::SIZE]))
             }
@@ -213,10 +170,8 @@ impl CyclicProcess for AlStateTransfer {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
-        //log::info!("{:?}",self.state);
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -225,18 +180,18 @@ impl CyclicProcess for AlStateTransfer {
             match self.slave_address {
                 TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
                     }
                 }
                 TargetSlave::All(num_slaves) => {
                     if wkc != num_slaves {
-                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
                     }
                 }
             }
             data
         } else {
-            self.state = State::Error(EcError::LostCommand);
+            self.state = State::Error(EcError::LostPacket);
             return;
         };
 
@@ -276,12 +231,14 @@ impl CyclicProcess for AlStateTransfer {
                 } else if al_status.change_err() {
                     let al_status_code =
                         AlStatusCode::try_from(al_status.al_status_code()).unwrap();
-                    self.state =
-                        State::Error(Error::AlStatusCode((al_state, al_status_code)).into());
+                    self.state = State::Error(
+                        AlStateTransferError::AlStatusCode((al_state, al_status_code)).into(),
+                    );
                 } else if self.timer_start.0 < sys_time.0
                     && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
                 {
-                    self.state = State::Error(Error::TimeoutMs(self.timeout_ms).into());
+                    self.state =
+                        State::Error(AlStateTransferError::TimeoutMs(self.timeout_ms).into());
                 }
             }
         }

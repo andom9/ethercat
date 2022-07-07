@@ -1,42 +1,41 @@
+use super::mailbox::MailboxTaskError;
 use super::sdo_downloader::SdoDownloader;
 use super::sdo_uploader::SdoUploader;
-use super::{mailbox, CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::packet::coe::AbortCode;
-use crate::slave::SlaveInfo;
-use crate::{
-    error::EcError,
-    interface::{Command},
-};
+use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
+use crate::frame::AbortCode;
+use crate::slave_network::SlaveInfo;
+use crate::EcError;
+use super::super::interface::*;
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    Mailbox(mailbox::Error),
+pub enum SdoTaskError {
+    Mailbox(MailboxTaskError),
     MailboxAlreadyExisted,
     AbortCode(AbortCode),
     UnexpectedCommandSpecifier,
 }
 
-impl From<Error> for EcError<Error> {
-    fn from(err: Error) -> Self {
-        Self::UnitSpecific(err)
+impl From<SdoTaskError> for EcError<SdoTaskError> {
+    fn from(err: SdoTaskError) -> Self {
+        Self::TaskSpecific(err)
     }
 }
 
-impl From<EcError<mailbox::Error>> for EcError<Error> {
-    fn from(err: EcError<mailbox::Error>) -> Self {
+impl From<EcError<MailboxTaskError>> for EcError<SdoTaskError> {
+    fn from(err: EcError<MailboxTaskError>) -> Self {
         match err {
-            EcError::UnitSpecific(err) => EcError::UnitSpecific(Error::Mailbox(err)),
+            EcError::TaskSpecific(err) => EcError::TaskSpecific(SdoTaskError::Mailbox(err)),
             EcError::Interface(e) => EcError::Interface(e),
-            EcError::LostCommand => EcError::LostCommand,
+            EcError::LostPacket => EcError::LostPacket,
             EcError::UnexpectedCommand => EcError::UnexpectedCommand,
-            EcError::UnexpectedWKC(wkc) => EcError::UnexpectedWKC(wkc),
+            EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
         }
     }
 }
 
 #[derive(Debug)]
 enum State {
-    Error(EcError<Error>),
+    Error(EcError<SdoTaskError>),
     Idle,
     Complete,
     Processing,
@@ -72,12 +71,12 @@ impl<'a> Default for Inner<'a> {
 }
 
 #[derive(Debug)]
-pub struct SdoUnit<'a> {
+pub struct SdoTask<'a> {
     state: State,
     inner: Inner<'a>,
 }
 
-impl<'a> SdoUnit<'a> {
+impl<'a> SdoTask<'a> {
     pub fn new(mb_buf: &'a mut [u8]) -> Self {
         Self {
             state: State::Idle,
@@ -121,7 +120,7 @@ impl<'a> SdoUnit<'a> {
         self.state = State::Processing;
     }
 
-    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<Error>>> {
+    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<SdoTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -130,12 +129,8 @@ impl<'a> SdoUnit<'a> {
     }
 }
 
-impl<'a> CyclicProcess for SdoUnit<'a> {
-    fn next_command(
-        &mut self,
-        //desc: &mut NetworkDescription,
-        sys_time: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+impl<'a> CyclicProcess for SdoTask<'a> {
+    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -151,7 +146,6 @@ impl<'a> CyclicProcess for SdoUnit<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         match self.state {

@@ -1,10 +1,9 @@
-use super::EtherCatSystemTime;
-use super::ReceivedData;
-use crate::cyclic::CyclicProcess;
+use super::super::EtherCatSystemTime;
+use super::super::ReceivedData;
+use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use crate::interface::Command;
-use crate::interface::TargetSlave;
-use crate::packet::ethercat::CommandType;
+use super::super::interface::*;
+
 
 #[derive(Debug)]
 enum State {
@@ -16,7 +15,7 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct RamAccessUnit {
+pub struct RamAccessTask {
     state: State,
     slave_address: TargetSlave,
     command: Command,
@@ -25,7 +24,7 @@ pub struct RamAccessUnit {
     ado: u16,
 }
 
-impl RamAccessUnit {
+impl RamAccessTask {
     pub fn new() -> Self {
         Self {
             state: State::Idle,
@@ -67,67 +66,44 @@ impl RamAccessUnit {
     }
 }
 
-impl CyclicProcess for RamAccessUnit {
-    fn next_command(
-        &mut self,
-        //_: &mut NetworkDescription,
-        _: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+impl CyclicProcess for RamAccessTask {
+    fn next_command(&mut self, _: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_read(slave_address, self.ado)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BRD, 0, self.ado)
-                    }
-                }
+                self.command = Command::new_read(self.slave_address, self.ado);
                 Some((self.command, &self.buffer[..self.buf_size]))
             }
             State::Write => {
-                match self.slave_address {
-                    TargetSlave::Single(slave_address) => {
-                        self.command = Command::new_write(slave_address, self.ado)
-                    }
-                    TargetSlave::All(_num_slaves) => {
-                        self.command = Command::new(CommandType::BWR, 0, self.ado)
-                    }
-                }
+                self.command = Command::new_write(self.slave_address, self.ado);
                 Some((self.command, &self.buffer[..self.buf_size]))
             }
             State::Complete => None,
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<ReceivedData>,
-        //desc: &mut NetworkDescription,
-        _: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: Option<ReceivedData>, _: EtherCatSystemTime) {
         let data = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
-            match self.slave_address {
+            match self.slave_address.into() {
                 TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
                     }
                 }
                 TargetSlave::All(num_slaves) => {
                     if wkc != num_slaves {
-                        self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
                     }
                 }
             }
             data
         } else {
-            self.state = State::Error(EcError::LostCommand);
+            self.state = State::Error(EcError::LostPacket);
             return;
         };
 

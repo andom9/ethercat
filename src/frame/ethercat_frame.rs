@@ -1,12 +1,12 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
-use crate::packet::ethercat::*;
+use crate::frame::ethercat_header::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EtherCatFrame<B> {
-    pub(crate) buffer: B,
-    pub free_offset: usize,
-    pub index: u8,
+    buffer: B,
+    free_offset: usize,
+    index: u8,
 }
 
 impl<B: AsRef<[u8]>> EtherCatFrame<B> {
@@ -37,17 +37,17 @@ impl<B: AsRef<[u8]>> EtherCatFrame<B> {
     }
 
     #[inline]
-    pub fn packet<'a>(&'a self) -> &'a [u8] {
+    pub fn inner<'a>(&'a self) -> &'a [u8] {
         &self.buffer.as_ref()[..self.free_offset]
     }
 
     #[inline]
-    pub fn iter_dlpdu_offsets(&self) -> EtherCatPduOffsets<&B> {
+    pub fn dlpdu_offsets(&self) -> EtherCatPduOffsets<&B> {
         EtherCatPduOffsets::new_for_ethercat_frame(&self.buffer, self.buffer.as_ref().len())
     }
 
     #[inline]
-    pub fn iter_dlpdu<'a>(&'a self) -> EtherCatPdus<'a> {
+    pub fn dlpdus<'a>(&'a self) -> EtherCatPdus<'a> {
         EtherCatPdus::new_for_ethercat_frame(self.buffer.as_ref(), self.buffer.as_ref().len())
     }
 }
@@ -90,7 +90,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrame<B> {
         }
 
         //最後のEtherCatPduを変更
-        if let Some(pre_dlpdu_offset) = self.iter_dlpdu_offsets().last() {
+        if let Some(pre_dlpdu_offset) = self.dlpdu_offsets().last() {
             if self.buffer.as_ref()[pre_dlpdu_offset..]
                 .get(EtherCatPduHeader::SIZE - 1)
                 .is_some()

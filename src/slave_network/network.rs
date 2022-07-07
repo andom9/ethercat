@@ -1,6 +1,7 @@
-use crate::{interface::SlaveAddress, slave::*};
+use crate::cyclic_task::*;
+use super::*;
 
-pub const EMPTY_SLAVE_CONTEXT: Option<Slave> = None;
+pub const EMPTY_SLAVE: Option<Slave> = None;
 
 #[derive(Debug)]
 pub struct NetworkDescription<'a, 'b, 'c> {

@@ -113,7 +113,7 @@ pub enum MailboxType {
     VoE = 0xf,
 }
 
-pub const MAILBOX_ERROR_LENGTH: usize = 4;
+//pub const MAILBOX_ERROR_LENGTH: usize = 4;
 
 bitfield! {
     #[derive(Debug, Clone)]

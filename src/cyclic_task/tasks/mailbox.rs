@@ -1,32 +1,31 @@
 use super::mailbox_reader::MailboxReader;
 use super::mailbox_writer::MailboxWriter;
-use super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
-use crate::interface::SlaveAddress;
-use crate::packet::ethercat::{MailboxErrorResponse, MailboxHeader};
-use crate::slave::{SyncManager};
-use crate::{error::EcError, interface::Command};
+use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
+use crate::frame::{MailboxErrorResponse, MailboxHeader};
+use crate::slave_network::SyncManager;
+use crate::EcError;
+use super::super::interface::*;
+
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    TimeoutMs(u32),
-    //NoMailbox,
+pub enum MailboxTaskError {
+    Timeout,
     MailboxNotAvailable,
-    //NoSlave,
     MailboxEmpty,
     MailboxFull,
     BufferSmall,
     ErrorResponse(MailboxErrorResponse<[u8; MailboxErrorResponse::SIZE]>),
 }
 
-impl From<Error> for EcError<Error> {
-    fn from(err: Error) -> Self {
-        Self::UnitSpecific(err)
+impl From<MailboxTaskError> for EcError<MailboxTaskError> {
+    fn from(err: MailboxTaskError) -> Self {
+        Self::TaskSpecific(err)
     }
 }
 
 #[derive(Debug)]
 enum State {
-    Error(EcError<Error>),
+    Error(EcError<MailboxTaskError>),
     Idle,
     Complete,
     Processing,
@@ -62,12 +61,12 @@ impl<'a> Default for Inner<'a> {
 }
 
 #[derive(Debug)]
-pub struct MailboxUnit<'a> {
+pub struct MailboxTask<'a> {
     state: State,
     inner: Inner<'a>,
 }
 
-impl<'a> MailboxUnit<'a> {
+impl<'a> MailboxTask<'a> {
     pub fn new(mb_buf: &'a mut [u8]) -> Self {
         Self {
             state: State::Idle,
@@ -139,7 +138,7 @@ impl<'a> MailboxUnit<'a> {
         self.state = State::Processing;
     }
 
-    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<Error>>> {
+    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<MailboxTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -148,12 +147,8 @@ impl<'a> MailboxUnit<'a> {
     }
 }
 
-impl<'a> CyclicProcess for MailboxUnit<'a> {
-    fn next_command(
-        &mut self,
-        //desc: &mut NetworkDescription,
-        sys_time: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+impl<'a> CyclicProcess for MailboxTask<'a> {
+    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -169,7 +164,6 @@ impl<'a> CyclicProcess for MailboxUnit<'a> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         match self.state {

@@ -1,11 +1,12 @@
-use crate::cyclic::CyclicProcess;
-use crate::cyclic::{
-    Command, CommandType, EcError, EtherCatSystemTime, NetworkDescription, ReceivedData,
+use crate::cyclic_task::CyclicProcess;
+use crate::cyclic_task::{
+    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData,
     SlaveAddress,
 };
-use crate::register::datalink::{
+use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
+use crate::slave_network::NetworkDescription;
 use crate::util::const_max;
 
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
@@ -34,11 +35,11 @@ pub struct DcInitializer<'a, 'b, 'c, 'd> {
     buffer: [u8; buffer_size()],
     first_dc_slave: Option<u16>,
     dc_slave_count: usize,
-    network: &'d mut NetworkDescription<'a, 'b, 'c>,
+    network: &'d NetworkDescription<'a, 'b, 'c>,
 }
 
 impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
-    pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
+    pub fn new(network: &'d NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
             sys_time: EtherCatSystemTime(0),
             state: State::Idle,
@@ -104,15 +105,17 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
         self.state = State::RequestToLatch(0);
     }
 
-    //TODO:Waitがない
+    pub fn wait(&mut self) -> Option<Result<(), EcError<()>>> {
+        match &self.state {
+            State::Complete => Some(Ok(())),
+            State::Error(err) => Some(Err(err.clone())),
+            _ => None,
+        }
+    }
 }
 
 impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
-    fn next_command(
-        &mut self,
-        //self.network: &mut NetworkDescription,
-        sys_time: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         match &self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -123,22 +126,26 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                 Some((command, &self.buffer[..DcRecieveTime::SIZE]))
             }
             State::CalculateOffset((_, pos)) => {
-                let command =
-                    Command::new_read(SlaveAddress::SlavePosition(*pos), DcSystemTime::ADDRESS);
+                let command = Command::new_read(
+                    SlaveAddress::SlavePosition(*pos).into(),
+                    DcSystemTime::ADDRESS,
+                );
                 self.buffer.fill(0);
                 //self.time_buf = self.duration_from_2000_0_0.;
                 Some((command, &self.buffer[..DcSystemTime::SIZE]))
             }
             State::CalculateDelay((_, pos)) => {
-                let command =
-                    Command::new_read(SlaveAddress::SlavePosition(*pos), DcRecieveTime::ADDRESS);
+                let command = Command::new_read(
+                    SlaveAddress::SlavePosition(*pos).into(),
+                    DcRecieveTime::ADDRESS,
+                );
                 self.buffer.fill(0);
                 self.sys_time = sys_time;
                 Some((command, &self.buffer[..DcRecieveTime::SIZE]))
             }
             State::SetOffset(pos) => {
                 let command = Command::new_write(
-                    SlaveAddress::SlavePosition(*pos),
+                    SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeOffset::ADDRESS,
                 );
                 self.buffer.fill(0);
@@ -152,7 +159,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetDelay(pos) => {
                 let command = Command::new_write(
-                    SlaveAddress::SlavePosition(*pos),
+                    SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeTransmissionDelay::ADDRESS,
                 );
                 self.buffer.fill(0);
@@ -177,12 +184,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<ReceivedData>,
-        //self.network: &mut NetworkDescription,
-        _: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: Option<ReceivedData>, _: EtherCatSystemTime) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
             let ReceivedData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -190,7 +192,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             (data, wkc)
         } else {
-            self.state = State::Error(EcError::LostCommand);
+            self.state = State::Error(EcError::LostPacket);
             return;
         };
 
@@ -200,14 +202,14 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             State::Complete => {}
             State::RequestToLatch(count) => {
                 if wkc != self.network.len() as u16 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     self.state = State::CalculateOffset((*count, 0))
                 }
             }
             State::CalculateOffset((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     let master_time = self.sys_time.0;
                     let slave = self
@@ -236,7 +238,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::CalculateDelay((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     let recv_time = DcRecieveTime(data);
                     let slave = self
@@ -330,13 +332,11 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetOffset(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     let next_pos = self
                         .network
                         .slaves()
-                        //.iter()
-                        //.filter_map(|s| s.as_ref())
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
@@ -348,13 +348,11 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetDelay(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     let next_pos = self
                         .network
                         .slaves()
-                        //.iter()
-                        //.filter_map(|s| s.as_ref())
                         .enumerate()
                         .position(|(i, s)| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
@@ -366,7 +364,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
-                    self.state = State::Error(EcError::UnexpectedWKC(wkc));
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else if count + 1 < DRIFT_COUNT_MAX {
                     self.state = State::CompensateDrift(count + 1);
                 } else {

@@ -1,30 +1,30 @@
-use super::slave_initializer;
-use crate::cyclic::slave_initializer::SlaveInitializer;
-use crate::cyclic::CyclicProcess;
+use super::slave_initializer::SlaveInitializerError;
+use super::SlaveInitializer;
+use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use crate::interface::Command;
-use crate::network::NetworkDescription;
-use crate::packet::ethercat::CommandType;
-use crate::register::datalink::DlControl;
-use crate::slave::Slave;
+use crate::frame::CommandType;
+use super::super::interface::*;
+use crate::slave_network::NetworkDescription;
+use crate::register::DlControl;
+use crate::slave_network::Slave;
 
-use super::EtherCatSystemTime;
-use super::ReceivedData;
+use super::super::EtherCatSystemTime;
+use super::super::ReceivedData;
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    Init(EcError<slave_initializer::Error>),
+pub enum NetworkInitializerError {
+    Init(EcError<SlaveInitializerError>),
     TooManySlaves,
 }
 
-impl From<Error> for EcError<Error> {
-    fn from(err: Error) -> Self {
-        Self::UnitSpecific(err)
+impl From<NetworkInitializerError> for EcError<NetworkInitializerError> {
+    fn from(err: NetworkInitializerError) -> Self {
+        Self::TaskSpecific(err)
     }
 }
 
-impl From<EcError<slave_initializer::Error>> for Error {
-    fn from(err: EcError<slave_initializer::Error>) -> Self {
+impl From<EcError<SlaveInitializerError>> for NetworkInitializerError {
+    fn from(err: EcError<SlaveInitializerError>) -> Self {
         Self::Init(err)
     }
 }
@@ -32,7 +32,7 @@ impl From<EcError<slave_initializer::Error>> for Error {
 #[derive(Debug)]
 enum State {
     Idle,
-    Error(EcError<Error>),
+    Error(EcError<NetworkInitializerError>),
     CountSlaves,
     StartInitSlaves(u16),
     WaitInitSlaves(u16),
@@ -47,7 +47,7 @@ pub struct NetworkInitializer<'a, 'b, 'c, 'd> {
     command: Command,
     buffer: [u8; buffer_size()],
     num_slaves: u16,
-    lost_count: usize,
+    lost_count: u8,
 }
 
 impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
@@ -75,7 +75,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
         self.lost_count = 0;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<Error>>> {
+    pub fn wait(&mut self) -> Option<Result<(), EcError<NetworkInitializerError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -85,11 +85,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
 }
 
 impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
-    fn next_command(
-        &mut self,
-        //desc: &mut NetworkDescription,
-        sys_time: EtherCatSystemTime,
-    ) -> Option<(Command, &[u8])> {
+    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
         log::info!("send {:?}", self.state);
 
         let command_and_data = match &self.state {
@@ -109,10 +105,8 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.start(*count);
-                //self.initilizer.next_command(desc, sys_time)
                 self.initilizer.next_command(sys_time)
             }
-            //State::WaitInitSlaves(_) => self.initilizer.next_command(desc, sys_time),
             State::WaitInitSlaves(_) => self.initilizer.next_command(sys_time),
             State::Complete => None,
         };
@@ -125,7 +119,6 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<ReceivedData>,
-        //desc: &mut NetworkDescription,
         sys_time: EtherCatSystemTime,
     ) {
         //log::info!("recv {:?}",self.state);
@@ -137,10 +130,8 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
             }
             *wkc
         } else {
-            //self.state = State::Error(EcError::LostCommand);
-            //return;
             if self.lost_count > 0 {
-                self.state = State::Error(EcError::LostCommand);
+                self.state = State::Error(EcError::LostPacket);
                 return;
             } else {
                 self.lost_count += 1;
@@ -162,20 +153,18 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.recieve_and_process(recv_data, sys_time);
-                //.recieve_and_process(recv_data, desc, sys_time);
                 self.state = State::WaitInitSlaves(*count);
             }
             State::WaitInitSlaves(count) => {
                 self.initilizer.recieve_and_process(recv_data, sys_time);
-                //.recieve_and_process(recv_data, desc, sys_time);
 
                 match self.initilizer.wait() {
                     Some(Ok(Some(slave_info))) => {
                         let mut slave = Slave::default();
                         slave.info = slave_info;
-                        //slave.status = slave_status;
                         if self.network.push_slave(slave).is_err() {
-                            self.state = State::Error(Error::TooManySlaves.into());
+                            self.state =
+                                State::Error(NetworkInitializerError::TooManySlaves.into());
                         } else if *count + 1 < self.num_slaves {
                             self.state = State::StartInitSlaves(*count + 1);
                         } else {
@@ -185,7 +174,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
                     Some(Ok(None)) => unreachable!(),
                     None => {}
                     Some(Err(err)) => {
-                        self.state = State::Error(Error::Init(err).into());
+                        self.state = State::Error(NetworkInitializerError::Init(err).into());
                     }
                 }
             }

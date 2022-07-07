@@ -1,15 +1,13 @@
-use ethercat_master::arch::*;
-use ethercat_master::cyclic::sdo::SdoUnit;
-use ethercat_master::cyclic::sii_reader;
-use ethercat_master::cyclic::sii_reader::SiiReader;
-use ethercat_master::cyclic::Unit;
-use ethercat_master::interface::*;
-use ethercat_master::master::CyclicUnitType;
+use ethercat_master::cyclic_task::{*, tasks::*};
+use ethercat_master::hal::*;
+use ethercat_master::master::CyclicTaskType;
 use ethercat_master::master::EtherCatMaster;
-use ethercat_master::network::NetworkDescription;
-use ethercat_master::slave::AlState;
-use ethercat_master::slave::Slave;
-use pnet::datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
+use ethercat_master::slave_network::NetworkDescription;
+use ethercat_master::register::sii::ProductCode;
+use ethercat_master::slave_network::AlState;
+use ethercat_master::slave_network::Slave;
+use ethercat_master::slave_network::SyncManager;
+use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
 use std::time::{Duration, Instant};
 
@@ -41,19 +39,19 @@ impl CountDown for Timer {
 
 struct PnetDevice {
     tx_buf: [u8; 1500],
-    tx: Box<dyn DataLinkSender + 'static>,
-    rx: Box<dyn DataLinkReceiver + 'static>,
+    tx: Box<dyn DataLinkSender>,
+    rx: Box<dyn DataLinkReceiver>,
 }
 
 impl PnetDevice {
     fn open(network_interface_name: &str) -> Self {
         let interface_names_match = |iface: &NetworkInterface| iface.name == network_interface_name;
-        let interfaces = datalink::interfaces();
+        let interfaces = pnet_datalink::interfaces();
         let interface = interfaces
             .into_iter()
             .find(interface_names_match)
             .expect("interface not found");
-        let (tx, rx) = match datalink::channel(&interface, Default::default()) {
+        let (tx, rx) = match pnet_datalink::channel(&interface, Default::default()) {
             Ok(Ethernet(tx, rx)) => (tx, rx),
             Ok(_) => panic!("unhandled interface"),
             Err(_e) => panic!("unenable to create channel"),
@@ -66,31 +64,46 @@ impl PnetDevice {
     }
 }
 
-impl Device for PnetDevice {
-    fn send<R, F>(&mut self, len: usize, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut [u8]) -> Option<R>,
-    {
-        let b = f(&mut self.tx_buf[..len]);
-        if let Some(r) = self.tx.send_to(&self.tx_buf[..len], None) {
-            match r {
-                Ok(_) => b,
-                Err(_) => None,
-            }
-        } else {
-            None
-        }
+impl<'a> Device<'a> for PnetDevice {
+    type TxToken = PnetTxToken<'a>;
+    type RxToken = PnetRxToken<'a>;
+    fn transmit(&'a mut self) -> Option<Self::TxToken> {
+        Some(PnetTxToken(&mut self.tx, &mut self.tx_buf))
     }
 
-    fn recv<R, F>(&mut self, f: F) -> Option<R>
-    where
-        F: FnOnce(&[u8]) -> Option<R>,
-    {
-        self.rx.next().ok().and_then(f)
+    fn receive(&'a mut self) -> Option<Self::RxToken> {
+        Some(PnetRxToken(&mut self.rx))
     }
 
     fn max_transmission_unit(&self) -> usize {
         1500
+    }
+}
+
+struct PnetTxToken<'a>(&'a mut Box<dyn DataLinkSender + 'static>, &'a mut [u8]);
+impl<'a> TxToken for PnetTxToken<'a> {
+    fn consume<F>(self, len: usize, f: F) -> Result<(), ()>
+    where
+        F: FnOnce(&mut [u8]) -> Result<(), ()>,
+    {
+        let b = f(&mut self.1[..len]);
+        if let Some(r) = self.0.send_to(&self.1[..len], None) {
+            match r {
+                Ok(_) => b,
+                Err(_) => Err(()),
+            }
+        } else {
+            Err(())
+        }
+    }
+}
+struct PnetRxToken<'a>(&'a mut Box<dyn DataLinkReceiver>);
+impl<'a> RxToken for PnetRxToken<'a> {
+    fn consume<F>(self, f: F) -> Result<(), ()>
+    where
+        F: FnOnce(&[u8]) -> Result<(), ()>,
+    {
+        self.0.next().ok().map(|b| f(b)).unwrap_or(Err(()))
     }
 }
 
@@ -105,15 +118,33 @@ fn main() {
     println!("timer size {}", timer_size);
 
     let size = core::mem::size_of::<EtherCatMaster<PnetDevice, Timer>>();
-    println!("master size {}", size);
+    println!("EtherCatMaster size {}", size);
 
-    let size = core::mem::size_of::<CyclicUnitType>();
-    println!("units size {}", size);
+    let size = core::mem::size_of::<CyclicTaskType>();
+    println!("CyclicTaskTypes size {}", size);
     let size = core::mem::size_of::<SiiReader>();
-    println!("units size {}", size);
+    println!("SiiReader size {}", size);
+    let size = core::mem::size_of::<NetworkInitializer>();
+    println!("NetworkInitializer size {}", size);
+    let size = core::mem::size_of::<SlaveInitializer>();
+    println!("SlaveInitializer size {}", size);
+    let size = core::mem::size_of::<MailboxTask>();
+    println!("MailboxTask size {}", size);
+    let size = core::mem::size_of::<SdoTask>();
+    println!("SdoTask size {}", size);
+    let size = core::mem::size_of::<SdoUploader>();
+    println!("SdoUploader size {}", size);
+    let size = core::mem::size_of::<SdoDownloader>();
+    println!("SdoDownloader size {}", size);
+    let size = core::mem::size_of::<RamAccessTask>();
+    println!("RamAccessTask size {}", size);
+    let size = core::mem::size_of::<AlStateTransfer>();
+    println!("AlStateTransfer size {}", size);
     let size = core::mem::size_of::<NetworkDescription>();
     println!("net size {}", size);
 
+    let size = core::mem::size_of::<SyncManager>();
+    println!("SyncManager size {}", size);
     //panic!();
 
     let args: Vec<String> = env::args().collect();
@@ -122,7 +153,7 @@ fn main() {
         simple_test(name);
     } else {
         println!("Specify the name of network interface as an argument from the following.");
-        for (i, interface) in datalink::interfaces().iter().enumerate() {
+        for (i, interface) in pnet_datalink::interfaces().iter().enumerate() {
             println!("{}:", i);
             println!("    Description: {}", interface.description);
             println!("    Name: {}", interface.name);
@@ -136,24 +167,21 @@ fn simple_test(interf_name: &str) {
     let device = PnetDevice::open(interf_name);
     let mut pdu_buf = vec![0; device.max_transmission_unit()];
     let mut mb_buf = vec![0; 1488];
-    let mut units_buf: Box<[Unit<CyclicUnitType>; 10]> = Default::default();
+    let mut tasks_buf: Box<[TaskOption<CyclicTaskType>; 10]> = Default::default();
     let mut slave_buf: Box<[Option<Slave>; 10]> = Default::default();
-    let iface = EtherCatInterface::new(device, timer, &mut pdu_buf);
+    let iface = CommandInterface::new(device, timer, &mut pdu_buf);
 
     dbg!("crate master");
     let mut master =
-        EtherCatMaster::initilize(iface, slave_buf.as_mut(), units_buf.as_mut()).unwrap();
+        EtherCatMaster::initilize(iface, slave_buf.as_mut(), tasks_buf.as_mut()).unwrap();
     dbg!("done");
 
     let slave_count = master.network().len();
 
-    let sdo_unit_handle = master.add_sdo_unit(SdoUnit::new(&mut mb_buf)).unwrap();
+    let sdo_task_handle = master.add_sdo_task(SdoTask::new(&mut mb_buf)).unwrap();
 
     let (eeprom_data, size) = master
-        .read_sii(
-            SlaveAddress::SlavePosition(0),
-            sii_reader::sii_reg::ProductCode::ADDRESS,
-        )
+        .read_sii(SlaveAddress::SlavePosition(0), ProductCode::ADDRESS)
         .unwrap();
     println!("product code: {:x}", eeprom_data.sii_data());
     println!("read_size: {}", size);
@@ -173,18 +201,18 @@ fn simple_test(interf_name: &str) {
 
     master
         .read_sdo(
-            &sdo_unit_handle,
+            &sdo_task_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
         )
         .unwrap();
-    let sdo_unit = master.get_sdo_unit(&sdo_unit_handle).unwrap();
-    println!("sdo data: {:x?}", sdo_unit.sdo_data());
+    let sdo_task = master.get_sdo_task(&sdo_task_handle).unwrap();
+    println!("sdo data: {:x?}", sdo_task.sdo_data());
 
     master
         .write_sdo(
-            &sdo_unit_handle,
+            &sdo_task_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
@@ -194,13 +222,13 @@ fn simple_test(interf_name: &str) {
 
     master
         .read_sdo(
-            &sdo_unit_handle,
+            &sdo_task_handle,
             SlaveAddress::SlavePosition(0),
             0x6072,
             0x0,
         )
         .unwrap();
-    let sdo_unit = master.get_sdo_unit(&sdo_unit_handle).unwrap();
-    let data = sdo_unit.sdo_data();
+    let sdo_task = master.get_sdo_task(&sdo_task_handle).unwrap();
+    let data = sdo_task.sdo_data();
     println!("sdo data: 0x{:x?}", u16::from_le_bytes([data[0], data[1]]));
 }

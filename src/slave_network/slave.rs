@@ -1,4 +1,5 @@
-use crate::{interface::SlaveAddress, register::datalink::PortPhysics};
+use crate::register::PortPhysics;
+use crate::cyclic_task::*;
 use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
@@ -79,7 +80,7 @@ pub(crate) struct DcContext {
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
     // status
-    pub(crate) error: Option<SlaveError>,
+    //pub(crate) error: Option<SlaveError>,
     pub(crate) al_state: AlState,
     pub(crate) mailbox_count: Cell<u8>,
     pub(crate) linked_ports: [bool; 4],
@@ -133,7 +134,7 @@ impl SlaveInfo {
         SlaveAddress::StationAddress(self.configured_address)
     }
 
-    pub(crate) fn mailbox_rx_sm(&self) -> Option<SyncManager> {
+    pub fn mailbox_rx_sm(&self) -> Option<SyncManager> {
         for sm in self.sm.iter() {
             if let Some(SyncManagerType::MailboxRx(sm)) = sm {
                 return Some(*sm);
@@ -141,10 +142,26 @@ impl SlaveInfo {
         }
         None
     }
-    pub(crate) fn mailbox_tx_sm(&self) -> Option<SyncManager> {
+    pub fn mailbox_tx_sm(&self) -> Option<SyncManager> {
         for sm in self.sm.iter() {
             if let Some(SyncManagerType::MailboxTx(sm)) = sm {
                 return Some(*sm);
+            }
+        }
+        None
+    }
+    pub fn process_data_rx_sm_number(&self) -> Option<u8> {
+        for (i, sm) in self.sm.iter().enumerate() {
+            if let Some(SyncManagerType::ProcessDataRx) = sm {
+                return Some(i as u8);
+            }
+        }
+        None
+    }
+    pub fn process_data_tx_sm_number(&self) -> Option<u8> {
+        for (i, sm) in self.sm.iter().enumerate() {
+            if let Some(SyncManagerType::ProcessDataTx) = sm {
+                return Some(i as u8);
             }
         }
         None
