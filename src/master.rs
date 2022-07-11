@@ -1,15 +1,15 @@
-use crate::cyclic_task::{*, tasks::*};
+use crate::cyclic_task::{tasks::*, *};
 use crate::error::EcError;
 use crate::hal::*;
-use crate::register::AlStatusCode;
-use crate::register::SiiData;
 use crate::register::SyncManagerActivation;
 use crate::register::SyncManagerControl;
+use crate::register::{AlStatusCode, FmmuRegister};
+use crate::register::{SiiData, SyncManagerStatus};
 use crate::slave_network::AlState;
+use crate::slave_network::NetworkDescription;
 use crate::slave_network::PdoMapping;
 use crate::slave_network::Slave;
 use crate::slave_network::SlaveInfo;
-use crate::slave_network::NetworkDescription;
 use core::time::Duration;
 use paste::paste;
 
@@ -170,6 +170,7 @@ where
         } = self;
         let cyclic = cyclic.as_mut().unwrap();
         network.calculate_pdo_entry_positions_in_pdo_image();
+        let mut logical_address = 0;
         for slave in network.slaves() {
             //PDOマップが無ければ終わり
             if slave.pdo_mappings.is_none() {
@@ -183,6 +184,8 @@ where
             let mut rx_pdo_map_size = 0;
             if let Some(rx_sm_number) = slave_info.process_data_rx_sm_number() {
                 let rx_sm_assign = 0x1c10 + rx_sm_number as u16;
+                let rx_sm_address = SyncManagerControl::ADDRESS + 0x08 * rx_sm_number as u16;
+
                 // SMへのPDOマップ割り当てをクリア
                 cyclic.write_sdo(sdo_task_handle, slave_info, rx_sm_assign, 0, &[0])?;
 
@@ -269,7 +272,7 @@ where
                 cyclic
                     .write_register(
                         slave_info.slave_address().into(),
-                        SyncManagerControl::ADDRESS + 0x08 * rx_sm_number as u16,
+                        rx_sm_address,
                         &sm_control.0,
                     )
                     .unwrap(); //unwrap for now
@@ -279,10 +282,30 @@ where
                 cyclic
                     .write_register(
                         slave_info.slave_address().into(),
-                        SyncManagerActivation::ADDRESS + 0x08 * rx_sm_number as u16,
+                        rx_sm_address,
                         &sm_active.0,
                     )
                     .unwrap(); //unwrap for now
+
+                // FMMU Setting
+                let mut fmmu0 = FmmuRegister::new();
+                fmmu0.set_logical_start_address(logical_address);
+                logical_address += rx_pdo_map_size as u32;
+                fmmu0.set_length(rx_pdo_map_size);
+                fmmu0.set_logical_start_address(0);
+                fmmu0.set_logical_end_bit(0);
+                fmmu0.set_physical_start_address(rx_sm_address);
+                fmmu0.set_physical_start_bit(0);
+                fmmu0.set_read_enable(true);
+                fmmu0.set_write_enable(false);
+                fmmu0.set_enable(true);
+                cyclic
+                    .write_register(
+                        slave_info.slave_address().into(),
+                        FmmuRegister::ADDRESS,
+                        &fmmu0.0,
+                    )
+                    .unwrap();
             }
 
             ////////
@@ -291,6 +314,8 @@ where
             let mut tx_pdo_map_size = 0;
             if let Some(tx_sm_number) = slave_info.process_data_tx_sm_number() {
                 let tx_sm_assign = 0x1c10 + tx_sm_number as u16;
+                let tx_sm_address = SyncManagerControl::ADDRESS + 0x08 * tx_sm_number as u16;
+
                 //smへのPDOマップの割り当てをクリア
                 cyclic.write_sdo(sdo_task_handle, slave_info, tx_sm_assign, 0, &[0])?;
 
@@ -379,7 +404,7 @@ where
                 cyclic
                     .write_register(
                         slave_info.slave_address().into(),
-                        SyncManagerControl::ADDRESS + 0x08 * tx_sm_number as u16,
+                        tx_sm_address,
                         &sm_control.0,
                     )
                     .unwrap(); //unwrap for now
@@ -389,10 +414,53 @@ where
                 cyclic
                     .write_register(
                         slave_info.slave_address().into(),
-                        SyncManagerActivation::ADDRESS + 0x08 * tx_sm_number as u16,
+                        tx_sm_address,
                         &sm_active.0,
                     )
                     .unwrap(); //unwrap for now
+
+                // FMMU Setting
+                let mut fmmu1 = FmmuRegister::new();
+                fmmu1.set_logical_start_address(logical_address);
+                logical_address += tx_pdo_map_size as u32;
+                fmmu1.set_length(tx_pdo_map_size);
+                fmmu1.set_logical_start_address(0);
+                fmmu1.set_logical_end_bit(0);
+                fmmu1.set_physical_start_address(tx_sm_address);
+                fmmu1.set_physical_start_bit(0);
+                fmmu1.set_read_enable(false);
+                fmmu1.set_write_enable(true);
+                fmmu1.set_enable(true);
+                cyclic
+                    .write_register(
+                        slave_info.slave_address().into(),
+                        FmmuRegister::ADDRESS + FmmuRegister::SIZE as u16,
+                        &fmmu1.0,
+                    )
+                    .unwrap();
+            }
+
+            // FMMU2でメールボックスステータスをポーリングする。
+            if let Some(tx_sm) = slave_info.mailbox_tx_sm() {
+                let mb_tx_sm_address = SyncManagerStatus::ADDRESS + 0x08 * tx_sm.number as u16;
+                let mut fmmu2 = FmmuRegister::new();
+                fmmu2.set_logical_start_address(logical_address);
+                logical_address += SyncManagerStatus::SIZE as u32;
+                fmmu2.set_length(SyncManagerStatus::SIZE as u16);
+                fmmu2.set_logical_start_address(0);
+                fmmu2.set_logical_end_bit(0);
+                fmmu2.set_physical_start_address(mb_tx_sm_address);
+                fmmu2.set_physical_start_bit(0);
+                fmmu2.set_read_enable(false);
+                fmmu2.set_write_enable(true);
+                fmmu2.set_enable(true);
+                cyclic
+                    .write_register(
+                        slave_info.slave_address().into(),
+                        FmmuRegister::ADDRESS + 2 * FmmuRegister::SIZE as u16,
+                        &fmmu2.0,
+                    )
+                    .unwrap();
             }
         }
         Ok(())

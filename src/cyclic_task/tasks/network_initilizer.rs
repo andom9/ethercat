@@ -1,11 +1,11 @@
+use super::super::interface::*;
 use super::slave_initializer::SlaveInitializerError;
 use super::SlaveInitializer;
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
 use crate::frame::CommandType;
-use super::super::interface::*;
-use crate::slave_network::NetworkDescription;
 use crate::register::DlControl;
+use crate::slave_network::NetworkDescription;
 use crate::slave_network::Slave;
 
 use super::super::EtherCatSystemTime;

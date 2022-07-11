@@ -1,11 +1,10 @@
+use super::super::interface::*;
+use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use super::mailbox_reader::MailboxReader;
 use super::mailbox_writer::MailboxWriter;
-use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::frame::{MailboxErrorResponse, MailboxHeader};
 use crate::slave_network::SyncManager;
 use crate::EcError;
-use super::super::interface::*;
-
 
 #[derive(Debug, Clone)]
 pub enum MailboxTaskError {

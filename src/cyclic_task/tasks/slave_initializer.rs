@@ -1,18 +1,17 @@
+use super::super::interface::*;
+use super::super::{EtherCatSystemTime, ReceivedData};
 use super::sii_reader::SiiTaskError;
 use super::AlStateTransferError;
 use super::{al_state_transfer::AlStateTransfer, sii_reader::SiiReader};
-use super::super::{EtherCatSystemTime, ReceivedData};
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use super::super::interface::*;
 use crate::register::sii::*;
 use crate::register::{
-        CyclicOperationStartTime, DcActivation, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
-        Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, PdiControl,
-        Sync0CycleTime, Sync1CycleTime,
-        DlControl, DlInformation, DlStatus, DlUserWatchDog, FixedStationAddress, FmmuRegister,
-        RxErrorCounter, SyncManagerActivation, SyncManagerChannelWatchDog, SyncManagerControl,
-        SyncManagerStatus, WatchDogDivider,
+    CyclicOperationStartTime, DcActivation, DlControl, DlInformation, DlStatus, DlUserWatchDog,
+    FixedStationAddress, FmmuRegister, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
+    Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, PdiControl,
+    RxErrorCounter, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
+    SyncManagerChannelWatchDog, SyncManagerControl, SyncManagerStatus, WatchDogDivider,
 };
 use crate::slave_network::SyncManagerType;
 use crate::slave_network::{AlState, SlaveInfo, SyncManager};
@@ -90,12 +89,6 @@ enum State {
     ClearCyclicOperationStartTime,
     ClearSync0CycleTime,
     ClearSync1CycleTime,
-    //ClearLatchEdge,
-    //ClearLatchEvent,
-    //ClearLatch0PositiveEdgeValue,
-    //ClearLatch0NegativeEdgeValue,
-    //ClearLatch1PositiveEdgeValue,
-    //ClearLatch1NegativeEdgeValue,
     Complete,
 }
 
@@ -375,40 +368,7 @@ impl CyclicProcess for SlaveInitializer {
                     Command::new_write(self.slave_address.into(), Sync1CycleTime::ADDRESS);
                 self.buffer.fill(0);
                 Some((command, &self.buffer[..Sync1CycleTime::SIZE]))
-            } //State::ClearLatchEdge => {
-              //    let command = Command::new_write(self.slave_address.into(), LatchEdge::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..LatchEdge::SIZE]))
-              //}
-              //State::ClearLatchEvent => {
-              //    let command = Command::new_write(self.slave_address.into(), LatchEvent::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..LatchEvent::SIZE]))
-              //}
-              //State::ClearLatch0PositiveEdgeValue => {
-              //    let command =
-              //        Command::new_write(self.slave_address.into(), Latch0PositiveEdgeValue::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..Latch0PositiveEdgeValue::SIZE]))
-              //}
-              //State::ClearLatch0NegativeEdgeValue => {
-              //    let command =
-              //        Command::new_write(self.slave_address.into(), Latch0NegativeEdgeValue::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..Latch0NegativeEdgeValue::SIZE]))
-              //}
-              //State::ClearLatch1PositiveEdgeValue => {
-              //    let command =
-              //        Command::new_write(self.slave_address.into(), Latch1PositiveEdgeValue::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..Latch1PositiveEdgeValue::SIZE]))
-              //}
-              //State::ClearLatch1NegativeEdgeValue => {
-              //    let command =
-              //        Command::new_write(self.slave_address.into(), Latch1NegativeEdgeValue::ADDRESS);
-              //    self.buffer.fill(0);
-              //    Some((command, &self.buffer[..Latch1NegativeEdgeValue::SIZE]))
-              //}
+            }
         };
         if let Some((command, _)) = command_and_data {
             self.command = command;
@@ -484,10 +444,15 @@ impl CyclicProcess for SlaveInitializer {
                 slave.ports[3] = dl_info.port3_type();
 
                 slave.support_dc = dl_info.dc_supported();
-                slave.is_dc_range_64bits = dl_info.dc_range();
+                if dl_info.dc_supported(){
+                    assert!(!dl_info.dc_range(), "A slave not support 64 bit dc range");
+                }
+                //slave.is_dc_range_64bits = dl_info.dc_range();
                 slave.support_fmmu_bit_operation = !dl_info.fmmu_bit_operation_not_supported();
-                slave.support_lrw = !dl_info.not_lrw_supported(); //これが無いと事実上プロセスデータに対応しない。
-                slave.support_rw = !dl_info.not_bafrw_supported(); //これが無いと事実上Dcに対応しない。
+                //slave.support_lrw = !dl_info.not_lrw_supported(); //これが無いと事実上プロセスデータに対応しない。
+                assert!(dl_info.not_lrw_supported(), "A slave are not supported lrw");
+
+                //slave.support_rw = !dl_info.not_bafrw_supported();
                 slave.ram_size_kb = dl_info.ram_size();
                 //fmmuの確認
                 let number_of_fmmu = dl_info.number_of_supported_fmmu_entities();
@@ -690,12 +655,6 @@ impl CyclicProcess for SlaveInitializer {
             State::ClearSync1CycleTime => {
                 self.state = State::Complete;
             }
-            //State::ClearLatchEdge => self.state = State::ClearLatchEvent,
-            //State::ClearLatchEvent => self.state = State::ClearLatch0PositiveEdgeValue,
-            //State::ClearLatch0PositiveEdgeValue => self.state = State::ClearLatch0NegativeEdgeValue,
-            //State::ClearLatch0NegativeEdgeValue => self.state = State::ClearLatch1PositiveEdgeValue,
-            //State::ClearLatch1PositiveEdgeValue => self.state = State::ClearLatch1NegativeEdgeValue,
-            //State::ClearLatch1NegativeEdgeValue => self.state = State::Complete,
         }
     }
 }

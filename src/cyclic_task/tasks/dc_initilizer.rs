@@ -1,7 +1,6 @@
 use crate::cyclic_task::CyclicProcess;
 use crate::cyclic_task::{
-    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData,
-    SlaveAddress,
+    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData, SlaveAddress,
 };
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
@@ -131,7 +130,6 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                     DcSystemTime::ADDRESS,
                 );
                 self.buffer.fill(0);
-                //self.time_buf = self.duration_from_2000_0_0.;
                 Some((command, &self.buffer[..DcSystemTime::SIZE]))
             }
             State::CalculateDelay((_, pos)) => {
@@ -252,6 +250,7 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                         recv_time.receive_time_port2(),
                         recv_time.receive_time_port3(),
                     ];
+                    
 
                     if self.first_dc_slave.is_some() && self.first_dc_slave.unwrap() < *pos {
                         let first_recieved_port = slave

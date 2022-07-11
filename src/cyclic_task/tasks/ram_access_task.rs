@@ -1,9 +1,8 @@
+use super::super::interface::*;
 use super::super::EtherCatSystemTime;
 use super::super::ReceivedData;
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use super::super::interface::*;
-
 
 #[derive(Debug)]
 enum State {

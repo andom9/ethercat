@@ -1,6 +1,6 @@
+use super::super::interface::*;
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use super::super::interface::*;
 use crate::register::{SiiAccess, SiiAddress, SiiControl, SiiData};
 use crate::util::const_max;
 

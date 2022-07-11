@@ -1,15 +1,13 @@
+use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use super::mailbox::MailboxTask;
 use super::mailbox::MailboxTaskError;
 use super::sdo::SdoTaskError;
-use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 
+use super::super::interface::*;
+use crate::error::EcError;
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoDownloadNormalHeader, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
 use crate::slave_network::{SlaveInfo, SyncManager};
-use crate::{
-    error::EcError,
-};
-use super::super::interface::*;
 
 #[derive(Debug)]
 enum State {

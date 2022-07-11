@@ -1,8 +1,8 @@
+use super::super::interface::*;
 use super::super::EtherCatSystemTime;
 use super::super::ReceivedData;
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use super::super::interface::*;
 use crate::register::AlStatus;
 use crate::register::AlStatusCode;
 use crate::slave_network::AlState;

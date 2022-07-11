@@ -1,11 +1,11 @@
+use super::super::interface::*;
+use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use super::mailbox::MailboxTaskError;
 use super::sdo_downloader::SdoDownloader;
 use super::sdo_uploader::SdoUploader;
-use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
 use crate::frame::AbortCode;
 use crate::slave_network::SlaveInfo;
 use crate::EcError;
-use super::super::interface::*;
 
 #[derive(Debug, Clone)]
 pub enum SdoTaskError {

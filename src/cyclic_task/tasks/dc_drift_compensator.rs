@@ -1,7 +1,6 @@
 use crate::cyclic_task::CyclicProcess;
 use crate::cyclic_task::{
-    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData,
-    SlaveAddress,
+    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData, SlaveAddress,
 };
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
@@ -18,7 +17,8 @@ enum State {
 
 #[derive(Debug)]
 pub struct DcDriftCompensator {
-    sys_time_offset: i32,
+    sys_time_offset: i64,
+    last_dc_time: EtherCatSystemTime,
     state: State,
     command: Command,
     buffer: [u8; buffer_size()],
@@ -30,6 +30,7 @@ impl DcDriftCompensator {
     pub fn new() -> Self {
         Self {
             sys_time_offset: 0,
+            last_dc_time: EtherCatSystemTime(0),
             state: State::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -61,8 +62,12 @@ impl DcDriftCompensator {
     }
 
     /// offset = DC system time - local system time
-    pub fn systemtime_offset_ns(&self) -> i32 {
+    pub fn systemtime_offset_ns(&self) -> i64 {
         self.sys_time_offset
+    }
+
+    pub fn last_dc_time(&self) -> EtherCatSystemTime {
+        self.last_dc_time
     }
 
     pub fn stop(&mut self) {
@@ -111,12 +116,13 @@ impl CyclicProcess for DcDriftCompensator {
                     self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
                     let slave_systime = DcSystemTime(data).local_system_time();
+                    self.last_dc_time = EtherCatSystemTime(slave_systime);
                     if systime.0 < slave_systime {
-                        let offset_abs = (slave_systime - systime.0).min(i32::MAX as u64);
-                        self.sys_time_offset = offset_abs as i32;
+                        let offset_abs = (slave_systime - systime.0).min(i64::MAX as u64);
+                        self.sys_time_offset = offset_abs as i64;
                     } else {
-                        let offset_abs = (systime.0 - slave_systime).min(i32::MAX as u64);
-                        self.sys_time_offset = offset_abs as i32;
+                        let offset_abs = (systime.0 - slave_systime).min(i64::MAX as u64);
+                        self.sys_time_offset = offset_abs as i64;
                     }
                 }
             }

@@ -1,4 +1,4 @@
-mod slave;
 mod network;
-pub use slave::*;
+mod slave;
 pub use network::*;
+pub use slave::*;

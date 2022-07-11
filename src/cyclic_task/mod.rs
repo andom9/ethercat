@@ -1,5 +1,4 @@
 pub mod tasks;
-//pub use tasks::*;
 mod interface;
 pub use interface::*;
 
@@ -159,7 +158,10 @@ where
         Ok(())
     }
 
-    fn enqueue_commands(&mut self, sys_time: EtherCatSystemTime) -> Result<bool, CommandInterfaceError> {
+    fn enqueue_commands(
+        &mut self,
+        sys_time: EtherCatSystemTime,
+    ) -> Result<bool, CommandInterfaceError> {
         let mut complete = true;
         for (i, task_enum) in self.tasks.iter_mut().enumerate() {
             if let TaskOption::Task((task, sent)) = task_enum {

@@ -1,5 +1,5 @@
-use crate::cyclic_task::*;
 use super::*;
+use crate::cyclic_task::*;
 
 pub const EMPTY_SLAVE: Option<Slave> = None;
 

@@ -1,11 +1,11 @@
+use super::super::interface::*;
 use super::super::EtherCatSystemTime;
 use super::super::ReceivedData;
 use crate::cyclic_task::CyclicProcess;
 use crate::error::EcError;
-use super::super::interface::*;
 use crate::register::AlStatusCode;
-use crate::register::{AlControl, AlStatus};
 use crate::register::SiiAccess;
+use crate::register::{AlControl, AlStatus};
 use crate::slave_network::AlState;
 use crate::util::const_max;
 use core::convert::TryFrom;

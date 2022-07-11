@@ -1,5 +1,5 @@
-use crate::register::PortPhysics;
 use crate::cyclic_task::*;
+use crate::register::PortPhysics;
 use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
@@ -100,10 +100,7 @@ pub struct SlaveInfo {
     pub sm: [Option<SyncManagerType>; 4],
 
     pub support_dc: bool,
-    pub is_dc_range_64bits: bool,
     pub support_fmmu_bit_operation: bool,
-    pub support_lrw: bool,
-    pub support_rw: bool,
 
     pub support_coe: bool,
 

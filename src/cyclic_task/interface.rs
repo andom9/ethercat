@@ -151,7 +151,10 @@ where
         pdus
     }
 
-    pub fn poll<I: Into<Duration> + Clone>(&mut self, timeout: I) -> Result<(), CommandInterfaceError> {
+    pub fn poll<I: Into<Duration> + Clone>(
+        &mut self,
+        timeout: I,
+    ) -> Result<(), CommandInterfaceError> {
         self.transmit(timeout.clone())?;
         self.receive(timeout)
     }

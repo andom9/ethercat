@@ -1,5 +1,6 @@
-use super::mailbox::MailboxTaskError;
+use super::super::interface::*;
 use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
+use super::mailbox::MailboxTaskError;
 use crate::frame::MailboxHeader;
 use crate::slave_network::SyncManager;
 use crate::{
@@ -7,7 +8,6 @@ use crate::{
     register::{SyncManagerActivation, SyncManagerStatus},
     util::const_max,
 };
-use super::super::interface::*;
 
 const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 

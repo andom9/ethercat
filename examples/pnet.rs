@@ -1,10 +1,10 @@
-use ethercat_master::cyclic_task::{*, tasks::*};
+use ethercat_master::cyclic_task::{tasks::*, *};
 use ethercat_master::hal::*;
 use ethercat_master::master::CyclicTaskType;
 use ethercat_master::master::EtherCatMaster;
-use ethercat_master::slave_network::NetworkDescription;
 use ethercat_master::register::sii::ProductCode;
 use ethercat_master::slave_network::AlState;
+use ethercat_master::slave_network::NetworkDescription;
 use ethercat_master::slave_network::Slave;
 use ethercat_master::slave_network::SyncManager;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
