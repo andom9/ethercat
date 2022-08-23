@@ -1,17 +1,17 @@
 use super::super::interface::*;
 use super::slave_initializer::SlaveInitializerError;
 use super::SlaveInitializer;
-use crate::cyclic_task::CyclicProcess;
+use crate::cyclic_task::Cyclic;
 use crate::error::EcError;
 use crate::frame::CommandType;
 use crate::register::DlControl;
 use crate::slave_network::NetworkDescription;
 use crate::slave_network::Slave;
 
+use super::super::CommandData;
 use super::super::EtherCatSystemTime;
-use super::super::ReceivedData;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NetworkInitializerError {
     Init(EcError<SlaveInitializerError>),
     TooManySlaves,
@@ -29,7 +29,7 @@ impl From<EcError<SlaveInitializerError>> for NetworkInitializerError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
     Error(EcError<NetworkInitializerError>),
@@ -51,6 +51,10 @@ pub struct NetworkInitializer<'a, 'b, 'c, 'd> {
 }
 
 impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
+    pub const fn required_buffer_size() -> usize {
+        buffer_size()
+    }
+
     pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
             initilizer: SlaveInitializer::new(),
@@ -84,8 +88,12 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
     }
 }
 
-impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
-    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         log::info!("send {:?}", self.state);
 
         let command_and_data = match &self.state {
@@ -93,21 +101,21 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
             State::Error(_) => None,
             State::CountSlaves => {
                 let command = Command::new(CommandType::BWR, 0, DlControl::ADDRESS);
-                self.buffer.fill(0);
+                buf[..DlControl::SIZE].fill(0);
                 // ループポートを設定する。
                 // ・EtherCat以外のフレームを削除する。
                 // ・ソースMACアドレスを変更して送信する。
                 // ・ポートを自動開閉する。
-                let mut dl_control = DlControl(&mut self.buffer);
+                let mut dl_control = DlControl(buf);
                 dl_control.set_forwarding_rule(true);
                 dl_control.set_tx_buffer_size(7);
-                Some((command, &self.buffer[..DlControl::SIZE]))
+                Some((command, DlControl::SIZE))
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.start(*count);
-                self.initilizer.next_command(sys_time)
+                self.initilizer.next_command(buf)
             }
-            State::WaitInitSlaves(_) => self.initilizer.next_command(sys_time),
+            State::WaitInitSlaves(_) => self.initilizer.next_command(buf),
             State::Complete => None,
         };
         if let Some((command, _)) = command_and_data {
@@ -118,13 +126,13 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for NetworkInitializer<'a, 'b, 'c, 'd> {
 
     fn recieve_and_process(
         &mut self,
-        recv_data: Option<ReceivedData>,
+        recv_data: Option<&CommandData>,
         sys_time: EtherCatSystemTime,
     ) {
         //log::info!("recv {:?}",self.state);
 
         let wkc = if let Some(ref recv_data) = recv_data {
-            let ReceivedData { command, wkc, .. } = recv_data;
+            let CommandData { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }

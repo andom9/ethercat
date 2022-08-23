@@ -1,7 +1,6 @@
 use super::super::interface::*;
 use super::super::EtherCatSystemTime;
-use super::super::ReceivedData;
-use crate::cyclic_task::CyclicProcess;
+use crate::cyclic_task::socket::CommandData;
 use crate::error::EcError;
 
 #[derive(Debug)]
@@ -24,6 +23,10 @@ pub struct RamAccessTask {
 }
 
 impl RamAccessTask {
+    pub const fn required_buffer_size()->usize{
+        16
+    }
+
     pub fn new() -> Self {
         Self {
             state: State::Idle,
@@ -65,8 +68,8 @@ impl RamAccessTask {
     }
 }
 
-impl CyclicProcess for RamAccessTask {
-    fn next_command(&mut self, _: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl RamAccessTask {
+    fn next_command(&mut self) -> Option<(Command, &[u8])> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -82,9 +85,9 @@ impl CyclicProcess for RamAccessTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: Option<ReceivedData>, _: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: Option<CommandData>) {
         let data = if let Some(recv_data) = recv_data {
-            let ReceivedData { command, data, wkc } = recv_data;
+            let CommandData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }

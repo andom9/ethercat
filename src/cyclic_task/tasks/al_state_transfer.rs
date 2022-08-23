@@ -1,7 +1,7 @@
 use super::super::interface::*;
 use super::super::EtherCatSystemTime;
-use super::super::ReceivedData;
-use crate::cyclic_task::CyclicProcess;
+use crate::cyclic_task::socket::CommandData;
+use crate::cyclic_task::Cyclic;
 use crate::error::EcError;
 use crate::register::AlStatusCode;
 use crate::register::SiiAccess;
@@ -33,7 +33,7 @@ const fn max_timeout_ms() -> u32 {
     max
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AlStateTransferError {
     TimeoutMs(u32),
     AlStatusCode((AlState, AlStatusCode)),
@@ -45,7 +45,7 @@ impl From<AlStateTransferError> for EcError<AlStateTransferError> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Error(EcError<AlStateTransferError>),
     Idle,
@@ -65,12 +65,15 @@ pub struct AlStateTransfer {
     slave_address: TargetSlave,
     target_al: AlState,
     command: Command,
-    buffer: [u8; buffer_size()],
+    //buffer: [u8; buffer_size()],
     current_al_state: AlState,
     timeout_ms: u32,
 }
 
 impl AlStateTransfer {
+    pub const fn required_buffer_size() -> usize {
+        buffer_size()
+    }
     pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),
@@ -78,7 +81,7 @@ impl AlStateTransfer {
             slave_address: TargetSlave::default(),
             target_al: AlState::Init,
             command: Command::default(),
-            buffer: [0; buffer_size()],
+            //buffer: [0; buffer_size()],
             current_al_state: AlState::Init,
             timeout_ms: 0,
         }
@@ -88,7 +91,7 @@ impl AlStateTransfer {
         self.slave_address = slave_address;
         self.target_al = target_al_state;
         self.state = State::Read;
-        self.buffer.fill(0);
+        //self.buffer.fill(0);
         self.command = Command::default();
     }
 
@@ -101,47 +104,51 @@ impl AlStateTransfer {
     }
 }
 
-impl CyclicProcess for AlStateTransfer {
-    fn next_command(&mut self, _: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl Cyclic for AlStateTransfer {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
                 self.command = Command::new_read(self.slave_address, AlStatus::ADDRESS);
 
-                self.buffer.fill(0);
-                Some((self.command, &self.buffer[..AlStatus::SIZE]))
+                buf[..AlStatus::SIZE].fill(0);
+                Some((self.command, AlStatus::SIZE))
             }
             State::ResetError(current_al_state) => {
                 self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
 
-                self.buffer.fill(0);
-                let mut al_control = AlControl(&mut self.buffer);
+                buf[..AlStatus::SIZE].fill(0);
+                let mut al_control = AlControl(buf);
                 al_control.set_state(current_al_state as u8);
                 al_control.set_acknowledge(true);
-                Some((self.command, &self.buffer[..AlControl::SIZE]))
+                Some((self.command, AlControl::SIZE))
             }
             State::OffAck(current_al_state) => {
                 self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
 
-                self.buffer.fill(0);
-                let mut al_control = AlControl(&mut self.buffer);
+                buf[..AlControl::SIZE].fill(0);
+                let mut al_control = AlControl(buf);
                 al_control.set_state(current_al_state as u8);
                 al_control.set_acknowledge(false);
-                Some((self.command, &self.buffer[..AlControl::SIZE]))
+                Some((self.command, AlControl::SIZE))
             }
             State::ResetSiiOwnership => {
-                self.buffer.fill(0);
-                let mut sii_access = SiiAccess(&mut self.buffer);
+                buf[..SiiAccess::SIZE].fill(0);
+                let mut sii_access = SiiAccess(buf);
                 sii_access.set_owner(true);
                 sii_access.set_reset_access(false);
                 self.command = Command::new_write(self.slave_address, SiiAccess::ADDRESS);
 
-                Some((self.command, &self.buffer[..SiiAccess::SIZE]))
+                Some((self.command, SiiAccess::SIZE))
             }
             State::Request => {
-                self.buffer.fill(0);
-                let mut al_control = AlControl(&mut self.buffer);
+                buf[..AlControl::SIZE].fill(0);
+                let mut al_control = AlControl(buf);
                 let target_al = self.target_al;
                 al_control.set_state(target_al as u8);
                 self.command = Command::new_write(self.slave_address, AlControl::ADDRESS);
@@ -156,12 +163,12 @@ impl CyclicProcess for AlStateTransfer {
                     (_, AlState::SafeOperational) => BACK_TO_SAFEOP_TIMEOUT_DEFAULT_MS,
                     (_, AlState::InvalidOrMixed) => max_timeout_ms(),
                 };
-                Some((self.command, &self.buffer[..AlControl::SIZE]))
+                Some((self.command, AlControl::SIZE))
             }
             State::Poll => {
                 self.command = Command::new_read(self.slave_address, AlStatus::ADDRESS);
-                self.buffer.fill(0);
-                Some((self.command, &self.buffer[..AlStatus::SIZE]))
+                buf[..AlStatus::SIZE].fill(0);
+                Some((self.command, AlStatus::SIZE))
             }
             State::Complete => None,
         }
@@ -169,11 +176,12 @@ impl CyclicProcess for AlStateTransfer {
 
     fn recieve_and_process(
         &mut self,
-        recv_data: Option<ReceivedData>,
+        recv_data: Option<&CommandData>,
         sys_time: EtherCatSystemTime,
     ) {
         let data = if let Some(recv_data) = recv_data {
-            let ReceivedData { command, data, wkc } = recv_data;
+            let CommandData { command, data, wkc } = recv_data;
+            let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }

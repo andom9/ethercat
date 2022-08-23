@@ -1,5 +1,5 @@
 use super::super::interface::*;
-use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
+use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTaskError;
 use crate::frame::{MailboxErrorResponse, MailboxHeader, MailboxType};
 use crate::slave_network::SyncManager;
@@ -11,7 +11,7 @@ use crate::{
 
 const MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS: u32 = 2000;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Error(EcError<MailboxTaskError>),
     Idle,
@@ -29,28 +29,28 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-pub struct MailboxReader<'a> {
+pub struct MailboxReader {
     timer_start: EtherCatSystemTime,
     command: Command,
     slave_address: SlaveAddress,
-    buffer: [u8; buffer_size()],
+    //buffer: [u8; buffer_size()],
     state: State,
-    recv_buf: &'a mut [u8],
+    //recv_buf: &'a mut [u8],
     activation_buf: SyncManagerActivation<[u8; SyncManagerActivation::SIZE]>,
     sm_ado_offset: u16,
     sm_size: u16,
     sm_start_address: u16,
 }
 
-impl<'a> MailboxReader<'a> {
-    pub fn new(recv_buf: &'a mut [u8]) -> Self {
+impl MailboxReader {
+    pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),
             command: Command::default(),
             slave_address: SlaveAddress::default(),
-            buffer: [0; buffer_size()],
+            //buffer: [0; buffer_size()],
             state: State::Idle,
-            recv_buf,
+            //recv_buf,
             activation_buf: SyncManagerActivation([0; SyncManagerActivation::SIZE]),
             sm_ado_offset: 0,
             sm_size: 0,
@@ -58,31 +58,38 @@ impl<'a> MailboxReader<'a> {
         }
     }
 
-    pub fn take_buffer(self) -> &'a mut [u8] {
-        self.recv_buf
-    }
+    //pub fn take_buffer(self) -> &'a mut [u8] {
+    //    self.recv_buf
+    //}
 
-    pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
-        MailboxHeader(&self.recv_buf[..MailboxHeader::SIZE])
-    }
+    // pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
+    //     MailboxHeader(&self.recv_buf[..MailboxHeader::SIZE])
+    // }
 
-    pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
-        MailboxHeader(&mut self.recv_buf[..MailboxHeader::SIZE])
-    }
+    // pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
+    //     MailboxHeader(&mut self.recv_buf[..MailboxHeader::SIZE])
+    // }
 
-    pub fn mailbox_data(&self) -> &[u8] {
-        &self.recv_buf[MailboxHeader::SIZE..]
-    }
+    // pub fn mailbox_data(&self) -> &[u8] {
+    //     &self.recv_buf[MailboxHeader::SIZE..]
+    // }
 
-    pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-        &mut self.recv_buf[MailboxHeader::SIZE..]
+    // pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
+    //     &mut self.recv_buf[MailboxHeader::SIZE..]
+    // }
+
+    pub fn mailbox_data<'a>(&self, buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
+        (
+            MailboxHeader(&buf[..MailboxHeader::SIZE]),
+            &buf[MailboxHeader::SIZE..],
+        )
     }
 
     pub fn start(&mut self, slave_address: SlaveAddress, tx_sm: SyncManager, wait_full: bool) {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
-        self.buffer.fill(0);
+        //self.buffer.fill(0);
         self.state = State::CheckMailboxFull((true, wait_full));
 
         self.sm_ado_offset = tx_sm.number as u16 * 0x08;
@@ -90,7 +97,7 @@ impl<'a> MailboxReader<'a> {
         self.sm_start_address = tx_sm.start_address;
     }
 
-    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<MailboxTaskError>>> {
+    pub fn wait(&self) -> Option<Result<(), EcError<MailboxTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -99,34 +106,34 @@ impl<'a> MailboxReader<'a> {
     }
 }
 
-impl<'a> CyclicProcess for MailboxReader<'a> {
-    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl Cyclic for MailboxReader {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         log::info!("send {:?}", self.state);
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
-            State::CheckMailboxFull((is_first, _)) => {
-                if is_first {
-                    self.timer_start = sys_time;
-                }
+            State::CheckMailboxFull(_) => {
                 self.command = Command::new_read(
                     self.slave_address.into(),
                     SyncManagerStatus::ADDRESS + self.sm_ado_offset,
                 );
-                Some((
-                    self.command,
-                    &self.buffer[..SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
-                ))
+                let length = SyncManagerStatus::SIZE + SyncManagerActivation::SIZE;
+                buf[..length].fill(0);
+                Some((self.command, length))
             }
             State::Read => {
                 self.command = Command::new_read(self.slave_address.into(), self.sm_start_address);
-                if self.recv_buf.len() < self.sm_size as usize {
+                if buf.len() < self.sm_size as usize {
                     self.state = State::Error(MailboxTaskError::BufferSmall.into());
                     None
                 } else {
-                    self.recv_buf.fill(0);
-                    Some((self.command, &self.recv_buf[..self.sm_size as usize]))
+                    buf[..self.sm_size as usize].fill(0);
+                    Some((self.command, self.sm_size as usize))
                 }
             }
             State::RequestRepeat => {
@@ -134,29 +141,29 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
                     self.slave_address.into(),
                     SyncManagerActivation::ADDRESS + self.sm_ado_offset,
                 );
-                self.buffer.fill(0);
                 self.activation_buf
                     .set_repeat(!self.activation_buf.repeat()); //toggle
-                Some((self.command, &self.activation_buf.0))
+                buf[..self.activation_buf.0.len()].copy_from_slice(&self.activation_buf.0);
+                Some((self.command, self.activation_buf.0.len()))
             }
             State::WaitRepeatAck => {
                 self.command = Command::new_read(
                     self.slave_address.into(),
                     SyncManagerPdiControl::ADDRESS + self.sm_ado_offset,
                 );
-                self.buffer.fill(0);
-                Some((self.command, &self.buffer[..SyncManagerPdiControl::SIZE]))
+                buf[..SyncManagerPdiControl::SIZE].fill(0);
+                Some((self.command, SyncManagerPdiControl::SIZE))
             }
         }
     }
 
     fn recieve_and_process(
         &mut self,
-        recv_data: Option<ReceivedData>,
+        recv_data: Option<&CommandData>,
         sys_time: EtherCatSystemTime,
     ) {
         if let Some(ref recv_data) = recv_data {
-            let ReceivedData { command, data, wkc } = recv_data;
+            let CommandData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
@@ -165,7 +172,10 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
                 State::Idle => {}
                 State::Error(_) => {}
                 State::Complete => {}
-                State::CheckMailboxFull((_, wait_full)) => {
+                State::CheckMailboxFull((is_first, wait_full)) => {
+                    if is_first {
+                        self.timer_start = sys_time;
+                    }
                     if wkc != 1 {
                         self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
                     } else {
@@ -187,14 +197,14 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
                     if wkc != 1 {
                         self.state = State::RequestRepeat;
                     } else {
-                        self.recv_buf
-                            .iter_mut()
-                            .zip(data.iter())
-                            .for_each(|(buf, data)| *buf = *data);
+                        //self.recv_buf
+                        //    .iter_mut()
+                        //    .zip(data.iter())
+                        //    .for_each(|(buf, data)| *buf = *data);
                         let header = MailboxHeader(&data);
                         if header.mailbox_type() == MailboxType::Error as u8 {
                             let mut err = MailboxErrorResponse::new();
-                            err.0.copy_from_slice(&self.recv_buf[..4]);
+                            err.0.copy_from_slice(&data[..4]);
                             self.state = State::Error(MailboxTaskError::ErrorResponse(err).into());
                         } else {
                             self.state = State::Complete;
@@ -225,9 +235,9 @@ impl<'a> CyclicProcess for MailboxReader<'a> {
     }
 }
 
-const fn buffer_size() -> usize {
-    let mut size = 0;
-    size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
-    size = const_max(size, SyncManagerPdiControl::SIZE);
-    size
-}
+//const fn buffer_size() -> usize {
+//    let mut size = 0;
+//    size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
+//    size = const_max(size, SyncManagerPdiControl::SIZE);
+//    size
+//}
