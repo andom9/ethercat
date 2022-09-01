@@ -1,14 +1,14 @@
-use crate::cyclic_task::CyclicProcess;
-use crate::cyclic_task::{
-    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData, SlaveAddress,
-};
+use crate::cyclic_task::Cyclic;
+use crate::cyclic_task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
+use crate::frame::CommandType;
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
 use crate::slave_network::NetworkDescription;
 use crate::util::const_max;
+use crate::EcError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
     Error(EcError<()>),
@@ -27,6 +27,10 @@ pub struct DcDriftCompensator {
 }
 
 impl DcDriftCompensator {
+    pub const fn required_buffer_size() -> usize {
+        buffer_size()
+    }
+
     pub fn new() -> Self {
         Self {
             sys_time_offset: 0,
@@ -75,8 +79,12 @@ impl DcDriftCompensator {
     }
 }
 
-impl CyclicProcess for DcDriftCompensator {
-    fn next_command(&mut self, _: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl Cyclic for DcDriftCompensator {
+    fn is_finished(&self) -> bool {
+        todo!()
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match &self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -86,19 +94,20 @@ impl CyclicProcess for DcDriftCompensator {
                     SlaveAddress::SlavePosition(self.first_dc_slave.unwrap()).get_ado(),
                     DcSystemTime::ADDRESS,
                 );
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..DcSystemTime::SIZE]))
+                buf[..DcSystemTime::SIZE].fill(0);
+                Some((command, DcSystemTime::SIZE))
             }
         }
     }
 
     fn recieve_and_process(
         &mut self,
-        recv_data: Option<ReceivedData>,
+        recv_data: Option<&CommandData>,
         systime: EtherCatSystemTime,
     ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
-            let ReceivedData { command, data, wkc } = recv_data;
+            let CommandData { command, data, wkc } = recv_data;
+            let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }

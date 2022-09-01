@@ -5,7 +5,7 @@ use crate::util::*;
 use core::time::Duration;
 use log::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CommandInterfaceError {
     TxError,
     RxError,

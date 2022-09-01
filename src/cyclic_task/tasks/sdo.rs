@@ -1,5 +1,5 @@
 use super::super::interface::*;
-use super::super::{CyclicProcess, EtherCatSystemTime, ReceivedData};
+use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTaskError;
 use super::sdo_downloader::SdoDownloader;
 use super::sdo_uploader::SdoUploader;
@@ -7,7 +7,7 @@ use crate::frame::AbortCode;
 use crate::slave_network::SlaveInfo;
 use crate::EcError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SdoTaskError {
     Mailbox(MailboxTaskError),
     MailboxAlreadyExisted,
@@ -33,7 +33,7 @@ impl From<EcError<MailboxTaskError>> for EcError<SdoTaskError> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Error(EcError<SdoTaskError>),
     Idle,
@@ -48,59 +48,66 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-enum Inner<'a> {
-    Reader(SdoUploader<'a>),
-    Writer(SdoDownloader<'a>),
-    Taked,
+enum Inner {
+    Reader(SdoUploader),
+    Writer(SdoDownloader),
+    //Taked,
 }
 
-impl<'a> Inner<'a> {
-    fn take_buffer(self) -> &'a mut [u8] {
-        match self {
-            Inner::Reader(reader) => reader.take_buffer(),
-            Inner::Writer(writer) => writer.take_buffer(),
-            Inner::Taked => unreachable!(),
-        }
-    }
-}
+//impl<'a> Inner<'a> {
+//    fn take_buffer(self) -> &'a mut [u8] {
+//        match self {
+//            Inner::Reader(reader) => reader.take_buffer(),
+//            Inner::Writer(writer) => writer.take_buffer(),
+//            Inner::Taked => unreachable!(),
+//        }
+//    }
+//}
 
-impl<'a> Default for Inner<'a> {
-    fn default() -> Self {
-        Inner::Taked
-    }
-}
+//impl<'a> Default for Inner<'a> {
+//    fn default() -> Self {
+//        Inner::Taked
+//    }
+//}
 
 #[derive(Debug)]
-pub struct SdoTask<'a> {
+pub struct SdoTask {
     state: State,
-    inner: Inner<'a>,
+    inner: Inner,
 }
 
-impl<'a> SdoTask<'a> {
-    pub fn new(mb_buf: &'a mut [u8]) -> Self {
+impl SdoTask {
+    pub fn new() -> Self {
         Self {
             state: State::Idle,
-            inner: Inner::Reader(SdoUploader::new(mb_buf)),
+            inner: Inner::Reader(SdoUploader::new()),
         }
     }
 
-    pub fn take_buffer(self) -> &'a mut [u8] {
-        self.inner.take_buffer()
-    }
+    //pub fn take_buffer(self) -> &'a mut [u8] {
+    //    self.inner.take_buffer()
+    //}
 
-    pub fn sdo_data(&self) -> &[u8] {
+    pub fn sdo_data<'a>(&self, mb_data: &'a [u8]) -> &'a [u8] {
         match &self.inner {
-            Inner::Reader(reader) => reader.sdo_data(),
+            Inner::Reader(reader) => reader.sdo_data(mb_data),
             Inner::Writer(_) => &[],
-            Inner::Taked => unreachable!(),
+            //Inner::Taked => unreachable!(),
         }
+        //SdoUploader::sdo_data(mb_data)
     }
 
-    pub fn start_to_read(&mut self, slave_info: &SlaveInfo, index: u16, sub_index: u8) {
-        let inner = core::mem::take(&mut self.inner);
-        let buf = inner.take_buffer();
-        let mut reader = SdoUploader::new(buf);
-        reader.start(slave_info, index, sub_index);
+    pub fn start_to_read(
+        &mut self,
+        slave_info: &SlaveInfo,
+        index: u16,
+        sub_index: u8,
+        buf: &mut [u8],
+    ) {
+        //let inner = core::mem::take(&mut self.inner);
+        //let buf = inner.take_buffer();
+        let mut reader = SdoUploader::new();
+        reader.start(slave_info, index, sub_index, buf);
         self.inner = Inner::Reader(reader);
         self.state = State::Processing;
     }
@@ -111,11 +118,12 @@ impl<'a> SdoTask<'a> {
         index: u16,
         sub_index: u8,
         data: &[u8],
+        buf: &mut [u8],
     ) {
-        let inner = core::mem::take(&mut self.inner);
-        let buf = inner.take_buffer();
-        let mut writer = SdoDownloader::new(buf);
-        writer.start(slave_info, index, sub_index, data);
+        //let inner = core::mem::take(&mut self.inner);
+        //let buf = inner.take_buffer();
+        let mut writer = SdoDownloader::new();
+        writer.start(slave_info, index, sub_index, data, buf);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
     }
@@ -129,23 +137,27 @@ impl<'a> SdoTask<'a> {
     }
 }
 
-impl<'a> CyclicProcess for SdoTask<'a> {
-    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl Cyclic for SdoTask {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
             State::Processing => match &mut self.inner {
-                Inner::Reader(reader) => reader.next_command(sys_time),
-                Inner::Writer(writer) => writer.next_command(sys_time),
-                Inner::Taked => unreachable!(),
+                Inner::Reader(reader) => reader.next_command(buf),
+                Inner::Writer(writer) => writer.next_command(buf),
+                //Inner::Taked => unreachable!(),
             },
         }
     }
 
     fn recieve_and_process(
         &mut self,
-        recv_data: Option<ReceivedData>,
+        recv_data: Option<&CommandData>,
         sys_time: EtherCatSystemTime,
     ) {
         match self.state {
@@ -168,8 +180,7 @@ impl<'a> CyclicProcess for SdoTask<'a> {
                         Some(Ok(_)) => self.state = State::Complete,
                         Some(Err(err)) => self.state = State::Error(err),
                     }
-                }
-                Inner::Taked => unreachable!(),
+                } //Inner::Taked => unreachable!(),
             },
         }
     }

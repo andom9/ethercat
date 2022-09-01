@@ -64,7 +64,7 @@ impl<B: AsRef<[u8]>> AlStatus<B> {
     }
 }
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq)]
 #[repr(u16)]
 pub enum AlStatusCode {
     NoError = 0,

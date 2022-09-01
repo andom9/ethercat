@@ -1,19 +1,19 @@
-use crate::cyclic_task::CyclicProcess;
-use crate::cyclic_task::{
-    Command, CommandType, EcError, EtherCatSystemTime, ReceivedData, SlaveAddress,
-};
+use crate::cyclic_task::Cyclic;
+use crate::cyclic_task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
+use crate::frame::CommandType;
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
 use crate::slave_network::NetworkDescription;
 use crate::util::const_max;
+use crate::EcError;
 
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
 
 const OFFSET_COUNT_MAX: usize = 16;
 const DRIFT_COUNT_MAX: usize = 15000;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
     Error(EcError<()>),
@@ -28,22 +28,26 @@ enum State {
 
 #[derive(Debug)]
 pub struct DcInitializer<'a, 'b, 'c, 'd> {
-    sys_time: EtherCatSystemTime,
+    //sys_time: EtherCatSystemTime,
     state: State,
     command: Command,
-    buffer: [u8; buffer_size()],
+    //buffer: [u8; buffer_size()],
     first_dc_slave: Option<u16>,
     dc_slave_count: usize,
     network: &'d NetworkDescription<'a, 'b, 'c>,
 }
 
 impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
+    pub const fn required_buffer_size() -> usize {
+        buffer_size()
+    }
+
     pub fn new(network: &'d NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
-            sys_time: EtherCatSystemTime(0),
+            //sys_time: EtherCatSystemTime(0),
             state: State::Idle,
             command: Command::default(),
-            buffer: [0; buffer_size()],
+            //buffer: [0; buffer_size()],
             first_dc_slave: None,
             dc_slave_count: 0,
             network,
@@ -51,9 +55,9 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
     }
 
     pub fn start(&mut self) {
-        self.sys_time = EtherCatSystemTime(0);
+        //self.sys_time = EtherCatSystemTime(0);
         self.command = Command::default();
-        self.buffer.fill(0);
+        //self.buffer.fill(0);
         self.first_dc_slave = None;
         self.dc_slave_count = 0;
 
@@ -113,62 +117,65 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
     }
 }
 
-impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
-    fn next_command(&mut self, sys_time: EtherCatSystemTime) -> Option<(Command, &[u8])> {
+impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match &self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
             State::RequestToLatch(_) => {
                 let command = Command::new(CommandType::BWR, 0, DcRecieveTime::ADDRESS);
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..DcRecieveTime::SIZE]))
+                buf[..DcRecieveTime::SIZE].fill(0);
+                Some((command, DcRecieveTime::SIZE))
             }
             State::CalculateOffset((_, pos)) => {
                 let command = Command::new_read(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTime::ADDRESS,
                 );
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..DcSystemTime::SIZE]))
+                buf[..DcSystemTime::SIZE].fill(0);
+                Some((command, DcSystemTime::SIZE))
             }
             State::CalculateDelay((_, pos)) => {
                 let command = Command::new_read(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcRecieveTime::ADDRESS,
                 );
-                self.buffer.fill(0);
-                self.sys_time = sys_time;
-                Some((command, &self.buffer[..DcRecieveTime::SIZE]))
+                buf[..DcRecieveTime::SIZE].fill(0);
+                //self.sys_time = sys_time;
+                Some((command, DcRecieveTime::SIZE))
             }
             State::SetOffset(pos) => {
                 let command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeOffset::ADDRESS,
                 );
-                self.buffer.fill(0);
+                buf[..DcSystemTimeOffset::SIZE].fill(0);
                 let slave = self
                     .network
                     .slave(SlaveAddress::SlavePosition(*pos))
                     .unwrap();
                 let dc = slave.dc_context.borrow();
-                DcSystemTimeOffset(&mut self.buffer).set_system_time_offset(dc.offset);
-                Some((command, &self.buffer[..DcSystemTimeOffset::SIZE]))
+                DcSystemTimeOffset(buf).set_system_time_offset(dc.offset);
+                Some((command, DcSystemTimeOffset::SIZE))
             }
             State::SetDelay(pos) => {
                 let command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeTransmissionDelay::ADDRESS,
                 );
-                self.buffer.fill(0);
+                buf[..DcSystemTimeTransmissionDelay::SIZE].fill(0);
                 let slave = self
                     .network
                     .slave(SlaveAddress::SlavePosition(*pos))
                     .unwrap();
                 let dc = slave.dc_context.borrow();
-                DcSystemTimeTransmissionDelay(&mut self.buffer)
-                    .set_system_time_transmission_delay(dc.delay);
-                Some((command, &self.buffer[..DcSystemTimeTransmissionDelay::SIZE]))
+                DcSystemTimeTransmissionDelay(buf).set_system_time_transmission_delay(dc.delay);
+                Some((command, DcSystemTimeTransmissionDelay::SIZE))
             }
             State::CompensateDrift(_) => {
                 let command = Command::new(
@@ -176,15 +183,20 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                     SlaveAddress::SlavePosition(self.first_dc_slave.unwrap()).get_ado(),
                     DcSystemTime::ADDRESS,
                 );
-                self.buffer.fill(0);
-                Some((command, &self.buffer[..DcSystemTime::SIZE]))
+                buf[..DcSystemTime::SIZE].fill(0);
+                Some((command, DcSystemTime::SIZE))
             }
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: Option<ReceivedData>, _: EtherCatSystemTime) {
+    fn recieve_and_process(
+        &mut self,
+        recv_data: Option<&CommandData>,
+        sys_time: EtherCatSystemTime,
+    ) {
         let (data, wkc) = if let Some(recv_data) = recv_data {
-            let ReceivedData { command, data, wkc } = recv_data;
+            let CommandData { command, data, wkc } = recv_data;
+            let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
@@ -209,15 +221,15 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                 if wkc != 1 {
                     self.state = State::Error(EcError::UnexpectedWkc(wkc));
                 } else {
-                    let master_time = self.sys_time.0;
+                    let master_time = sys_time.0;
                     let slave = self
                         .network
                         .slave(SlaveAddress::SlavePosition(*pos))
                         .unwrap();
                     let mut dc = slave.dc_context.borrow_mut();
-                    let sys_time = DcSystemTime(data);
-                    let offset = if master_time > sys_time.local_system_time() {
-                        master_time - sys_time.local_system_time()
+                    let slave_sys_time = DcSystemTime(data);
+                    let offset = if master_time > slave_sys_time.local_system_time() {
+                        master_time - slave_sys_time.local_system_time()
                     } else {
                         0
                     };
@@ -250,7 +262,6 @@ impl<'a, 'b, 'c, 'd> CyclicProcess for DcInitializer<'a, 'b, 'c, 'd> {
                         recv_time.receive_time_port2(),
                         recv_time.receive_time_port3(),
                     ];
-                    
 
                     if self.first_dc_slave.is_some() && self.first_dc_slave.unwrap() < *pos {
                         let first_recieved_port = slave
