@@ -62,6 +62,7 @@ impl Cyclic for AlStateReader {
     fn is_finished(&self) -> bool {
         self.state == State::Complete
     }
+
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,

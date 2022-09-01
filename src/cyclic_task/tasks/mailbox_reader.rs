@@ -43,6 +43,10 @@ pub struct MailboxReader {
 }
 
 impl MailboxReader {
+    //pub fn required_buffer_size(&self) -> usize {
+    //    (self.sm_size as usize).max(buffer_size())
+    //}
+
     pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),
@@ -235,9 +239,9 @@ impl Cyclic for MailboxReader {
     }
 }
 
-//const fn buffer_size() -> usize {
-//    let mut size = 0;
-//    size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
-//    size = const_max(size, SyncManagerPdiControl::SIZE);
-//    size
-//}
+const fn buffer_size() -> usize {
+    let mut size = 0;
+    size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
+    size = const_max(size, SyncManagerPdiControl::SIZE);
+    size
+}

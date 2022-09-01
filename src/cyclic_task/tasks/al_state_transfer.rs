@@ -74,6 +74,7 @@ impl AlStateTransfer {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
+
     pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),

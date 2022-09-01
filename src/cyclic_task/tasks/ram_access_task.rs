@@ -1,9 +1,9 @@
 use super::super::interface::*;
-use super::super::EtherCatSystemTime;
 use crate::cyclic_task::socket::CommandData;
+use crate::cyclic_task::{Cyclic, EtherCatSystemTime};
 use crate::error::EcError;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum State {
     Error(EcError<()>),
     Idle,
@@ -17,14 +17,14 @@ pub struct RamAccessTask {
     state: State,
     slave_address: TargetSlave,
     command: Command,
-    buffer: [u8; 16],
-    buf_size: usize,
+    //buffer: [u8; 16],
+    data_size: usize,
     ado: u16,
 }
 
 impl RamAccessTask {
-    pub const fn required_buffer_size()->usize{
-        16
+    pub fn data_size(&self) -> usize {
+        self.data_size
     }
 
     pub fn new() -> Self {
@@ -32,19 +32,19 @@ impl RamAccessTask {
             state: State::Idle,
             slave_address: TargetSlave::default(),
             command: Command::default(),
-            buffer: [0; 16],
-            buf_size: 0,
+            //buffer: [0; 4],
+            data_size: 0,
             ado: 0,
         }
     }
 
-    pub fn start_to_read(&mut self, slave_address: TargetSlave, ado: u16, buf_size: usize) {
-        assert!(buf_size <= 16);
+    pub fn start_to_read(&mut self, slave_address: TargetSlave, ado: u16, data_size: usize) {
+        assert!(data_size <= 16);
         self.slave_address = slave_address;
         self.state = State::Read;
-        self.buffer.fill(0);
+        //self.buffer.fill(0);
         self.command = Command::default();
-        self.buf_size = buf_size;
+        self.data_size = data_size;
         self.ado = ado;
     }
 
@@ -53,39 +53,47 @@ impl RamAccessTask {
         assert!(size <= 16);
         self.slave_address = slave_address;
         self.state = State::Write;
-        self.buffer.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
+        //self.buffer.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
         self.command = Command::default();
-        self.buf_size = size;
+        self.data_size = size;
         self.ado = ado;
     }
 
-    pub fn wait(&mut self) -> Option<Result<&[u8], EcError<()>>> {
+    pub fn wait(&mut self) -> Option<Result<(), EcError<()>>> {
         match &self.state {
-            State::Complete => Some(Ok(&self.buffer[..self.buf_size])),
+            State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
             _ => None,
         }
     }
 }
 
-impl RamAccessTask {
-    fn next_command(&mut self) -> Option<(Command, &[u8])> {
+impl Cyclic for RamAccessTask {
+    fn is_finished(&self) -> bool {
+        self.state == State::Complete
+    }
+
+    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Read => {
                 self.command = Command::new_read(self.slave_address, self.ado);
-                Some((self.command, &self.buffer[..self.buf_size]))
+                Some((self.command, self.data_size))
             }
             State::Write => {
                 self.command = Command::new_write(self.slave_address, self.ado);
-                Some((self.command, &self.buffer[..self.buf_size]))
+                Some((self.command, self.data_size))
             }
             State::Complete => None,
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: Option<CommandData>) {
+    fn recieve_and_process(
+        &mut self,
+        recv_data: Option<&CommandData>,
+        sys_time: EtherCatSystemTime,
+    ) {
         let data = if let Some(recv_data) = recv_data {
             let CommandData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -93,13 +101,13 @@ impl RamAccessTask {
             }
             match self.slave_address.into() {
                 TargetSlave::Single(_slave_address) => {
-                    if wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    if *wkc != 1 {
+                        self.state = State::Error(EcError::UnexpectedWkc(*wkc));
                     }
                 }
                 TargetSlave::All(num_slaves) => {
-                    if wkc != num_slaves {
-                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    if *wkc != num_slaves {
+                        self.state = State::Error(EcError::UnexpectedWkc(*wkc));
                     }
                 }
             }
@@ -113,11 +121,11 @@ impl RamAccessTask {
             State::Idle => {}
             State::Error(_) => {}
             State::Read => {
-                self.buffer.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
+                //buf.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
                 self.state = State::Complete;
             }
             State::Write => {
-                self.buf_size = 0;
+                self.data_size = 0;
                 self.state = State::Complete;
             }
             State::Complete => {}
