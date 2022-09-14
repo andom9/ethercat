@@ -6,7 +6,7 @@ use crate::slave_network::SyncManager;
 use crate::{
     error::EcError,
     register::{SyncManagerActivation, SyncManagerStatus},
-    util::const_max,
+    //util::const_max,
 };
 
 const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
@@ -77,12 +77,7 @@ impl MailboxWriter {
     // pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
     //     &mut self.send_buf[MailboxHeader::SIZE..]
     // }
-    pub fn set_mailbox_data(
-        &self,
-        mb_header: &[u8; MailboxHeader::SIZE],
-        mb_data: &[u8],
-        buf: &mut [u8],
-    ) {
+    pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
         buf[..MailboxHeader::SIZE]
             .iter_mut()
             .zip(mb_header)
@@ -116,7 +111,10 @@ impl MailboxWriter {
 
 impl Cyclic for MailboxWriter {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
@@ -208,8 +206,8 @@ impl Cyclic for MailboxWriter {
     }
 }
 
-const fn buffer_size() -> usize {
-    let mut size = 0;
-    size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
-    size
-}
+// const fn buffer_size() -> usize {
+//     let mut size = 0;
+//     size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
+//     size
+// }

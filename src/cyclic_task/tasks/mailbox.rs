@@ -109,17 +109,12 @@ impl MailboxTask {
     //    }
     //}
 
-    pub fn set_mailbox_data(
-        &self,
-        mb_header: &[u8; MailboxHeader::SIZE],
-        mb_data: &[u8],
-        buf: &mut [u8],
-    ) {
-        self.set_mailbox_data(mb_header, mb_data, buf);
+    pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
+        MailboxWriter::set_mailbox_data(mb_header, mb_data, buf);
     }
 
-    pub fn mailbox_data<'a>(&self, buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
-        self.mailbox_data(buf)
+    pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
+        MailboxReader::mailbox_data(buf)
     }
 
     pub fn start_to_read(
@@ -161,7 +156,10 @@ impl MailboxTask {
 
 impl Cyclic for MailboxTask {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {

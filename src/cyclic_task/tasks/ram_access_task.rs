@@ -39,7 +39,7 @@ impl RamAccessTask {
     }
 
     pub fn start_to_read(&mut self, slave_address: TargetSlave, ado: u16, data_size: usize) {
-        assert!(data_size <= 16);
+        //assert!(data_size <= 16);
         self.slave_address = slave_address;
         self.state = State::Read;
         //self.buffer.fill(0);
@@ -48,12 +48,18 @@ impl RamAccessTask {
         self.ado = ado;
     }
 
-    pub fn start_to_write(&mut self, slave_address: TargetSlave, ado: u16, data: &[u8]) {
+    pub fn start_to_write(
+        &mut self,
+        slave_address: TargetSlave,
+        ado: u16,
+        data: &[u8],
+        buf: &mut [u8],
+    ) {
         let size = data.len();
-        assert!(size <= 16);
+        assert!(buf.len() <= size);
+        buf[..size].iter_mut().zip(data).for_each(|(b, d)| *b = *d);
         self.slave_address = slave_address;
         self.state = State::Write;
-        //self.buffer.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
         self.command = Command::default();
         self.data_size = size;
         self.ado = ado;
@@ -70,10 +76,13 @@ impl RamAccessTask {
 
 impl Cyclic for RamAccessTask {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_command(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -92,10 +101,10 @@ impl Cyclic for RamAccessTask {
     fn recieve_and_process(
         &mut self,
         recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
+        _sys_time: EtherCatSystemTime,
     ) {
-        let data = if let Some(recv_data) = recv_data {
-            let CommandData { command, data, wkc } = recv_data;
+        if let Some(recv_data) = recv_data {
+            let CommandData { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
@@ -111,7 +120,7 @@ impl Cyclic for RamAccessTask {
                     }
                 }
             }
-            data
+            //data
         } else {
             self.state = State::Error(EcError::LostPacket);
             return;

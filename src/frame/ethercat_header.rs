@@ -1,9 +1,15 @@
 use bitfield::*;
 
-const DST_MAC: u64 = 0x02_02_02_02_02_02;
+const DST_MAC: u64 = 0x06_06_06_06_06_06;
 pub(crate) const SRC_MAC: u64 = 0x01_01_01_01_01_01;
 pub(crate) const WKC_LENGTH: usize = 2;
 pub(crate) const ETHERCAT_TYPE: u16 = 0x88A4;
+
+pub(crate) const ETHERNET_FRAME_SIZE_WITHOUT_FCS: usize = 1514;
+pub(crate) const MAX_ETHERCAT_DATAGRAM: usize =
+    ETHERNET_FRAME_SIZE_WITHOUT_FCS - EthernetHeader::SIZE - EtherCatHeader::SIZE;
+pub(crate) const MAX_PDU_DATAGRAM: usize =
+    MAX_ETHERCAT_DATAGRAM - EtherCatPduHeader::SIZE - WKC_LENGTH;
 
 bitfield! {
     #[derive(Debug, Clone)]

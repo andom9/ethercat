@@ -84,32 +84,6 @@ impl<'a, 'b, 'c> NetworkDescription<'a, 'b, 'c> {
         let Self { slaves, .. } = self;
         RecievedPorts::new(slaves)
     }
-
-    pub(crate) fn calculate_pdo_entry_positions_in_pdo_image(&mut self) {
-        let mut start_addess = 0;
-        //let mut start_bit=0;
-        for slave in self.slaves_mut() {
-            if slave.pdo_mappings.is_none() {
-                continue;
-            }
-            let pdo_mappings = slave.pdo_mappings.as_mut().unwrap();
-            //先にRxPdoを並べる
-            for rx_pdo in pdo_mappings.rx_mapping.iter_mut() {
-                for pdo in rx_pdo.entries.iter_mut() {
-                    pdo.logical_start_address = Some(start_addess);
-                    start_addess += pdo.byte_length();
-                }
-            }
-
-            //RxPdoの後にTxPdoを並べる
-            for tx_pdo in pdo_mappings.tx_mapping.iter_mut() {
-                for pdo in tx_pdo.entries.iter_mut() {
-                    pdo.logical_start_address = Some(start_addess);
-                    start_addess += pdo.byte_length();
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug)]

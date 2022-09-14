@@ -14,7 +14,7 @@ pub trait Device<'a> {
     /// Return TxToken if it is receivable. It should be non-blocking.
     fn receive(&'a mut self) -> Option<Self::RxToken>;
 
-    fn max_transmission_unit(&self) -> usize;
+    //fn max_transmission_unit(&self) -> usize;
 }
 
 pub trait TxToken {

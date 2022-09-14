@@ -59,9 +59,9 @@ where
             .map(|(token, _)| SmolRxTokenWrapper(token))
     }
 
-    fn max_transmission_unit(&self) -> usize {
-        self.device.capabilities().max_transmission_unit
-    }
+    // fn max_transmission_unit(&self) -> usize {
+    //     self.device.capabilities().max_transmission_unit
+    // }
 }
 
 fn main() {

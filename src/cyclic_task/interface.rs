@@ -75,7 +75,7 @@ where
     ethdev: D,
     timer: T,
     buffer: &'a mut [u8],
-    data_size: usize,
+    pdus_total_size: usize,
     capacity: usize,
     should_recv_frames: usize,
 }
@@ -86,19 +86,19 @@ where
     T: CountDown,
 {
     pub fn new(ethdev: D, timer: T, buffer: &'a mut [u8]) -> Self {
-        let capacity = buffer.len().min(ethdev.max_transmission_unit());
+        let capacity = buffer.len().min(MAX_ETHERCAT_DATAGRAM);
         Self {
             ethdev,
             timer,
             buffer,
-            data_size: 0,
+            pdus_total_size: 0,
             capacity,
             should_recv_frames: 0,
         }
     }
 
-    pub fn remainig_capacity(&self) -> usize {
-        self.capacity - self.data_size - EtherCatHeader::SIZE - WKC_LENGTH
+    pub fn remainig_pdu_data_capacity(&self) -> usize {
+        self.capacity - self.pdus_total_size - EtherCatPduHeader::SIZE - WKC_LENGTH
     }
 
     pub fn add_command<F: FnOnce(&mut [u8])>(
@@ -108,17 +108,11 @@ where
         data_size: usize,
         data_writer: F,
     ) -> Result<(), CommandInterfaceError> {
-        if self.data_size + EtherCatHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
+        if self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
             return Err(CommandInterfaceError::NotEnoughCapacityLeft);
         }
 
-        if data_size
-            > self.ethdev.max_transmission_unit()
-                - (EthernetHeader::SIZE
-                    + EtherCatHeader::SIZE
-                    + EtherCatPduHeader::SIZE
-                    + WKC_LENGTH)
-        {
+        if data_size > MAX_PDU_DATAGRAM {
             return Err(CommandInterfaceError::TooLargeData);
         }
 
@@ -130,24 +124,24 @@ where
         pdu.set_ado(command.ado);
         pdu.set_length(data_size as u16);
 
-        self.buffer[self.data_size..self.data_size + EtherCatPduHeader::SIZE]
+        self.buffer[self.pdus_total_size..self.pdus_total_size + EtherCatPduHeader::SIZE]
             .copy_from_slice(&header);
         data_writer(
-            &mut self.buffer[self.data_size + EtherCatPduHeader::SIZE
-                ..self.data_size + EtherCatPduHeader::SIZE + data_size],
+            &mut self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE
+                ..self.pdus_total_size + EtherCatPduHeader::SIZE + data_size],
         );
 
         // Wkc field
-        self.buffer[self.data_size + EtherCatPduHeader::SIZE + data_size + 1] = 0;
-        self.buffer[self.data_size + EtherCatPduHeader::SIZE + data_size + 2] = 0;
+        self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + 1] = 0;
+        self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + 2] = 0;
 
-        self.data_size += EtherCatPduHeader::SIZE + data_size + WKC_LENGTH;
+        self.pdus_total_size += EtherCatPduHeader::SIZE + data_size + WKC_LENGTH;
         Ok(())
     }
 
     pub fn consume_commands(&mut self) -> EtherCatPdus {
-        let pdus = EtherCatPdus::new(self.buffer, self.data_size, 0);
-        self.data_size = 0;
+        let pdus = EtherCatPdus::new(self.buffer, self.pdus_total_size, 0);
+        self.pdus_total_size = 0;
         pdus
     }
 
@@ -163,24 +157,24 @@ where
         let Self {
             ethdev,
             buffer,
-            data_size,
+            pdus_total_size,
             should_recv_frames,
             ..
         } = self;
-        let buffer = &buffer[0..*data_size];
-        let mtu = ethdev.max_transmission_unit();
-        let max_send_count = EtherCatPdus::new(buffer, *data_size, 0).count();
+        let buffer = &buffer[0..*pdus_total_size];
+        //let mtu = ETHERNET_FRAME_SIZE_WITHOUT_FCS;
+        let max_send_count = EtherCatPdus::new(buffer, *pdus_total_size, 0).count();
         let mut actual_send_count = 0;
         *should_recv_frames = 0;
         self.timer.start(timeout);
 
         while actual_send_count < max_send_count {
-            let pdus = EtherCatPdus::new(buffer, *data_size, 0);
+            let pdus = EtherCatPdus::new(buffer, *pdus_total_size, 0);
             let mut send_size = 0;
             let mut send_count = actual_send_count;
             for pdu in pdus {
                 let pdu_length = pdu.length() as usize + EtherCatPduHeader::SIZE + WKC_LENGTH;
-                if mtu > send_size + pdu_length {
+                if send_size + pdu_length <= MAX_ETHERCAT_DATAGRAM {
                     send_size += pdu_length;
                     send_count += 1;
                 } else {
@@ -194,7 +188,7 @@ where
                         //info!("something send");
                         let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
                         ec_frame.init();
-                        let pdus = EtherCatPdus::new(buffer, *data_size, 0);
+                        let pdus = EtherCatPdus::new(buffer, *pdus_total_size, 0);
                         for (i, pdu) in pdus.into_iter().enumerate().skip(actual_send_count) {
                             if i >= send_count {
                                 break;
@@ -274,7 +268,7 @@ where
                 }
             }
         }
-        assert_eq!(data_size, self.data_size);
+        assert_eq!(data_size, self.pdus_total_size);
         Ok(())
     }
 }
@@ -304,6 +298,16 @@ impl Default for SlaveAddress {
 pub enum TargetSlave {
     Single(SlaveAddress),
     All(u16),
+}
+
+impl TargetSlave {
+    pub fn num_targets(&self) -> u16 {
+        if let Self::All(num) = self {
+            *num
+        } else {
+            1
+        }
+    }
 }
 
 impl From<SlaveAddress> for TargetSlave {

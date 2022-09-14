@@ -3,7 +3,6 @@ use super::CommandInterface;
 use super::CommandInterfaceError;
 use crate::frame::*;
 use crate::hal::*;
-use core::task::Poll;
 use core::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -25,29 +24,31 @@ impl<'a> CommandData<'a> {
 
 #[derive(Debug)]
 pub struct CommandSocket<'a> {
-    state: SocketState,
+    //state: SocketState,
     command: Option<Command>,
     data_buf: &'a mut [u8],
     wkc: u16,
     data_length: usize,
+    recv_flag: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum SocketState {
-    Set,
-    Send,
-    Receive,
-    Process,
-}
+//#[derive(Debug, Clone, Copy, PartialEq)]
+//enum SocketState {
+//    Set,
+//    Send,
+//    Receive,
+//    Process,
+//}
 
 impl<'a> CommandSocket<'a> {
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
-            state: SocketState::Set,
+            //state: SocketState::Set,
             command: None,
             data_buf: buf,
             wkc: 0,
             data_length: 0,
+            recv_flag: false,
         }
     }
 
@@ -68,65 +69,69 @@ impl<'a> CommandSocket<'a> {
         self.command = None;
         self.wkc = 0;
         self.data_length = 0;
-        self.state = SocketState::Set;
+        self.recv_flag = false;
+        //self.state = SocketState::Set;
     }
 
-    pub fn is_ready_to_set(&self) -> bool {
-        self.state == SocketState::Set
-    }
+    //pub fn is_ready_to_set(&self) -> bool {
+    //    self.command.is_none()
+    //}
 
     pub fn set_command<F: FnOnce(&mut [u8]) -> Option<(Command, usize)>>(
         &mut self,
         command_data: F,
     ) {
+        self.recv_flag = false;
+        self.wkc = 0;
+        log::info!("set_command");
         if let Some((command, length)) = command_data(self.data_buf) {
             self.command = Some(command);
             self.data_length = length;
-            self.wkc = 0;
-            self.state = SocketState::Send;
+            //self.state = SocketState::Send;
         } else {
+            log::info!("but none");
             self.command = None;
             self.data_length = 0;
-            self.wkc = 0;
-            self.state = SocketState::Set;
+            //self.state = SocketState::Set;
         }
     }
 
-    pub fn get_recieved_command(&self) -> Poll<Option<CommandData>> {
-        if let SocketState::Process = self.state {
+    pub fn get_recieved_command(&self) -> Option<CommandData> {
+        if self.recv_flag {
             if let Some(command) = self.command {
-                Poll::Ready(Some(CommandData {
+                Some(CommandData {
                     command,
                     data: &self.data_buf[..self.data_length],
                     wkc: self.wkc,
-                }))
+                })
             } else {
-                Poll::Ready(None)
+                None
             }
-        } else {
-            Poll::Pending
-        }
-    }
-
-    //fn data_length(&self) -> usize {
-    //    if self.command.is_some() {
-    //        self.data_length
-    //    } else {
-    //        0
-    //    }
-    //}
-
-    fn take_command(&mut self) -> Option<CommandData> {
-        if let SocketState::Send = self.state {
-            let command = self.command?;
-            self.state = SocketState::Receive;
-            Some(CommandData::new(
-                command,
-                &self.data_buf[..self.data_length],
-            ))
         } else {
             None
         }
+    }
+
+    fn data_length(&self) -> usize {
+        if self.command.is_some() {
+            self.data_length
+        } else {
+            0
+        }
+    }
+
+    fn take_command(&mut self) -> Option<CommandData> {
+        //if let SocketState::Send = self.state {
+        let command = core::mem::take(&mut self.command)?;
+        //self.state = SocketState::Receive;
+        Some(CommandData::new(
+            command,
+            &self.data_buf[..self.data_length],
+        ))
+
+        //} else {
+        //    None
+        //}
     }
 
     //pub(crate) fn is_waiting_to_recieve(&self) -> bool{
@@ -138,9 +143,10 @@ impl<'a> CommandSocket<'a> {
     //}
 
     fn recieve(&mut self, recv_data: Option<CommandData>) {
-        if self.state != SocketState::Receive {
-            return;
-        }
+        //if self.state != SocketState::Receive {
+        //    return;
+        //}
+        self.recv_flag = true;
         if let Some(recv_data) = recv_data {
             assert_eq!(recv_data.command, self.command.unwrap());
             self.data_buf
@@ -151,7 +157,7 @@ impl<'a> CommandSocket<'a> {
         } else {
             self.command = None;
         }
-        self.state = SocketState::Process;
+        //self.state = SocketState::Process;
     }
 }
 
@@ -279,12 +285,18 @@ where
         let mut complete = true;
         for (i, socket_enum) in self.sockets.iter_mut().enumerate() {
             if let SocketOption::Socket(socket) = socket_enum {
+                let len = socket.data_length();
+                if self.iface.remainig_pdu_data_capacity() < len {
+                    complete = false;
+                    break;
+                }
                 if let Some(command_data) = socket.take_command() {
-                    let len = command_data.data.len();
-                    if self.iface.remainig_capacity() < len {
-                        complete = false;
-                        break;
-                    }
+                    // let len = command_data.data.len();
+                    // if self.iface.remainig_pdu_data_capacity() < len {
+                    //     complete = false;
+                    //     break;
+                    // }
+                    log::info!("senfd index{}", i);
                     let _ = self
                         .iface
                         .add_command(i as u8, command_data.command, len, |buf| {
@@ -312,11 +324,13 @@ where
         let mut last_index = 0;
         for pdu in pdus {
             let index = pdu.index() as usize;
-            for j in last_index..index {
-                if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(j) {
-                    socket.recieve(None);
-                }
-            }
+            log::info!("recv index{}", index);
+
+            // for j in last_index..index {
+            //     if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(j) {
+            //         socket.recieve(None);
+            //     }
+            // }
             if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(index) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
@@ -330,11 +344,11 @@ where
             }
             last_index = index + 1;
         }
-        for j in last_index..sockets.len() {
-            if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(j) {
-                socket.recieve(None);
-            }
-        }
+        // for j in last_index..sockets.len() {
+        //     if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(j) {
+        //         socket.recieve(None);
+        //     }
+        // }
         Ok(())
     }
 }

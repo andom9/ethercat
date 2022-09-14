@@ -107,7 +107,10 @@ impl AlStateTransfer {
 
 impl Cyclic for AlStateTransfer {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {

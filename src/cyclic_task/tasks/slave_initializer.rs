@@ -18,7 +18,7 @@ use crate::slave_network::{AlState, SlaveInfo, SyncManager};
 use crate::util::const_max;
 use bit_field::BitField;
 
-const MAX_SM_SIZE: u16 = 256;
+pub const MAX_SM_SIZE: u16 = 256;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SlaveInitializerError {
@@ -124,9 +124,9 @@ impl SlaveInitializer {
         self.slave_address = SlaveAddress::SlavePosition(slave_position);
         self.state = State::SetLoopPort;
         self.slave_info = Some(SlaveInfo::default());
-        if let Some(slave) = self.slave_info.as_mut() {
-            slave.mailbox_count.set(1)
-        }
+        //if let Some(slave) = self.slave_info.as_mut() {
+        //    slave.mailbox_count.set(1)
+        //}
     }
 
     pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, EcError<SlaveInitializerError>>> {
@@ -140,7 +140,10 @@ impl SlaveInitializer {
 
 impl Cyclic for SlaveInitializer {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
@@ -418,7 +421,7 @@ impl Cyclic for SlaveInitializer {
                 al_transfer.recieve_and_process(recv_data, sys_time);
                 match al_transfer.wait() {
                     Some(Ok(AlState::Init)) => {
-                        self.slave_info.as_mut().unwrap().al_state = AlState::Init;
+                        //self.slave_info.as_mut().unwrap().al_state = AlState::Init;
                         self.state = State::ResetErrorCount;
                     }
                     Some(Ok(_)) => unreachable!(),

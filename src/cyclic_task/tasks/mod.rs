@@ -1,12 +1,14 @@
 mod al_state_reader;
 mod al_state_transfer;
-mod dc_drift_compensator;
+mod dc_drift_comp;
 mod dc_initilizer;
+mod logical_process_data;
 mod mailbox;
 mod mailbox_reader;
 mod mailbox_writer;
 mod network_initilizer;
 mod ram_access_task;
+mod rx_error_checker;
 mod sdo;
 mod sdo_downloader;
 mod sdo_uploader;
@@ -17,13 +19,15 @@ use core::time::Duration;
 
 pub use al_state_reader::*;
 pub use al_state_transfer::*;
-pub use dc_drift_compensator::*;
+pub use dc_drift_comp::*;
 pub use dc_initilizer::*;
+pub use logical_process_data::*;
 pub use mailbox::{MailboxTask, MailboxTaskError};
 pub use mailbox_reader::*;
 pub use mailbox_writer::*;
 pub use network_initilizer::*;
 pub use ram_access_task::*;
+pub use rx_error_checker::*;
 pub use sdo::*;
 pub use sdo_downloader::*;
 pub use sdo_uploader::*;
@@ -34,7 +38,7 @@ use crate::{
     frame::MailboxHeader,
     hal::{CountDown, Device},
     register::{AlStatusCode, SiiData},
-    slave_network::{AlState, NetworkDescription, SlaveInfo},
+    slave_network::{AlState, NetworkDescription, Slave, SlaveInfo},
     EcError,
 };
 
@@ -100,7 +104,7 @@ where
         let socket = self.get_socket_mut(handle).expect("socket not found");
         assert!(data.len() <= socket.capacity());
 
-        unit.start_to_write(target_slave, register_address, data);
+        unit.start_to_write(target_slave, register_address, data, socket.data_buf_mut());
         self.block(handle, &mut unit)?;
         unit.wait().unwrap()
     }
@@ -144,10 +148,17 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(AlStateReader::required_buffer_size() <= socket.capacity());
-            unit.start(target_slave);
+            unit.set_target(target_slave);
         }
         self.block::<_, _>(handle, &mut unit)?;
-        unit.wait().unwrap()
+        if unit.lost_pdu_count != 0 {
+            Err(EcError::LostPacket)
+        } else if unit.invalid_wkc_count != 0 {
+            Err(EcError::UnexpectedWkc(unit.last_wkc()))
+        } else {
+            let (al_state, al_status_code) = unit.last_al_state();
+            Ok((al_state.unwrap(), al_status_code))
+        }
     }
 
     pub fn change_al_state(
@@ -201,7 +212,7 @@ where
         self.block(handle, &mut unit)?;
         unit.wait().unwrap()?;
         let socket = self.get_socket_mut(handle).expect("socket not found");
-        Ok(unit.mailbox_data(socket.data_buf()))
+        Ok(MailboxReader::mailbox_data(socket.data_buf()))
     }
 
     pub fn write_mailbox(
@@ -220,7 +231,7 @@ where
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-            unit.set_mailbox_data(mb_header, mb_data, socket.data_buf_mut());
+            MailboxWriter::set_mailbox_data(mb_header, mb_data, socket.data_buf_mut());
             unit.start(slave_address, tx_sm, wait_empty);
         }
         self.block(handle, &mut unit)?;
@@ -230,7 +241,7 @@ where
     pub fn read_sdo(
         &mut self,
         handle: &SocketHandle,
-        slave_info: &SlaveInfo,
+        slave: &Slave,
         index: u16,
         sub_index: u8,
     ) -> Result<&[u8], EcError<SdoTaskError>> {
@@ -238,9 +249,10 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave_info.mailbox_tx_sm().unwrap_or_default().size as usize) <= socket.capacity()
+                (slave.info().mailbox_tx_sm().unwrap_or_default().size as usize)
+                    <= socket.capacity()
             );
-            unit.start(slave_info, index, sub_index, socket.data_buf_mut());
+            unit.start(slave, index, sub_index, socket.data_buf_mut());
         }
         self.block::<_, SdoTaskError>(handle, &mut unit)?;
         unit.wait().unwrap()?;
@@ -251,7 +263,7 @@ where
     pub fn write_sdo(
         &mut self,
         handle: &SocketHandle,
-        slave_info: &SlaveInfo,
+        slave: &Slave,
         index: u16,
         sub_index: u8,
         data: &[u8],
@@ -260,9 +272,10 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave_info.mailbox_rx_sm().unwrap_or_default().size as usize) <= socket.capacity()
+                (slave.info().mailbox_rx_sm().unwrap_or_default().size as usize)
+                    <= socket.capacity()
             );
-            unit.start(slave_info, index, sub_index, data, socket.data_buf_mut());
+            unit.start(slave, index, sub_index, data, socket.data_buf_mut());
         }
         self.block::<_, SdoTaskError>(handle, &mut unit)?;
         unit.wait().unwrap()

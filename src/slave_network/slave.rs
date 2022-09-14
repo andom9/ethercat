@@ -30,10 +30,23 @@ pub struct SlaveId {
 #[derive(Debug, Default)]
 pub struct Slave<'a, 'b> {
     pub(crate) info: SlaveInfo,
-    pub(crate) pdo_mappings: Option<SlavePdo<'a, 'b>>,
+
+    //0:Outputs
+    //1:Inputs
+    //2:MBoxState
+    pub(crate) fmmu: [Option<FmmuConfig>; 3],
+
+    pub(crate) al_state: AlState,
+    pub(crate) mailbox_count: Cell<u8>,
 
     // for Dc init
     pub(crate) dc_context: RefCell<DcContext>,
+
+    // inputs
+    tx_pdo_mappings: &'a mut [PdoMapping<'b>],
+
+    // outputs
+    rx_pdo_mappings: &'a mut [PdoMapping<'b>],
 }
 
 impl<'a, 'b> Slave<'a, 'b> {
@@ -41,30 +54,46 @@ impl<'a, 'b> Slave<'a, 'b> {
         &self.info
     }
 
-    pub fn pdo_mappings(&self) -> Option<&SlavePdo<'a, 'b>> {
-        self.pdo_mappings.as_ref()
+    pub fn al_state(&self) -> AlState {
+        self.al_state
     }
 
-    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        if let Some(ref mut pdo_mappings) = self.pdo_mappings {
-            pdo_mappings.rx_mapping = mappings;
+    pub(crate) fn mailbox_count(&self) -> u8 {
+        self.mailbox_count.get()
+    }
+
+    pub(crate) fn increment_mb_count(&self) -> u8 {
+        let count = self.mailbox_count();
+        if count < 7 {
+            self.mailbox_count.set(count + 1);
         } else {
-            self.pdo_mappings = Some(SlavePdo {
-                rx_mapping: mappings,
-                tx_mapping: &mut [],
-            });
+            self.mailbox_count.set(1);
+        }
+        self.mailbox_count()
+    }
+
+    pub fn tx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+        if self.tx_pdo_mappings.is_empty() {
+            None
+        } else {
+            Some(self.tx_pdo_mappings)
+        }
+    }
+
+    pub fn rx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+        if self.rx_pdo_mappings.is_empty() {
+            None
+        } else {
+            Some(self.rx_pdo_mappings)
         }
     }
 
     pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        if let Some(ref mut pdo_mappings) = self.pdo_mappings {
-            pdo_mappings.tx_mapping = mappings;
-        } else {
-            self.pdo_mappings = Some(SlavePdo {
-                tx_mapping: mappings,
-                rx_mapping: &mut [],
-            });
-        }
+        self.tx_pdo_mappings = mappings;
+    }
+
+    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+        self.rx_pdo_mappings = mappings;
     }
 }
 
@@ -79,15 +108,10 @@ pub(crate) struct DcContext {
 
 #[derive(Debug, Default, Clone)]
 pub struct SlaveInfo {
-    // status
-    //pub(crate) error: Option<SlaveError>,
-    pub(crate) al_state: AlState,
-    pub(crate) mailbox_count: Cell<u8>,
-    pub(crate) linked_ports: [bool; 4],
-
     // info
     pub configured_address: u16,
     pub id: SlaveId,
+    pub(crate) linked_ports: [bool; 4],
     pub ports: [Option<PortPhysics>; 4],
     pub ram_size_kb: u8,
 
@@ -108,27 +132,12 @@ pub struct SlaveInfo {
 }
 
 impl SlaveInfo {
-    pub fn al_state(&self) -> AlState {
-        self.al_state
-    }
-    pub(crate) fn mailbox_count(&self) -> u8 {
-        self.mailbox_count.get()
-    }
-    pub fn linked_ports(&self) -> [bool; 4] {
-        self.linked_ports
-    }
-    pub(crate) fn increment_mb_count(&self) -> u8 {
-        let count = self.mailbox_count();
-        if count < 7 {
-            self.mailbox_count.set(count + 1);
-        } else {
-            self.mailbox_count.set(1);
-        }
-        self.mailbox_count()
-    }
-
     pub fn slave_address(&self) -> SlaveAddress {
         SlaveAddress::StationAddress(self.configured_address)
+    }
+
+    pub fn linked_ports(&self) -> [bool; 4] {
+        self.linked_ports
     }
 
     pub fn mailbox_rx_sm(&self) -> Option<SyncManager> {
@@ -229,10 +238,82 @@ impl Default for OperationMode {
 }
 
 #[derive(Debug)]
-pub struct SlavePdo<'a, 'b> {
-    pub rx_mapping: &'a mut [PdoMapping<'b>],
-    pub tx_mapping: &'a mut [PdoMapping<'b>],
+pub struct FmmuConfig {
+    pub(crate) logical_start_address: Option<u32>,
+    pub physical_address: u16,
+    pub bit_length: u16,
+    is_output: bool,
 }
+impl FmmuConfig {
+    pub fn new(physical_address: u16, bit_length: u16, is_output: bool) -> Self {
+        Self {
+            logical_start_address: None,
+            physical_address,
+            bit_length,
+            is_output,
+        }
+    }
+    pub fn is_output(&self) -> bool {
+        self.is_output
+    }
+    pub(crate) fn byte_length(&self) -> u16 {
+        if self.bit_length % 8 == 0 {
+            self.bit_length >> 3
+        } else {
+            self.bit_length >> 3 + 1
+        }
+    }
+    pub fn set_logical_address(&mut self, logical_address: u32) {
+        self.logical_start_address = Some(logical_address);
+    }
+}
+
+// #[derive(Debug)]
+// pub enum ProcessDataConfig<'a, 'b> {
+//     Memory(MemoryProcessData),
+//     CoE(&'a mut [PdoMapping<'b>]),
+// }
+
+// impl<'a, 'b> From<MemoryProcessData> for ProcessDataConfig<'a, 'b> {
+//     fn from(config: MemoryProcessData) -> Self {
+//         Self::Memory(config)
+//     }
+// }
+
+// impl<'a, 'b> From<&'a mut [PdoMapping<'b>]> for ProcessDataConfig<'a, 'b> {
+//     fn from(config: &'a mut [PdoMapping<'b>]) -> Self {
+//         Self::CoE(config)
+//     }
+// }
+
+// #[derive(Debug, Clone)]
+// pub struct MemoryProcessData {
+//     pub(crate) logical_start_address: Option<u32>,
+//     pub physical_address: u16,
+//     pub bit_length: u16,
+// }
+// impl MemoryProcessData {
+//     pub fn new(physical_address: u16, bit_length: u16) -> Self {
+//         Self {
+//             logical_start_address: None,
+//             physical_address,
+//             bit_length,
+//         }
+//     }
+//     pub(crate) fn byte_length(&self) -> u16 {
+//         if self.bit_length % 8 == 0 {
+//             self.bit_length / 8
+//         } else {
+//             self.bit_length / 8 + 1
+//         }
+//     }
+// }
+
+//#[derive(Debug)]
+//pub struct SlavePdo<'a, 'b> {
+//    pub rx_mapping: &'a mut [PdoMapping<'b>],
+//    pub tx_mapping: &'a mut [PdoMapping<'b>],
+//}
 
 #[derive(Debug)]
 pub struct PdoMapping<'a> {
@@ -241,9 +322,9 @@ pub struct PdoMapping<'a> {
     pub entries: &'a mut [PdoEntry],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PdoEntry {
-    pub(crate) logical_start_address: Option<u16>,
+    pub(crate) logical_start_address: Option<u32>,
     pub(crate) index: u16,
     pub(crate) sub_index: u8,
     pub(crate) bit_length: u16,

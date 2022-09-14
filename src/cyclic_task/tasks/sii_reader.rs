@@ -94,10 +94,15 @@ impl SiiReader {
 
 impl Cyclic for SiiReader {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+        log::info!("{:?}", self.state);
+        // panic!();
         match self.state {
             State::Idle => None,
             State::Error(_) => None,

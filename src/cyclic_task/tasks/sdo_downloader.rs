@@ -1,14 +1,15 @@
 use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTask;
-use super::mailbox::MailboxTaskError;
-use super::sdo::SdoTaskError;
 use super::{MailboxReader, MailboxWriter};
+//use super::mailbox::MailboxTaskError;
+use super::sdo::SdoTaskError;
+//use super::{MailboxReader, MailboxWriter};
 
 use super::super::interface::*;
 use crate::error::EcError;
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoDownloadNormalHeader, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
-use crate::slave_network::{SlaveInfo, SyncManager};
+use crate::slave_network::{Slave, SyncManager};
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
@@ -62,18 +63,11 @@ impl SdoDownloader {
     //    self.mailbox.take_buffer()
     //}
 
-    pub fn start(
-        &mut self,
-        slave_info: &SlaveInfo,
-        index: u16,
-        sub_index: u8,
-        data: &[u8],
-        buf: &mut [u8],
-    ) {
-        self.slave_address = slave_info.slave_address();
-        self.tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-        self.rx_sm = slave_info.mailbox_rx_sm().unwrap_or_default();
-        self.mailbox_count = slave_info.increment_mb_count();
+    pub fn start(&mut self, slave: &Slave, index: u16, sub_index: u8, data: &[u8], buf: &mut [u8]) {
+        self.slave_address = slave.info().slave_address();
+        self.tx_sm = slave.info().mailbox_tx_sm().unwrap_or_default();
+        self.rx_sm = slave.info().mailbox_rx_sm().unwrap_or_default();
+        self.mailbox_count = slave.increment_mb_count();
 
         let mut sdo_header = [0; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE];
         CoeHeader(&mut sdo_header).set_service_type(CoeServiceType::SdoReq as u8);
@@ -96,8 +90,7 @@ impl SdoDownloader {
         mb_header.set_length(data_len + sdo_header.len() as u16);
         mb_header.set_prioriry(0);
 
-        self.mailbox
-            .set_mailbox_data(&mb_header.0, &sdo_header, buf);
+        MailboxWriter::set_mailbox_data(&mb_header.0, &sdo_header, buf);
         buf.iter_mut()
             .skip(sdo_header.len())
             .zip(data)
@@ -120,7 +113,10 @@ impl SdoDownloader {
 
 impl Cyclic for SdoDownloader {
     fn is_finished(&self) -> bool {
-        self.state == State::Complete
+        match self.state {
+            State::Complete | State::Error(_) => true,
+            _ => false,
+        }
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
@@ -189,8 +185,8 @@ impl Cyclic for SdoDownloader {
                 self.mailbox.recieve_and_process(recv_data, sys_time);
                 match self.mailbox.wait() {
                     Some(Ok(_)) => {
-                        let (mb_header, mb_data) =
-                            self.mailbox.mailbox_data(recv_data.unwrap().data);
+                        let (_mb_header, mb_data) =
+                            MailboxReader::mailbox_data(recv_data.unwrap().data);
                         let sdo_header = SdoHeader(&mb_data[CoeHeader::SIZE..]);
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];

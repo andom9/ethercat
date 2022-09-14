@@ -13,13 +13,9 @@ pub struct EtherCatSystemTime(pub u64);
 
 pub trait Cyclic {
     fn process_one_step(&mut self, socket: &mut CommandSocket, sys_time: EtherCatSystemTime) {
-        if socket.is_ready_to_set() {
-            socket.set_command(|buf| self.next_command(buf))
-        } else {
-            if let Poll::Ready(recv_data) = socket.get_recieved_command() {
-                self.recieve_and_process(recv_data.as_ref(), sys_time);
-            }
-        }
+        let recv_data = socket.get_recieved_command();
+        self.recieve_and_process(recv_data.as_ref(), sys_time);
+        socket.set_command(|buf| self.next_command(buf))
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)>;

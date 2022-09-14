@@ -27,8 +27,8 @@ Please refer to the ETG1500 for more information on the features listed below.
 - (no) Frame repetition
 #### Network Configuration
 - (planned) Online SII Scanning
-- (no) Reading ENI
-- (no) Compare Network configuration
+- (planned) Reading ENI
+- (planned) Compare Network configuration
 - (no) Explicit Device Identification
 - (planned) Station Alias Addressing
 - (yes) Reading SII
