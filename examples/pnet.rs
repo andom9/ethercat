@@ -1,3 +1,4 @@
+use core::num;
 use ethercat_master::cyclic_task::socket::{CommandSocket, SocketOption, SocketsInterface};
 use ethercat_master::cyclic_task::{tasks::*, *};
 use ethercat_master::hal::*;
@@ -109,7 +110,8 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if let Some(name) = args.get(1) {
-        simple_test(name);
+        read_eeprom_test(name);
+        sdo_test(name);
     } else {
         println!("Specify the name of network interface as an argument from the following.");
         for (i, interface) in pnet_datalink::interfaces().iter().enumerate() {
@@ -120,34 +122,61 @@ fn main() {
     }
 }
 
-fn simple_test(interf_name: &str) {
+fn read_eeprom_test(interf_name: &str) {
     dbg!("prepare resources");
     let timer = Timer::new();
     let device = PnetDevice::open(interf_name);
     let mut buf = vec![0; 1500];
     let iface = CommandInterface::new(device, timer, &mut buf);
 
-    dbg!("crate interface");
-    let mut socket_buf1 = vec![0; 256];
-    let mut socket_buf2 = vec![0; 256];
+    let mut socket_buf = vec![0; 256];
     let sockets = [
         SocketOption::default(), // al state
-        SocketOption::default(), // rx error
     ];
     let mut sif = SocketsInterface::new(iface, sockets);
-    let handle1 = sif
-        .add_socket(CommandSocket::new(&mut socket_buf1))
-        .unwrap();
-    let handle2 = sif
-        .add_socket(CommandSocket::new(&mut socket_buf2))
-        .unwrap();
+    let handle = sif.add_socket(CommandSocket::new(&mut socket_buf)).unwrap();
     let (data, size) = sif
         .read_sii(
-            &handle2,
+            &handle,
             SlaveAddress::SlavePosition(1),
             ProductCode::ADDRESS,
         )
         .unwrap();
+    dbg!(data.data(size));
+}
 
+fn sdo_test(interf_name: &str) {
+    dbg!("prepare resources");
+    let timer = Timer::new();
+    let device = PnetDevice::open(interf_name);
+    let mut buf = vec![0; 1500];
+    let iface = CommandInterface::new(device, timer, &mut buf);
+
+    let mut slaves: [_; 10] = Default::default();
+    let mut pdu_buffer = vec![0; 1500];
+    let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
+    master.initilize_slaves().unwrap();
+    let num_slaves = master.network().len() as u16;
+    master
+        .change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)
+        .unwrap();
+    let data = master
+        .read_sdo(SlaveAddress::SlavePosition(0), 0x2005, 0x01)
+        .unwrap();
     dbg!(data);
+
+    let data2 = [data[0] + 1, data[1]];
+    master
+        .write_sdo(SlaveAddress::SlavePosition(0), 0x2005, 0x01, &data2)
+        .unwrap();
+
+    let data = master
+        .read_sdo(SlaveAddress::SlavePosition(0), 0x2005, 0x01)
+        .unwrap();
+    dbg!(data);
+
+    let data2 = [data[0] - 1, data[1]];
+    master
+        .write_sdo(SlaveAddress::SlavePosition(0), 0x2005, 0x01, &data2)
+        .unwrap();
 }

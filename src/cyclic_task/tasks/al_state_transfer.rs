@@ -178,12 +178,8 @@ impl Cyclic for AlStateTransfer {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
-        let data = if let Some(recv_data) = recv_data {
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+        let data = {
             let CommandData { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -202,9 +198,6 @@ impl Cyclic for AlStateTransfer {
                 }
             }
             data
-        } else {
-            self.state = State::Error(EcError::LostPacket);
-            return;
         };
 
         match self.state {

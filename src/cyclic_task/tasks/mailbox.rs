@@ -175,11 +175,7 @@ impl Cyclic for MailboxTask {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
         match self.state {
             State::Idle => {}
             State::Error(_) => {}

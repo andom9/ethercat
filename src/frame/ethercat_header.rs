@@ -1,7 +1,7 @@
 use bitfield::*;
 
-const DST_MAC: u64 = 0x06_06_06_06_06_06;
-pub(crate) const SRC_MAC: u64 = 0x01_01_01_01_01_01;
+const DST_MAC: u64 = 0xFF_FF_FF_FF_FF_FF;
+pub(crate) const SRC_MAC: u64 = 0x05_05_05_05_05_05;
 pub(crate) const WKC_LENGTH: usize = 2;
 pub(crate) const ETHERCAT_TYPE: u16 = 0x88A4;
 

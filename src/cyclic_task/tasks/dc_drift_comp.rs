@@ -7,11 +7,9 @@ use crate::register::DcSystemTime;
 pub struct DcDriftCompensator {
     sys_time_offset: i64,
     last_dc_time: EtherCatSystemTime,
-    command: Command,
     first_dc_slave: u16,
     dc_slave_count: u16,
     pub invalid_wkc_count: usize,
-    pub lost_pdu_count: usize,
     last_wkc: u16,
 }
 
@@ -24,11 +22,9 @@ impl DcDriftCompensator {
         Self {
             sys_time_offset: 0,
             last_dc_time: EtherCatSystemTime(0),
-            command: Command::default(),
             first_dc_slave: first_dc_slave_pos,
             dc_slave_count: num_dc_slaves,
             invalid_wkc_count: 0,
-            lost_pdu_count: 0,
             last_wkc: 0,
         }
     }
@@ -62,23 +58,14 @@ impl Cyclic for DcDriftCompensator {
         Some((command, DcSystemTime::SIZE))
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        systime: EtherCatSystemTime,
-    ) {
-        let data = if let Some(recv_data) = recv_data {
-            let CommandData { command, data, wkc } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &CommandData, systime: EtherCatSystemTime) {
+        let data = {
+            let CommandData { data, wkc, .. } = recv_data;
             let wkc = *wkc;
-            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            } else if wkc != self.dc_slave_count {
+            if wkc != self.dc_slave_count {
                 self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);
             }
             data
-        } else {
-            self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            return;
         };
 
         let slave_systime = DcSystemTime(data).local_system_time();

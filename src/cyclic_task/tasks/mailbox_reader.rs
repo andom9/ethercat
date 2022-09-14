@@ -164,76 +164,69 @@ impl Cyclic for MailboxReader {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
-        if let Some(ref recv_data) = recv_data {
-            let CommandData { command, data, wkc } = recv_data;
-            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+        let CommandData { command, data, wkc } = recv_data;
+        if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+            self.state = State::Error(EcError::UnexpectedCommand);
+        }
+        let wkc = *wkc;
+        match self.state {
+            State::Idle => {}
+            State::Error(_) => {}
+            State::Complete => {}
+            State::CheckMailboxFull((is_first, wait_full)) => {
+                if is_first {
+                    self.timer_start = sys_time;
+                }
+                if wkc != 1 {
+                    self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
+                } else {
+                    let status = SyncManagerStatus(data);
+                    self.activation_buf
+                        .0
+                        .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
+                    if status.is_mailbox_full() {
+                        self.state = State::Read;
+                    } else if wait_full {
+                        self.state = State::CheckMailboxFull((false, wait_full));
+                    } else {
+                        self.state = State::Error(MailboxTaskError::MailboxEmpty.into());
+                    }
+                }
             }
-            let wkc = *wkc;
-            match self.state {
-                State::Idle => {}
-                State::Error(_) => {}
-                State::Complete => {}
-                State::CheckMailboxFull((is_first, wait_full)) => {
-                    if is_first {
-                        self.timer_start = sys_time;
-                    }
-                    if wkc != 1 {
-                        self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
+            State::Read => {
+                // mailbox lost
+                if wkc != 1 {
+                    self.state = State::RequestRepeat;
+                } else {
+                    //self.recv_buf
+                    //    .iter_mut()
+                    //    .zip(data.iter())
+                    //    .for_each(|(buf, data)| *buf = *data);
+                    let header = MailboxHeader(&data);
+                    if header.mailbox_type() == MailboxType::Error as u8 {
+                        let mut err = MailboxErrorResponse::new();
+                        err.0.copy_from_slice(&data[..4]);
+                        self.state = State::Error(MailboxTaskError::ErrorResponse(err).into());
                     } else {
-                        let status = SyncManagerStatus(data);
-                        self.activation_buf
-                            .0
-                            .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
-                        if status.is_mailbox_full() {
-                            self.state = State::Read;
-                        } else if wait_full {
-                            self.state = State::CheckMailboxFull((false, wait_full));
-                        } else {
-                            self.state = State::Error(MailboxTaskError::MailboxEmpty.into());
-                        }
+                        self.state = State::Complete;
                     }
                 }
-                State::Read => {
-                    // mailbox lost
-                    if wkc != 1 {
-                        self.state = State::RequestRepeat;
-                    } else {
-                        //self.recv_buf
-                        //    .iter_mut()
-                        //    .zip(data.iter())
-                        //    .for_each(|(buf, data)| *buf = *data);
-                        let header = MailboxHeader(&data);
-                        if header.mailbox_type() == MailboxType::Error as u8 {
-                            let mut err = MailboxErrorResponse::new();
-                            err.0.copy_from_slice(&data[..4]);
-                            self.state = State::Error(MailboxTaskError::ErrorResponse(err).into());
-                        } else {
-                            self.state = State::Complete;
-                        }
-                    }
-                }
-                State::RequestRepeat => {
+            }
+            State::RequestRepeat => {
+                self.state = State::WaitRepeatAck;
+            }
+            State::WaitRepeatAck => {
+                if wkc != 1 {
+                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                } else if SyncManagerPdiControl(data).repeat_ack() == self.activation_buf.repeat() {
+                    self.state = State::CheckMailboxFull((false, true));
+                } else {
                     self.state = State::WaitRepeatAck;
-                }
-                State::WaitRepeatAck => {
-                    if wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
-                    } else if SyncManagerPdiControl(data).repeat_ack()
-                        == self.activation_buf.repeat()
-                    {
-                        self.state = State::CheckMailboxFull((false, true));
-                    } else {
-                        self.state = State::WaitRepeatAck;
-                    }
                 }
             }
         }
+
         // check timeout
         let timeout_ns = (MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS as u64) * 1000 * 1000;
         if self.timer_start.0 < sys_time.0 && timeout_ns < sys_time.0 - self.timer_start.0 {

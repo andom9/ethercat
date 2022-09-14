@@ -151,9 +151,7 @@ where
             unit.set_target(target_slave);
         }
         self.block::<_, _>(handle, &mut unit)?;
-        if unit.lost_pdu_count != 0 {
-            Err(EcError::LostPacket)
-        } else if unit.invalid_wkc_count != 0 {
+        if unit.invalid_wkc_count != 0 {
             Err(EcError::UnexpectedWkc(unit.last_wkc()))
         } else {
             let (al_state, al_status_code) = unit.last_al_state();

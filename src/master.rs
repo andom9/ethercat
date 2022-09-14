@@ -168,7 +168,9 @@ where
         if let (Some(ref handle), Some(ref mut unit)) = (process_data_handle, process_data_unit) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
             let recv_data = socket.get_recieved_command();
-            unit.recieve_and_process(recv_data.as_ref(), sys_time);
+            if let Some(recv_data) = recv_data {
+                unit.recieve_and_process(&recv_data, sys_time);
+            }
             socket.set_command(|buf| unit.next_command(buf));
             //TODO: mailbox polling
         }
@@ -177,7 +179,9 @@ where
         if let (ref handle, Some(ref mut unit)) = (dc_handle, dc_unit) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
             let recv_data = socket.get_recieved_command();
-            unit.recieve_and_process(recv_data.as_ref(), sys_time);
+            if let Some(recv_data) = recv_data {
+                unit.recieve_and_process(&recv_data, sys_time);
+            }
             socket.set_command(|buf| unit.next_command(buf));
         }
 
@@ -185,7 +189,9 @@ where
         {
             let socket = self.sif.get_socket_mut(rx_error_handle).unwrap();
             let recv_data = socket.get_recieved_command();
-            rx_error_unit.recieve_and_process(recv_data.as_ref(), sys_time);
+            if let Some(recv_data) = recv_data {
+                rx_error_unit.recieve_and_process(&recv_data, sys_time);
+            }
             rx_error_unit.set_target(TargetSlave::All(num_slaves));
             socket.set_command(|buf| rx_error_unit.next_command(buf));
         }
@@ -194,7 +200,9 @@ where
         {
             let socket = self.sif.get_socket_mut(al_state_handle).unwrap();
             let recv_data = socket.get_recieved_command();
-            al_state_unit.recieve_and_process(recv_data.as_ref(), sys_time);
+            if let Some(recv_data) = recv_data {
+                al_state_unit.recieve_and_process(&recv_data, sys_time);
+            }
             socket.set_command(|buf| al_state_unit.next_command(buf));
         }
     }
@@ -215,12 +223,8 @@ where
         }
     }
 
-    pub fn process_data_lost_pdu_count(&self) -> usize {
-        if let Some(ref unit) = self.process_data_unit {
-            unit.lost_pdu_count
-        } else {
-            0
-        }
+    pub fn lost_frame_count(&self) -> usize {
+        self.sif.lost_frame_count
     }
 
     pub fn initilize_slaves(&mut self) -> Result<(), EcError<NetworkInitializerError>> {

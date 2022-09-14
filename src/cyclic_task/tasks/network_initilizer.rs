@@ -172,27 +172,15 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
         command_and_data
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
         //log::info!("recv {:?}",self.state);
 
-        let wkc = if let Some(ref recv_data) = recv_data {
+        let wkc = {
             let CommandData { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
             }
             *wkc
-        } else {
-            if self.lost_count > 0 {
-                self.state = State::Error(EcError::LostPacket);
-                return;
-            } else {
-                self.lost_count += 1;
-                return;
-            }
         };
 
         match &mut self.state {

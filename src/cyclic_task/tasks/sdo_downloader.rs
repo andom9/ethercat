@@ -59,10 +59,6 @@ impl SdoDownloader {
         &self.mailbox
     }
 
-    //pub fn take_buffer(self) -> &'a mut [u8] {
-    //    self.mailbox.take_buffer()
-    //}
-
     pub fn start(&mut self, slave: &Slave, index: u16, sub_index: u8, data: &[u8], buf: &mut [u8]) {
         self.slave_address = slave.info().slave_address();
         self.tx_sm = slave.info().mailbox_tx_sm().unwrap_or_default();
@@ -71,6 +67,7 @@ impl SdoDownloader {
 
         let mut sdo_header = [0; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE];
         CoeHeader(&mut sdo_header).set_service_type(CoeServiceType::SdoReq as u8);
+
         let mut sdo = SdoHeader(&mut sdo_header[CoeHeader::SIZE..]);
         sdo.set_complete_access(false);
         sdo.set_data_set_size(0);
@@ -92,9 +89,14 @@ impl SdoDownloader {
 
         MailboxWriter::set_mailbox_data(&mb_header.0, &sdo_header, buf);
         buf.iter_mut()
-            .skip(sdo_header.len())
+            .skip(MailboxHeader::SIZE + sdo_header.len())
             .zip(data)
             .for_each(|(b, d)| *b = *d);
+        log::info!("{:X?}", buf);
+        log::info!("{:X?}", data);
+        log::info!("{:X?}", mb_header.0);
+        log::info!("{:X?}", sdo_header);
+        log::info!("{:X?}", index);
 
         self.mailbox
             .start_to_write(self.slave_address, self.rx_sm, true);
@@ -124,20 +126,6 @@ impl Cyclic for SdoDownloader {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
-            //    State::CheckMailboxEmpty => {
-            //buf
-            //    .iter_mut()
-            //    .zip(self.sdo_header)
-            //    .for_each(|(b, d)| *b = d);
-            //buf
-            //    .iter_mut()
-            //    .skip(self.sdo_header.len())
-            //    .zip(data)
-            //    .for_each(|(b, d)| *b = *d);
-            //        self.mailbox
-            //            .start_to_read(self.slave_address, self.tx_sm, false);
-            //        self.mailbox.next_command(buf)
-            //    }
             State::WriteDownloadRequest => self.mailbox.next_command(buf),
             State::ReadDownloadResponse(is_first) => {
                 if is_first {
@@ -149,28 +137,11 @@ impl Cyclic for SdoDownloader {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
             State::Complete => {}
-            //State::CheckMailboxEmpty => {
-            //    self.mailbox.recieve_and_process(recv_data, sys_time);
-            //    match self.mailbox.wait() {
-            //        Some(Ok(_)) => {
-            //            self.state = State::Error(SdoTaskError::MailboxAlreadyExisted.into());
-            //        }
-            //        Some(Err(EcError::TaskSpecific(MailboxTaskError::MailboxEmpty))) => {
-            //            self.state = State::WriteDownloadRequest(true)
-            //        }
-            //        None => {}
-            //        Some(Err(other_err)) => self.state = State::Error(other_err.into()),
-            //    }
-            //}
             State::WriteDownloadRequest => {
                 self.mailbox.recieve_and_process(recv_data, sys_time);
                 match self.mailbox.wait() {
@@ -185,8 +156,7 @@ impl Cyclic for SdoDownloader {
                 self.mailbox.recieve_and_process(recv_data, sys_time);
                 match self.mailbox.wait() {
                     Some(Ok(_)) => {
-                        let (_mb_header, mb_data) =
-                            MailboxReader::mailbox_data(recv_data.unwrap().data);
+                        let (_mb_header, mb_data) = MailboxReader::mailbox_data(recv_data.data);
                         let sdo_header = SdoHeader(&mb_data[CoeHeader::SIZE..]);
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];

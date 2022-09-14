@@ -389,13 +389,9 @@ impl Cyclic for SlaveInitializer {
         command_and_data
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        sys_time: EtherCatSystemTime,
-    ) {
+    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
         log::info!("recv {:?}", self.state);
-        let data = if let Some(ref recv_data) = recv_data {
+        let data = {
             let CommandData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(EcError::UnexpectedCommand);
@@ -404,9 +400,6 @@ impl Cyclic for SlaveInitializer {
                 self.state = State::Error(EcError::UnexpectedWkc(*wkc));
             }
             data
-        } else {
-            self.state = State::Error(EcError::LostPacket);
-            return;
         };
 
         match self.state {
@@ -458,12 +451,15 @@ impl Cyclic for SlaveInitializer {
 
                 slave.support_dc = dl_info.dc_supported();
                 if dl_info.dc_supported() {
-                    assert!(!dl_info.dc_range(), "A slave not support 64 bit dc range");
+                    assert!(dl_info.dc_range(), "A slave not support 64 bit dc range");
                 }
                 //slave.is_dc_range_64bits = dl_info.dc_range();
                 slave.support_fmmu_bit_operation = !dl_info.fmmu_bit_operation_not_supported();
                 //slave.support_lrw = !dl_info.not_lrw_supported(); //これが無いと事実上プロセスデータに対応しない。
-                assert!(dl_info.not_lrw_supported(), "A slave are not supported lrw");
+                assert!(
+                    !dl_info.not_lrw_supported(),
+                    "A slave are not supported lrw"
+                );
 
                 //slave.support_rw = !dl_info.not_bafrw_supported();
                 slave.ram_size_kb = dl_info.ram_size();

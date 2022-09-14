@@ -311,6 +311,14 @@ impl SiiData<[u8; 8]> {
     pub fn new() -> Self {
         Self([0; Self::SIZE])
     }
+
+    pub fn data(&self, size: usize) -> u64 {
+        let mut data = [0; 8];
+        for i in 0..size {
+            data[i] = self.0[i];
+        }
+        u64::from_le_bytes(data)
+    }
 }
 
 // NOTE: MII register is not inplemented

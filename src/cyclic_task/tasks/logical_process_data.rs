@@ -8,7 +8,6 @@ pub struct LogicalProcessData {
     expected_wkc: u16,
     image_size: usize,
     pub invalid_wkc_count: usize,
-    pub lost_pdu_count: usize,
     last_wkc: u16,
 }
 
@@ -20,7 +19,6 @@ impl LogicalProcessData {
             expected_wkc,
             image_size,
             invalid_wkc_count: 0,
-            lost_pdu_count: 0,
             last_wkc: 0,
         }
     }
@@ -47,22 +45,11 @@ impl Cyclic for LogicalProcessData {
         Some((self.command, self.image_size))
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        _systime: EtherCatSystemTime,
-    ) {
-        if let Some(recv_data) = recv_data {
-            let CommandData { command, wkc, .. } = recv_data;
-            let wkc = *wkc;
-            if !(command.c_type == self.command.c_type) {
-                self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            } else if wkc != self.expected_wkc {
-                self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);
-            }
-        } else {
-            self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            return;
-        };
+    fn recieve_and_process(&mut self, recv_data: &CommandData, _systime: EtherCatSystemTime) {
+        let CommandData { wkc, .. } = recv_data;
+        let wkc = *wkc;
+        if wkc != self.expected_wkc {
+            self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);
+        }
     }
 }

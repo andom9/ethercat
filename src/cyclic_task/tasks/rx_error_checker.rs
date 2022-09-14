@@ -8,7 +8,6 @@ pub struct RxErrorChecker {
     target: TargetSlave,
     rx_error_count: RxErrorCounter<[u8; RxErrorCounter::SIZE]>,
     pub invalid_wkc_count: usize,
-    pub lost_pdu_count: usize,
     last_wkc: u16,
 }
 
@@ -23,7 +22,6 @@ impl RxErrorChecker {
             target: TargetSlave::default(),
             rx_error_count: RxErrorCounter::new(),
             invalid_wkc_count: 0,
-            lost_pdu_count: 0,
             last_wkc: 0,
         }
     }
@@ -52,25 +50,14 @@ impl Cyclic for RxErrorChecker {
         Some((self.command, RxErrorCounter::SIZE))
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        _systime: EtherCatSystemTime,
-    ) {
-        let data = if let Some(recv_data) = recv_data {
-            let CommandData {
-                command, wkc, data, ..
-            } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &CommandData, _systime: EtherCatSystemTime) {
+        let data = {
+            let CommandData { wkc, data, .. } = recv_data;
             let wkc = *wkc;
-            if !(command.c_type == self.command.c_type) {
-                self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            } else if wkc != self.target.num_targets() {
+            if wkc != self.target.num_targets() {
                 self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);
             }
             data
-        } else {
-            self.lost_pdu_count = self.lost_pdu_count.saturating_add(1);
-            return;
         };
         self.rx_error_count
             .0

@@ -98,33 +98,24 @@ impl Cyclic for RamAccessTask {
         }
     }
 
-    fn recieve_and_process(
-        &mut self,
-        recv_data: Option<&CommandData>,
-        _sys_time: EtherCatSystemTime,
-    ) {
-        if let Some(recv_data) = recv_data {
-            let CommandData { command, wkc, .. } = recv_data;
-            if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
-            }
-            match self.slave_address.into() {
-                TargetSlave::Single(_slave_address) => {
-                    if *wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWkc(*wkc));
-                    }
-                }
-                TargetSlave::All(num_slaves) => {
-                    if *wkc != num_slaves {
-                        self.state = State::Error(EcError::UnexpectedWkc(*wkc));
-                    }
+    fn recieve_and_process(&mut self, recv_data: &CommandData, _sys_time: EtherCatSystemTime) {
+        let CommandData { command, wkc, .. } = recv_data;
+        if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
+            self.state = State::Error(EcError::UnexpectedCommand);
+        }
+        match self.slave_address.into() {
+            TargetSlave::Single(_slave_address) => {
+                if *wkc != 1 {
+                    self.state = State::Error(EcError::UnexpectedWkc(*wkc));
                 }
             }
-            //data
-        } else {
-            self.state = State::Error(EcError::LostPacket);
-            return;
-        };
+            TargetSlave::All(num_slaves) => {
+                if *wkc != num_slaves {
+                    self.state = State::Error(EcError::UnexpectedWkc(*wkc));
+                }
+            }
+        }
+        //data
 
         match self.state {
             State::Idle => {}
