@@ -1,5 +1,5 @@
 # EtherCAT Master
-This crate provides a `no_std` API for EtherCAT master.
+This crate provides a `no_std` and no `alloc` API for EtherCAT master.
 
 ## Documentaion
 WIP

@@ -30,8 +30,9 @@ checksum = "dcb6dd1c2376d2e096796e234a70e17e94cc2d5d54ff8ce42b28cef1d0d359a4"
 
 [[package]]
 name = "bitfield"
-version = "0.13.2"
-source = "git+https://github.com/dzamlo/rust-bitfield?rev=5a517f8#5a517f8018bdca615f48f99167576df41eb667a2"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d7e60934ceec538daadb9d8432424ed043a904d8e0243f3c6446bce549a46ac"
 
 [[package]]
 name = "bitflags"
@@ -74,7 +75,6 @@ dependencies = [
  "log",
  "nb",
  "num_enum",
- "paste",
  "pnet_datalink",
  "smoltcp",
  "void",
@@ -163,12 +163,6 @@ dependencies = [
  "quote",
  "syn",
 ]
-
-[[package]]
-name = "paste"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
 name = "pnet_base"
