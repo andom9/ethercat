@@ -12,7 +12,7 @@ It is difficult to implement all the features of an EtherCAT master. It is also 
 
 Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG1500_V1i0i2_D_R_MasterClasses.pdf) for more information on the features listed below.
 
-*legend*:
+*legend*:<br>
 🔳  Supported.<br>
 ⬜  Not supported but will be addressed.<br>
 🚫  No plans to support.<br>
