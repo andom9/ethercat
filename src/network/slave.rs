@@ -260,7 +260,7 @@ impl FmmuConfig {
         if self.bit_length % 8 == 0 {
             self.bit_length >> 3
         } else {
-            self.bit_length >> 3 + 1
+            (self.bit_length >> 3) + 1
         }
     }
     pub fn set_logical_address(&mut self, logical_address: u32) {

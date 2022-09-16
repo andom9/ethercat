@@ -4,8 +4,8 @@ use bitfield::*;
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct DlInformation([u8]);
-    pub u8, ethercat_type, _: 8*1-1, 8*0;
-    pub u8, revision, _: 8*2-1, 8*1;
+    pub u8, ethercat_type, _: 8-1, 8*0;
+    pub u8, revision, _: 8*2-1, 8;
     pub u16, build_number, _: 8*4-1, 8*2;
     /// Number of supported Fmmu entities
     pub u8, number_of_supported_fmmu_entities, _: 8*5-1, 8*4;
@@ -114,10 +114,10 @@ bitfield! {
     #[derive(Debug, Clone)]
     pub struct DlControl([u8]);
     pub forwarding_rule, set_forwarding_rule: 0;
-    pub u8, loop_control_port0, set_loop_control_port0: 8*1+1, 8*1;
-    pub u8, loop_control_port1, set_loop_control_port1: 8*1+3, 8*1+2;
-    pub u8, loop_control_port2, set_loop_control_port2: 8*1+5, 8*1+4;
-    pub u8, loop_control_port3, set_loop_control_port3: 8*1+7, 8*1+6;
+    pub u8, loop_control_port0, set_loop_control_port0: 8+1, 8;
+    pub u8, loop_control_port1, set_loop_control_port1: 8+3, 8+2;
+    pub u8, loop_control_port2, set_loop_control_port2: 8+5, 8+4;
+    pub u8, loop_control_port3, set_loop_control_port3: 8+7, 8+6;
     pub u8, tx_buffer_size, set_tx_buffer_size: 8*2+2, 8*2;
     pub enable_alias_address, set_enable_alias_address: 8*3;
 }
@@ -141,14 +141,14 @@ bitfield! {
     pub link_status_port1, _: 5;
     pub link_status_port2, _: 6;
     pub link_status_port3, _: 7;
-    pub loop_status_port0, _: 8*1;
-    pub signal_detection_port0, _: 8*1 + 1;
-    pub loop_status_port1, _: 8*1+2;
-    pub signal_detection_port1, _: 8*1 + 3;
-    pub loop_status_port2, _: 8*1+4;
-    pub signal_detection_port2, _: 8*1 + 5;
-    pub loop_status_port3, _: 8*1+6;
-    pub signal_detection_port3, _: 8*1 + 7;
+    pub loop_status_port0, _: 8;
+    pub signal_detection_port0, _: 8 + 1;
+    pub loop_status_port1, _: 8+2;
+    pub signal_detection_port1, _: 8 + 3;
+    pub loop_status_port2, _: 8+4;
+    pub signal_detection_port2, _: 8 + 5;
+    pub loop_status_port3, _: 8+6;
+    pub signal_detection_port3, _: 8 + 7;
 }
 
 impl DlStatus<[u8; 2]> {
@@ -163,8 +163,8 @@ impl DlStatus<[u8; 2]> {
 bitfield! {
     #[derive(Debug, Clone)]
     pub struct RxErrorCounter([u8]);
-    pub u8, frame_error_count_port0, set_frame_error_count_port0: 8*1-1, 8*0;
-    pub u8, phy_error_count_port0, set_phy_error_count_port0: 8*2-1, 8*1;
+    pub u8, frame_error_count_port0, set_frame_error_count_port0: 8-1, 8*0;
+    pub u8, phy_error_count_port0, set_phy_error_count_port0: 8*2-1, 8;
     pub u8, frame_error_count_port1, set_frame_error_count_port1: 8*3-1, 8*2;
     pub u8, phy_error_count_port1, set_phy_error_count_port1: 8*4-1, 8*3;
     pub u8, frame_error_count_port2, set_frame_error_count_port2: 8*5-1, 8*4;
@@ -247,7 +247,7 @@ bitfield! {
     pub struct SiiAccess([u8]);
     pub owner, set_owner: 0;
     pub reset_access, set_reset_access: 1;
-    pub pdi_accessed, _: 8*1;
+    pub pdi_accessed, _: 8;
 }
 
 impl SiiAccess<[u8; 2]> {
@@ -375,9 +375,9 @@ bitfield! {
     #[derive(Debug, Clone)]
     pub struct SyncManagerStatus([u8]);
     pub write_event, _: 8*0;
-    pub read_event, _: 8*0+1;
-    pub is_mailbox_full, _: 8*0+3;
-    pub u8, bufferd_state, _: 8*0+5, 8*0+4;
+    pub read_event, _: 1;
+    pub is_mailbox_full, _: 3;
+    pub u8, bufferd_state, _: 5, 4;
 }
 
 impl SyncManagerStatus<[u8; 1]> {

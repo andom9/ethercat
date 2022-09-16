@@ -6,7 +6,7 @@ use crate::frame::{MailboxErrorResponse, MailboxHeader};
 use crate::network::SyncManager;
 use crate::EcError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailboxTaskError {
     Timeout,
     MailboxNotAvailable,

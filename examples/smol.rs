@@ -50,7 +50,7 @@ where
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
         self.device
             .transmit()
-            .map(|token| SmolTxTokenWrapper(token))
+            .map(SmolTxTokenWrapper)
     }
 
     fn receive(&'a mut self) -> Option<Self::RxToken> {

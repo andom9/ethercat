@@ -9,7 +9,7 @@ use super::super::EtherCatSystemTime;
 
 const TIMEOUT_MS: u32 = 100;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SiiTaskError {
     PermittionDenied,
     AddressSizeOver,

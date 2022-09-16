@@ -122,7 +122,7 @@ pub enum MailboxType {
 //pub const MAILBOX_ERROR_LENGTH: usize = 4;
 
 bitfield! {
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct MailboxErrorResponse([u8]);
     u16;
     pub service_type, _: 15, 0;

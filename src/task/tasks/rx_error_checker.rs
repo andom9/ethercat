@@ -63,6 +63,6 @@ impl Cyclic for RxErrorChecker {
             .0
             .iter_mut()
             .zip(data[0..RxErrorCounter::SIZE].iter())
-            .for_each(|(b, d)| *b = d.clone());
+            .for_each(|(b, d)| *b = *d);
     }
 }

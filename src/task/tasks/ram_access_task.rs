@@ -103,7 +103,7 @@ impl Cyclic for RamAccessTask {
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
             self.state = State::Error(EcError::UnexpectedCommand);
         }
-        match self.slave_address.into() {
+        match self.slave_address {
             TargetSlave::Single(_slave_address) => {
                 if *wkc != 1 {
                     self.state = State::Error(EcError::UnexpectedWkc(*wkc));

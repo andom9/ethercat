@@ -4,14 +4,14 @@ use crate::hal::{RawEthernetDevice, RxToken, TxToken};
 use crate::util::*;
 use log::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandInterfaceError {
     TxError,
     RxError,
     Busy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command {
     pub c_type: CommandType,
     pub adp: u16,
@@ -162,7 +162,7 @@ where
                 let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
                 ec_frame.init();
                 let pdus = EtherCatPdus::new(buffer, *pdus_total_size, 0);
-                for pdu in pdus.into_iter() {
+                for pdu in pdus {
                     let index = pdu.index();
                     let command = CommandType::new(pdu.command_type());
                     let adp = pdu.adp();

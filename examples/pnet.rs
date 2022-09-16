@@ -1,16 +1,16 @@
-use core::num;
+
 use ethercat_master::hal::*;
 use ethercat_master::memory::sii::ProductCode;
 use ethercat_master::network::AlState;
-use ethercat_master::network::NetworkDescription;
-use ethercat_master::network::Slave;
-use ethercat_master::network::SyncManager;
+
+
+
 use ethercat_master::task::socket::{CommandSocket, SocketOption, SocketsInterface};
-use ethercat_master::task::{tasks::*, *};
+use ethercat_master::task::{*};
 use ethercat_master::EtherCatMaster;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
-use std::time::{Duration, Instant};
+
 
 struct PnetDevice {
     tx_buf: [u8; 1500],
@@ -74,7 +74,7 @@ impl<'a> RxToken for PnetRxToken<'a> {
     where
         F: FnOnce(&[u8]) -> Result<(), ()>,
     {
-        self.0.next().ok().map(|b| f(b)).unwrap_or(Err(()))
+        self.0.next().ok().map(f).unwrap_or(Err(()))
     }
 }
 

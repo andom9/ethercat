@@ -1,5 +1,5 @@
 //use smoltcp::phy::{RxToken, TxToken};
-use core::time::Duration;
+
 // use nb;
 // use void::Void;
 

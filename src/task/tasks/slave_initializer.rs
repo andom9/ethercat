@@ -244,56 +244,56 @@ impl Cyclic for SlaveInitializer {
                 self.inner.into_sii();
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), VenderID::ADDRESS);
+                    sii_reader.start(self.slave_address, VenderID::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetProductCode(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), ProductCode::ADDRESS);
+                    sii_reader.start(self.slave_address, ProductCode::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetRevision(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), RevisionNumber::ADDRESS);
+                    sii_reader.start(self.slave_address, RevisionNumber::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetProtocol(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), MailboxProtocol::ADDRESS);
+                    sii_reader.start(self.slave_address, MailboxProtocol::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetRxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), StandardRxMailboxSize::ADDRESS);
+                    sii_reader.start(self.slave_address, StandardRxMailboxSize::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetRxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), StandardRxMailboxOffset::ADDRESS);
+                    sii_reader.start(self.slave_address, StandardRxMailboxOffset::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetTxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), StandardTxMailboxSize::ADDRESS);
+                    sii_reader.start(self.slave_address, StandardTxMailboxSize::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
             State::GetTxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address.into(), StandardTxMailboxOffset::ADDRESS);
+                    sii_reader.start(self.slave_address, StandardTxMailboxOffset::ADDRESS);
                 }
                 sii_reader.next_command(buf)
             }
@@ -345,7 +345,7 @@ impl Cyclic for SlaveInitializer {
                     Command::new_write(self.slave_address.into(), FixedStationAddress::ADDRESS);
                 buf[..FixedStationAddress::SIZE].fill(0);
                 let mut st_addr = FixedStationAddress(buf);
-                let addr = match self.slave_address.into() {
+                let addr = match self.slave_address {
                     SlaveAddress::SlavePosition(addr) => addr + 1,
                     SlaveAddress::StationAddress(addr) => addr,
                 };

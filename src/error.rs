@@ -1,6 +1,6 @@
 use crate::task::CommandInterfaceError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EcError<E> {
     UnexpectedCommand,
     LostPacket,

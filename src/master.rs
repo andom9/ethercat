@@ -1,4 +1,4 @@
-use core::time::Duration;
+
 
 use crate::error::EcError;
 use crate::frame::{MailboxHeader, MAX_PDU_DATAGRAM};
@@ -336,7 +336,7 @@ where
         self.set_pdo_mappings_to_sm()?;
         let (image_size, expected_wkc) = self.set_logical_address_to_fmmu_context();
         self.set_fmmu_from_fmmu_context()
-            .map_err(|err| EcError::<SdoTaskError>::from(err))?;
+            .map_err(EcError::<SdoTaskError>::from)?;
         self.process_data_image_size = image_size;
         self.expected_lrw_wkc = expected_wkc;
         Ok(())
@@ -424,7 +424,7 @@ where
                 }
                 fmmu_reg.set_enable(true);
                 sif.write_register(
-                    &gp_socket_handle,
+                    gp_socket_handle,
                     slave.info().slave_address().into(),
                     FmmuRegister::ADDRESS + (i as u16) * FmmuRegister::SIZE as u16,
                     &fmmu_reg.0,

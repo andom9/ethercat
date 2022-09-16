@@ -28,7 +28,7 @@ bitfield! {
     pub struct AlControl([u8]);
     pub u8, state, set_state: 3, 0;
     pub acknowledge, set_acknowledge: 4;
-    pub u8, appl_specific, set_appl_specific: 8*2-1, 8*1;
+    pub u8, appl_specific, set_appl_specific: 8*2-1, 8;
 }
 
 impl AlControl<[u8; 2]> {
@@ -45,7 +45,7 @@ bitfield! {
     pub struct AlStatus([u8]);
     pub u8, state, _: 3, 0;
     pub change_err, _: 4;
-    pub u8, appl_specific, _: 8*2-1, 8*1;
+    pub u8, appl_specific, _: 8*2-1, 8;
     pub u16, al_status_code, _: 8*6-1, 8*4;
 }
 
@@ -64,7 +64,7 @@ impl<B: AsRef<[u8]>> AlStatus<B> {
     }
 }
 
-#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
 #[repr(u16)]
 pub enum AlStatusCode {
     NoError = 0,
