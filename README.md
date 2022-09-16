@@ -1,5 +1,5 @@
 # EtherCAT Master
-This crate provides a `no_std` and no `alloc` API for EtherCAT master.
+This crate provides a `no_std` and no `alloc` API for EtherCAT master devices.
 
 ## Documentaion
 WIP
@@ -8,7 +8,7 @@ WIP
 WIP
 
 ## Supported Features
-It is difficult to implement all the features of an EtherCAT master. It is also difficult to test with supported slaves. This section describes the features that are supported or planned to be supported and, conversely, those that are not.
+It is difficult to implement and test all features of an EtherCAT master. This section describes the features that are or will be supported and those that are not intended to be supported.
 
 Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG1500_V1i0i2_D_R_MasterClasses.pdf) for more information on the features listed below.
 
