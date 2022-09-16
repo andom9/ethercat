@@ -1,11 +1,11 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTaskError;
 use crate::frame::{MailboxErrorResponse, MailboxHeader, MailboxType};
-use crate::slave_network::SyncManager;
+use crate::network::SyncManager;
 use crate::{
     error::EcError,
-    register::{SyncManagerActivation, SyncManagerPdiControl, SyncManagerStatus},
+    memory::{SyncManagerActivation, SyncManagerPdiControl, SyncManagerStatus},
     //util::const_max,
 };
 

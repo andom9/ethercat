@@ -1,14 +1,14 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::slave_initializer::SlaveInitializerError;
 use super::SlaveInitializer;
-use crate::cyclic_task::Cyclic;
 use crate::error::EcError;
 use crate::frame::CommandType;
-use crate::register::DlControl;
-use crate::register::SyncManagerStatus;
-use crate::slave_network::FmmuConfig;
-use crate::slave_network::NetworkDescription;
-use crate::slave_network::Slave;
+use crate::memory::DlControl;
+use crate::memory::SyncManagerStatus;
+use crate::network::FmmuConfig;
+use crate::network::NetworkDescription;
+use crate::network::Slave;
+use crate::task::Cyclic;
 
 use super::super::CommandData;
 use super::super::EtherCatSystemTime;

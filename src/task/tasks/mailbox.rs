@@ -1,9 +1,9 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox_reader::MailboxReader;
 use super::mailbox_writer::MailboxWriter;
 use crate::frame::{MailboxErrorResponse, MailboxHeader};
-use crate::slave_network::SyncManager;
+use crate::network::SyncManager;
 use crate::EcError;
 
 #[derive(Debug, Clone, PartialEq)]

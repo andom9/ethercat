@@ -3,7 +3,6 @@ use super::CommandInterface;
 use super::CommandInterfaceError;
 use crate::frame::*;
 use crate::hal::*;
-use core::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct CommandData<'a> {
@@ -143,24 +142,22 @@ impl<S> Default for SocketOption<S> {
 }
 
 #[derive(Debug)]
-pub struct SocketsInterface<'packet, 'buf, D, T, const N: usize>
+pub struct SocketsInterface<'packet, 'buf, D, const N: usize>
 where
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
 {
-    iface: CommandInterface<'packet, D, T>,
+    iface: CommandInterface<'packet, D>,
     sockets: [SocketOption<CommandSocket<'buf>>; N],
     free_index: SocketHandle,
     pub lost_frame_count: usize,
 }
 
-impl<'packet, 'buf, D, T, const N: usize> SocketsInterface<'packet, 'buf, D, T, N>
+impl<'packet, 'buf, D, const N: usize> SocketsInterface<'packet, 'buf, D, N>
 where
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
 {
     pub fn new(
-        iface: CommandInterface<'packet, D, T>,
+        iface: CommandInterface<'packet, D>,
         mut sockets: [SocketOption<CommandSocket<'buf>>; N],
     ) -> Self {
         sockets
@@ -223,21 +220,12 @@ where
         }
     }
 
-    pub fn poll<I: Into<Duration>>(
-        &mut self,
-        recv_timeout: I,
-    ) -> Result<(), CommandInterfaceError> {
-        let timeout: Duration = recv_timeout.into();
-        loop {
-            let is_all_commands_enqueued = self.enqueue_commands()?;
+    /// If true, all PDUs are transmitted and received,
+    pub fn poll_tx_rx(&mut self) -> Result<bool, CommandInterfaceError> {
+        let is_all_commands_enqueued = self.enqueue_commands()?;
 
-            self.process(timeout)?;
-
-            if is_all_commands_enqueued {
-                break;
-            }
-        }
-        Ok(())
+        let is_all_enqueued_commands_processed = self.transmit_and_receive()?;
+        Ok(is_all_commands_enqueued && is_all_enqueued_commands_processed)
     }
 
     fn enqueue_commands(&mut self) -> Result<bool, CommandInterfaceError> {
@@ -250,32 +238,26 @@ where
                     break;
                 }
                 if let Some(command_data) = socket.take_command() {
-                    log::info!("senfd index{}", i);
+                    log::info!("send index{}", i);
                     let _ = self
                         .iface
                         .add_command(i as u8, command_data.command, len, |buf| {
                             for (b, d) in buf.iter_mut().zip(command_data.data) {
                                 *b = *d;
                             }
-                        })?;
+                        })
+                        .expect("always success");
                 }
             }
         }
         Ok(complete)
     }
 
-    fn process<I: Into<Duration> + Clone>(
-        &mut self,
-        phy_timeout: I,
-    ) -> Result<(), CommandInterfaceError> {
+    /// If true, all PDUs are transmitted and received
+    fn transmit_and_receive(&mut self) -> Result<bool, CommandInterfaceError> {
         let Self { iface, sockets, .. } = self;
-        match iface.poll(phy_timeout) {
-            Ok(_) => {}
-            Err(CommandInterfaceError::RxTimeout) => {
-                self.lost_frame_count = self.lost_frame_count.saturating_add(1);
-            } //lost packet
-            Err(err) => return Err(err),
-        }
+        let is_tx_ok = iface.transmit_one_frame()?;
+        let is_rx_ok = iface.receive_one_frame()?;
         let pdus = iface.consume_commands();
         for pdu in pdus {
             let index = pdu.index() as usize;
@@ -293,6 +275,6 @@ where
                 log::info!("socket recv");
             }
         }
-        Ok(())
+        Ok(is_rx_ok && is_tx_ok)
     }
 }

@@ -1,54 +1,52 @@
 use core::time::Duration;
 
-use crate::cyclic_task::socket::{CommandSocket, SocketHandle, SocketOption, SocketsInterface};
-use crate::cyclic_task::{tasks::*, *};
 use crate::error::EcError;
 use crate::frame::{MailboxHeader, MAX_PDU_DATAGRAM};
 use crate::hal::*;
-use crate::register::SiiData;
-use crate::register::SyncManagerControl;
-use crate::register::{AlStatusCode, FmmuRegister};
-use crate::register::{RxErrorCounter, SyncManagerActivation};
-use crate::slave_network::NetworkDescription;
-use crate::slave_network::PdoMapping;
-use crate::slave_network::Slave;
-use crate::slave_network::{AlState, FmmuConfig};
+use crate::memory::SiiData;
+use crate::memory::SyncManagerControl;
+use crate::memory::{AlStatusCode, FmmuRegister};
+use crate::memory::{RxErrorCounter, SyncManagerActivation};
+use crate::network::NetworkDescription;
+use crate::network::PdoMapping;
+use crate::network::Slave;
+use crate::network::{AlState, FmmuConfig};
+use crate::task::socket::{CommandSocket, SocketHandle, SocketOption, SocketsInterface};
+use crate::task::{tasks::*, *};
 
 #[derive(Debug)]
-pub struct EtherCatMaster<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D, T>
+pub struct EtherCatMaster<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D>
 where
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
 {
-    sif: SocketsInterface<'packet, 'socket_buf, D, T, 5>,
+    sif: SocketsInterface<'packet, 'socket_buf, D, 5>,
     network: NetworkDescription<'slaves, 'pdo_mapping, 'pdo_entry>,
     gp_socket_handle: SocketHandle,
     process_data_image_size: usize,
     expected_lrw_wkc: u16,
     //process data
     process_data_handle: Option<SocketHandle>,
-    process_data_unit: Option<LogicalProcessData>,
+    process_data_task: Option<LogicalProcessData>,
     //dc drift
     dc_handle: SocketHandle,
-    dc_unit: Option<DcDriftCompensator>,
+    dc_task: Option<DcDriftCompensator>,
     //alstate
     al_state_handle: SocketHandle,
-    al_state_unit: AlStateReader,
+    al_state_task: AlStateReader,
     //rxerror
     rx_error_handle: SocketHandle,
-    rx_error_unit: RxErrorChecker,
+    rx_error_task: RxErrorChecker,
 }
 
-impl<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D, T>
-    EtherCatMaster<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D, T>
+impl<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D>
+    EtherCatMaster<'packet, 'socket_buf, 'slaves, 'pdo_mapping, 'pdo_entry, D>
 where
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
 {
     pub fn new(
         slave_buf: &'slaves mut [Option<Slave<'pdo_mapping, 'pdo_entry>>],
         pdu_buffer: &'socket_buf mut [u8],
-        iface: CommandInterface<'packet, D, T>,
+        iface: CommandInterface<'packet, D>,
     ) -> Self {
         assert!(!slave_buf.is_empty());
 
@@ -83,12 +81,12 @@ where
             process_data_image_size: 0,
             expected_lrw_wkc: 0,
             process_data_handle: None,
-            process_data_unit: None,
+            process_data_task: None,
             dc_handle,
-            dc_unit: None,
-            al_state_unit: AlStateReader::new(),
+            dc_task: None,
+            al_state_task: AlStateReader::new(),
             al_state_handle,
-            rx_error_unit: RxErrorChecker::new(),
+            rx_error_task: RxErrorChecker::new(),
             rx_error_handle,
         }
     }
@@ -108,7 +106,7 @@ where
             .unwrap();
         self.configure_pdo_image().unwrap();
         assert!(self.register_process_data_buffer(proces_data_buf));
-        assert!(self.prepare_process_data_unit());
+        assert!(self.prepare_process_data_task());
         self.change_al_state(TargetSlave::All(num_slaves), AlState::SafeOperational)
             .unwrap();
     }
@@ -124,16 +122,16 @@ where
         true
     }
 
-    pub fn prepare_process_data_unit(&mut self) -> bool {
+    pub fn prepare_process_data_task(&mut self) -> bool {
         if self.expected_lrw_wkc != 0 {
-            self.process_data_unit = Some(LogicalProcessData::new(
+            self.process_data_task = Some(LogicalProcessData::new(
                 0,
                 self.expected_lrw_wkc,
                 self.process_data_image_size(),
             ));
             true
         } else {
-            self.process_data_unit = None;
+            self.process_data_task = None;
             false
         }
     }
@@ -144,45 +142,48 @@ where
     }
 
     /// 一サイクル分の処理を行う。
-    pub fn process_one_cycle<I: Into<Duration>>(
+    pub fn process_one_cycle(
         &mut self,
         sys_time: EtherCatSystemTime,
-        recv_timeout: I,
-    ) {
-        self.sif.poll(recv_timeout).unwrap();
+    ) -> Result<bool, CommandInterfaceError> {
+        let is_tx_rx_ok = self.sif.poll_tx_rx()?;
+        if !is_tx_rx_ok {
+            return Ok(false);
+        }
+
         let Self {
             process_data_handle,
-            process_data_unit,
+            process_data_task,
             dc_handle,
-            dc_unit,
+            dc_task,
             al_state_handle,
-            al_state_unit,
+            al_state_task,
             rx_error_handle,
-            rx_error_unit,
+            rx_error_task,
             ..
         } = self;
 
         let num_slaves = self.network.len() as u16;
 
         // process data + mb polling
-        if let (Some(ref handle), Some(ref mut unit)) = (process_data_handle, process_data_unit) {
+        if let (Some(ref handle), Some(ref mut task)) = (process_data_handle, process_data_task) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
             let recv_data = socket.get_recieved_command();
             if let Some(recv_data) = recv_data {
-                unit.recieve_and_process(&recv_data, sys_time);
+                task.recieve_and_process(&recv_data, sys_time);
             }
-            socket.set_command(|buf| unit.next_command(buf));
+            socket.set_command(|buf| task.next_command(buf));
             //TODO: mailbox polling
         }
 
         // dc drift comp
-        if let (ref handle, Some(ref mut unit)) = (dc_handle, dc_unit) {
+        if let (ref handle, Some(ref mut task)) = (dc_handle, dc_task) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
             let recv_data = socket.get_recieved_command();
             if let Some(recv_data) = recv_data {
-                unit.recieve_and_process(&recv_data, sys_time);
+                task.recieve_and_process(&recv_data, sys_time);
             }
-            socket.set_command(|buf| unit.next_command(buf));
+            socket.set_command(|buf| task.next_command(buf));
         }
 
         // rx error check
@@ -190,10 +191,10 @@ where
             let socket = self.sif.get_socket_mut(rx_error_handle).unwrap();
             let recv_data = socket.get_recieved_command();
             if let Some(recv_data) = recv_data {
-                rx_error_unit.recieve_and_process(&recv_data, sys_time);
+                rx_error_task.recieve_and_process(&recv_data, sys_time);
             }
-            rx_error_unit.set_target(TargetSlave::All(num_slaves));
-            socket.set_command(|buf| rx_error_unit.next_command(buf));
+            rx_error_task.set_target(TargetSlave::All(num_slaves));
+            socket.set_command(|buf| rx_error_task.next_command(buf));
         }
 
         // al state + al status code
@@ -201,23 +202,25 @@ where
             let socket = self.sif.get_socket_mut(al_state_handle).unwrap();
             let recv_data = socket.get_recieved_command();
             if let Some(recv_data) = recv_data {
-                al_state_unit.recieve_and_process(&recv_data, sys_time);
+                al_state_task.recieve_and_process(&recv_data, sys_time);
             }
-            socket.set_command(|buf| al_state_unit.next_command(buf));
+            socket.set_command(|buf| al_state_task.next_command(buf));
         }
+
+        Ok(true)
     }
 
     pub fn rx_error_count(&self) -> &RxErrorCounter<[u8; RxErrorCounter::SIZE]> {
-        self.rx_error_unit.rx_error_count()
+        self.rx_error_task.rx_error_count()
     }
 
     pub fn last_al_state(&self) -> (Option<AlState>, Option<AlStatusCode>) {
-        self.al_state_unit.last_al_state()
+        self.al_state_task.last_al_state()
     }
 
     pub fn process_data_invalid_wkc_count(&self) -> usize {
-        if let Some(ref unit) = self.process_data_unit {
-            unit.invalid_wkc_count
+        if let Some(ref task) = self.process_data_task {
+            task.invalid_wkc_count
         } else {
             0
         }
@@ -247,7 +250,7 @@ where
             }
         }
         if let Some(firt_dc_slave) = firt_dc_slave {
-            self.dc_unit = Some(DcDriftCompensator::new(firt_dc_slave as u16, dc_count));
+            self.dc_task = Some(DcDriftCompensator::new(firt_dc_slave as u16, dc_count));
         }
         Ok(())
     }
@@ -437,12 +440,11 @@ fn set_pdo_mappings_to_sm_utility<
     'socket_buf,
     'pdo_mapping,
     'pdo_entry,
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
     const S: usize,
 >(
     slave: &mut Slave<'pdo_mapping, 'pdo_entry>,
-    sif: &mut SocketsInterface<'packet, 'socket_buf, D, T, S>,
+    sif: &mut SocketsInterface<'packet, 'socket_buf, D, S>,
     handle: &SocketHandle,
     is_output: bool, //output = rx of slave
 ) -> Result<(), EcError<SdoTaskError>> {

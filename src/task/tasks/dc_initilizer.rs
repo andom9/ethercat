@@ -1,10 +1,10 @@
-use crate::cyclic_task::Cyclic;
-use crate::cyclic_task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
 use crate::frame::CommandType;
-use crate::register::{
+use crate::memory::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
-use crate::slave_network::NetworkDescription;
+use crate::network::NetworkDescription;
+use crate::task::Cyclic;
+use crate::task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
 use crate::util::const_max;
 use crate::EcError;
 

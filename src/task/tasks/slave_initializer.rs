@@ -1,20 +1,20 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::super::{CommandData, EtherCatSystemTime};
 use super::sii_reader::SiiTaskError;
 use super::AlStateTransferError;
 use super::{al_state_transfer::AlStateTransfer, sii_reader::SiiReader};
-use crate::cyclic_task::Cyclic;
 use crate::error::EcError;
-use crate::register::sii::*;
-use crate::register::{
+use crate::memory::sii::*;
+use crate::memory::{
     CyclicOperationStartTime, DcActivation, DlControl, DlInformation, DlStatus, DlUserWatchDog,
     FixedStationAddress, FmmuRegister, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
     Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, PdiControl,
     RxErrorCounter, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
     SyncManagerChannelWatchDog, SyncManagerControl, SyncManagerStatus, WatchDogDivider,
 };
-use crate::slave_network::SyncManagerType;
-use crate::slave_network::{AlState, SlaveInfo, SyncManager};
+use crate::network::SyncManagerType;
+use crate::network::{AlState, SlaveInfo, SyncManager};
+use crate::task::Cyclic;
 use crate::util::const_max;
 use bit_field::BitField;
 
@@ -43,6 +43,7 @@ impl From<EcError<AlStateTransferError>> for EcError<SlaveInitializerError> {
             EcError::LostPacket => EcError::LostPacket,
             EcError::UnexpectedCommand => EcError::UnexpectedCommand,
             EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
+            EcError::Timeout => EcError::Timeout,
         }
     }
 }
@@ -57,6 +58,7 @@ impl From<EcError<SiiTaskError>> for EcError<SlaveInitializerError> {
             EcError::LostPacket => EcError::LostPacket,
             EcError::UnexpectedCommand => EcError::UnexpectedCommand,
             EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
+            EcError::Timeout => EcError::Timeout,
         }
     }
 }

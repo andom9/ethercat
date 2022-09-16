@@ -1,5 +1,5 @@
-use crate::cyclic_task::Cyclic;
-use crate::cyclic_task::{Command, CommandData, EtherCatSystemTime};
+use crate::task::Cyclic;
+use crate::task::{Command, CommandData, EtherCatSystemTime};
 
 #[derive(Debug)]
 pub struct LogicalProcessData {

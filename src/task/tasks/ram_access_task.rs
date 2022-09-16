@@ -1,7 +1,7 @@
-use super::super::interface::*;
-use crate::cyclic_task::socket::CommandData;
-use crate::cyclic_task::{Cyclic, EtherCatSystemTime};
+use super::super::command::*;
 use crate::error::EcError;
+use crate::task::socket::CommandData;
+use crate::task::{Cyclic, EtherCatSystemTime};
 
 #[derive(Debug, PartialEq)]
 enum State {

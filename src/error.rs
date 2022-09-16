@@ -1,4 +1,4 @@
-use crate::cyclic_task::CommandInterfaceError;
+use crate::task::CommandInterfaceError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EcError<E> {
@@ -7,6 +7,7 @@ pub enum EcError<E> {
     UnexpectedWkc(u16),
     Interface(CommandInterfaceError),
     TaskSpecific(E),
+    Timeout,
 }
 
 impl<E> From<CommandInterfaceError> for EcError<E> {

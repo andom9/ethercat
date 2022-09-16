@@ -1,10 +1,10 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::super::CommandData;
 use super::super::EtherCatSystemTime;
-use crate::cyclic_task::Cyclic;
-use crate::register::AlStatus;
-use crate::register::AlStatusCode;
-use crate::slave_network::AlState;
+use crate::memory::AlStatus;
+use crate::memory::AlStatusCode;
+use crate::network::AlState;
+use crate::task::Cyclic;
 use crate::util::const_max;
 
 #[derive(Debug)]

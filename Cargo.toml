@@ -9,8 +9,6 @@ description = "EtherCAT Master"
 log = "0.4"
 bitfield = "0.14.0"
 bit_field = "0.10.1"
-void = "1"
-nb = "1"
 num_enum = "0.5.7"
 
 [dev-dependencies]

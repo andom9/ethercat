@@ -41,7 +41,7 @@ where
     }
 }
 
-impl<'a, D> Device<'a> for SmolDeviceWrapper<D>
+impl<'a, D> RawEthernetDevice<'a> for SmolDeviceWrapper<D>
 where
     D: for<'d> smoltcp::phy::Device<'d>,
 {

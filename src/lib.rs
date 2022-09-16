@@ -5,13 +5,13 @@
 //      このとき使用するFmmuは３番目となる(3番目のFmmuはMBoxState用みたい)
 
 #![no_std]
-pub mod cyclic_task;
 mod error;
 pub mod frame;
 pub mod hal;
 pub(crate) mod master;
-pub mod register;
-pub mod slave_network;
+pub mod memory;
+pub mod network;
+pub mod task;
 pub use error::*;
 pub(crate) mod util;
 pub use master::*;

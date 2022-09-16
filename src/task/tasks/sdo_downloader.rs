@@ -5,11 +5,11 @@ use super::{MailboxReader, MailboxWriter};
 use super::sdo::SdoTaskError;
 //use super::{MailboxReader, MailboxWriter};
 
-use super::super::interface::*;
+use super::super::command::*;
 use crate::error::EcError;
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoDownloadNormalHeader, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
-use crate::slave_network::{Slave, SyncManager};
+use crate::network::{Slave, SyncManager};
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {

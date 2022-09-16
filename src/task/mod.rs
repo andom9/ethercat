@@ -1,7 +1,7 @@
-mod interface;
+mod command;
 pub mod tasks;
 
-pub use interface::*;
+pub use command::*;
 
 use self::socket::{CommandData, CommandSocket};
 pub mod socket;

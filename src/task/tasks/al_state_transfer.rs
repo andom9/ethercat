@@ -1,12 +1,12 @@
-use super::super::interface::*;
+use super::super::command::*;
 use super::super::EtherCatSystemTime;
-use crate::cyclic_task::socket::CommandData;
-use crate::cyclic_task::Cyclic;
 use crate::error::EcError;
-use crate::register::AlStatusCode;
-use crate::register::SiiAccess;
-use crate::register::{AlControl, AlStatus};
-use crate::slave_network::AlState;
+use crate::memory::AlStatusCode;
+use crate::memory::SiiAccess;
+use crate::memory::{AlControl, AlStatus};
+use crate::network::AlState;
+use crate::task::socket::CommandData;
+use crate::task::Cyclic;
 use crate::util::const_max;
 use core::convert::TryFrom;
 

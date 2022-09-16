@@ -1,5 +1,5 @@
-use crate::cyclic_task::*;
-use crate::register::PortPhysics;
+use crate::memory::PortPhysics;
+use crate::task::*;
 use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]

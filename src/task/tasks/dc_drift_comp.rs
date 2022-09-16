@@ -1,7 +1,7 @@
-use crate::cyclic_task::Cyclic;
-use crate::cyclic_task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
 use crate::frame::CommandType;
-use crate::register::DcSystemTime;
+use crate::memory::DcSystemTime;
+use crate::task::Cyclic;
+use crate::task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
 
 #[derive(Debug)]
 pub struct DcDriftCompensator {

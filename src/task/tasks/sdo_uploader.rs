@@ -2,14 +2,14 @@ use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTask;
 use super::sdo::SdoTaskError;
 
-use super::super::interface::*;
-use crate::cyclic_task::tasks::{MailboxReader, MailboxWriter};
+use super::super::command::*;
+use crate::task::tasks::{MailboxReader, MailboxWriter};
 //use super::MailboxTaskError;
 //use crate::cyclic_task::tasks::{MailboxReader, MailboxWriter};
 use crate::error::EcError;
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
-use crate::slave_network::{Slave, SyncManager};
+use crate::network::{Slave, SyncManager};
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {

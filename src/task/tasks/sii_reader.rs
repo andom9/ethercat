@@ -1,8 +1,8 @@
-use super::super::interface::*;
-use crate::cyclic_task::socket::CommandData;
-use crate::cyclic_task::Cyclic;
+use super::super::command::*;
 use crate::error::EcError;
-use crate::register::{SiiAccess, SiiAddress, SiiControl, SiiData};
+use crate::memory::{SiiAccess, SiiAddress, SiiControl, SiiData};
+use crate::task::socket::CommandData;
+use crate::task::Cyclic;
 use crate::util::const_max;
 
 use super::super::EtherCatSystemTime;

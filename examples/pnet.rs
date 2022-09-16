@@ -1,42 +1,16 @@
 use core::num;
-use ethercat_master::cyclic_task::socket::{CommandSocket, SocketOption, SocketsInterface};
-use ethercat_master::cyclic_task::{tasks::*, *};
 use ethercat_master::hal::*;
-use ethercat_master::register::sii::ProductCode;
-use ethercat_master::slave_network::AlState;
-use ethercat_master::slave_network::NetworkDescription;
-use ethercat_master::slave_network::Slave;
-use ethercat_master::slave_network::SyncManager;
+use ethercat_master::memory::sii::ProductCode;
+use ethercat_master::network::AlState;
+use ethercat_master::network::NetworkDescription;
+use ethercat_master::network::Slave;
+use ethercat_master::network::SyncManager;
+use ethercat_master::task::socket::{CommandSocket, SocketOption, SocketsInterface};
+use ethercat_master::task::{tasks::*, *};
 use ethercat_master::EtherCatMaster;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
 use std::time::{Duration, Instant};
-
-pub struct Timer(Instant, Duration);
-
-impl Timer {
-    fn new() -> Self {
-        Timer(Instant::now(), Duration::default())
-    }
-}
-
-impl CountDown for Timer {
-    fn start<T>(&mut self, count: T)
-    where
-        T: Into<Duration>,
-    {
-        self.0 = Instant::now();
-        self.1 = count.into();
-    }
-
-    fn wait(&mut self) -> nb::Result<(), void::Void> {
-        if self.1 < self.0.elapsed() {
-            Ok(())
-        } else {
-            Err(nb::Error::WouldBlock)
-        }
-    }
-}
 
 struct PnetDevice {
     tx_buf: [u8; 1500],
@@ -65,7 +39,7 @@ impl PnetDevice {
     }
 }
 
-impl<'a> Device<'a> for PnetDevice {
+impl<'a> RawEthernetDevice<'a> for PnetDevice {
     type TxToken = PnetTxToken<'a>;
     type RxToken = PnetRxToken<'a>;
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
@@ -124,10 +98,9 @@ fn main() {
 
 fn read_eeprom_test(interf_name: &str) {
     dbg!("prepare resources");
-    let timer = Timer::new();
     let device = PnetDevice::open(interf_name);
     let mut buf = vec![0; 1500];
-    let iface = CommandInterface::new(device, timer, &mut buf);
+    let iface = CommandInterface::new(device, &mut buf);
 
     let mut socket_buf = vec![0; 256];
     let sockets = [
@@ -147,10 +120,9 @@ fn read_eeprom_test(interf_name: &str) {
 
 fn sdo_test(interf_name: &str) {
     dbg!("prepare resources");
-    let timer = Timer::new();
     let device = PnetDevice::open(interf_name);
     let mut buf = vec![0; 1500];
-    let iface = CommandInterface::new(device, timer, &mut buf);
+    let iface = CommandInterface::new(device, &mut buf);
 
     let mut slaves: [_; 10] = Default::default();
     let mut pdu_buffer = vec![0; 1500];

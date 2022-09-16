@@ -24,6 +24,7 @@ impl From<EcError<()>> for EcError<SdoTaskError> {
             EcError::UnexpectedCommand => EcError::UnexpectedCommand,
             EcError::UnexpectedWkc(e) => EcError::UnexpectedWkc(e),
             EcError::TaskSpecific(_) => unreachable!(),
+            EcError::Timeout => EcError::Timeout,
         }
     }
 }
@@ -36,6 +37,7 @@ impl From<EcError<MailboxTaskError>> for EcError<SdoTaskError> {
             EcError::LostPacket => EcError::LostPacket,
             EcError::UnexpectedCommand => EcError::UnexpectedCommand,
             EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
+            EcError::Timeout => EcError::Timeout,
         }
     }
 }

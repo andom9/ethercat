@@ -15,8 +15,6 @@ mod sdo_uploader;
 mod sii_reader;
 mod slave_initializer;
 
-use core::time::Duration;
-
 pub use al_state_reader::*;
 pub use al_state_transfer::*;
 pub use dc_drift_comp::*;
@@ -36,21 +34,20 @@ pub use slave_initializer::*;
 
 use crate::{
     frame::MailboxHeader,
-    hal::{CountDown, Device},
-    register::{AlStatusCode, SiiData},
-    slave_network::{AlState, NetworkDescription, Slave, SlaveInfo},
+    hal::RawEthernetDevice,
+    memory::{AlStatusCode, SiiData},
+    network::{AlState, NetworkDescription, Slave, SlaveInfo},
     EcError,
 };
 
 use super::{
     socket::{SocketHandle, SocketsInterface},
-    Cyclic, EtherCatSystemTime, SlaveAddress, TargetSlave,
+    CommandInterfaceError, Cyclic, EtherCatSystemTime, SlaveAddress, TargetSlave,
 };
 
-impl<'packet, 'buf, D, T, const N: usize> SocketsInterface<'packet, 'buf, D, T, N>
+impl<'packet, 'buf, D, const N: usize> SocketsInterface<'packet, 'buf, D, N>
 where
-    D: for<'d> Device<'d>,
-    T: CountDown,
+    D: for<'d> RawEthernetDevice<'d>,
 {
     fn block<C: Cyclic, E>(
         &mut self,
@@ -59,13 +56,25 @@ where
     ) -> Result<(), EcError<E>> {
         let mut count = 0;
         loop {
-            self.poll(Duration::from_millis(1000))?;
+            match self.poll_tx_rx() {
+                // There are commands that have not been processed yet.
+                Ok(is_ok) => {
+                    if !is_ok {
+                        continue;
+                    }
+                }
+                Err(CommandInterfaceError::Busy) => continue,
+                Err(err) => return Err(err.into()),
+            }
             let socket = self.get_socket_mut(handle).unwrap();
             unit.process_one_step(socket, EtherCatSystemTime(count));
             if unit.is_finished() {
                 break;
             };
-            count += 1000;
+            count += 1;
+            if 100 < count {
+                return Err(EcError::Timeout);
+            }
         }
         Ok(())
     }
