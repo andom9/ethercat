@@ -1,12 +1,10 @@
-use super::super::command::*;
-use super::super::EtherCatSystemTime;
-use crate::error::EcError;
-use crate::memory::AlStatusCode;
-use crate::memory::SiiAccess;
-use crate::memory::{AlControl, AlStatus};
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
 use crate::network::AlState;
-use crate::task::socket::CommandData;
-use crate::task::Cyclic;
+use crate::register::AlStatusCode;
+use crate::register::SiiAccess;
+use crate::register::{AlControl, AlStatus};
 use crate::util::const_max;
 use core::convert::TryFrom;
 
@@ -35,11 +33,10 @@ const fn max_timeout_ms() -> u32 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlStateTransferError {
-    TimeoutMs(u32),
     AlStatusCode((AlState, AlStatusCode)),
 }
 
-impl From<AlStateTransferError> for EcError<AlStateTransferError> {
+impl From<AlStateTransferError> for TaskError<AlStateTransferError> {
     fn from(err: AlStateTransferError) -> Self {
         Self::TaskSpecific(err)
     }
@@ -47,7 +44,7 @@ impl From<AlStateTransferError> for EcError<AlStateTransferError> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<AlStateTransferError>),
+    Error(TaskError<AlStateTransferError>),
     Idle,
     Read,
     ResetError(AlState),
@@ -96,7 +93,7 @@ impl AlStateTransfer {
         self.command = Command::default();
     }
 
-    pub fn wait(&mut self) -> Option<Result<AlState, EcError<AlStateTransferError>>> {
+    pub fn wait(&mut self) -> Option<Result<AlState, TaskError<AlStateTransferError>>> {
         match &self.state {
             State::Complete => Some(Ok(self.current_al_state)),
             State::Error(err) => Some(Err(err.clone())),
@@ -183,17 +180,17 @@ impl Cyclic for AlStateTransfer {
             let CommandData { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+                self.state = State::Error(TaskError::UnexpectedCommand);
             }
             match self.slave_address {
                 TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
-                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                        self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                     }
                 }
                 TargetSlave::All(num_slaves) => {
                     if wkc != num_slaves {
-                        self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                        self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                     }
                 }
             }
@@ -242,8 +239,7 @@ impl Cyclic for AlStateTransfer {
                 } else if self.timer_start.0 < sys_time.0
                     && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
                 {
-                    self.state =
-                        State::Error(AlStateTransferError::TimeoutMs(self.timeout_ms).into());
+                    self.state = State::Error(TaskError::Timeout);
                 }
             }
         }

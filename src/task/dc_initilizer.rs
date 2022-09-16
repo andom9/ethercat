@@ -1,12 +1,12 @@
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
 use crate::frame::CommandType;
-use crate::memory::{
+use crate::interface::*;
+use crate::network::NetworkDescription;
+use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
-use crate::network::NetworkDescription;
-use crate::task::Cyclic;
-use crate::task::{Command, CommandData, EtherCatSystemTime, SlaveAddress};
 use crate::util::const_max;
-use crate::EcError;
 
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
 
@@ -16,7 +16,7 @@ const DRIFT_COUNT_MAX: usize = 15000;
 #[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
-    Error(EcError<()>),
+    Error(TaskError<()>),
     RequestToLatch(usize),
     CalculateOffset((usize, u16)),
     CalculateDelay((usize, u16)),
@@ -69,7 +69,7 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
         for recv_port in self.network.recieved_ports() {
             let slave_pos = recv_port.position;
             let port_number = recv_port.port;
-            let slave = self
+            let (slave, _) = self
                 .network
                 .slave(SlaveAddress::SlavePosition(slave_pos))
                 .unwrap();
@@ -89,15 +89,15 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
             last_recv_port = port_number;
         }
         if let Some(first_slave) = first_slave {
-            let first_slave = self
+            let (first_slave, _) = self
                 .network
                 .slave(SlaveAddress::SlavePosition(first_slave))
                 .unwrap();
             let mut dc = first_slave.dc_context.borrow_mut();
             dc.parent_port = None;
         }
-        for i in 0..self.network.len() {
-            let slave = self
+        for i in 0..self.network.num_slaves() {
+            let (slave, _) = self
                 .network
                 .slave(SlaveAddress::SlavePosition(i as u16))
                 .unwrap();
@@ -108,7 +108,7 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
         self.state = State::RequestToLatch(0);
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<()>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<()>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -158,7 +158,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                     DcSystemTimeOffset::ADDRESS,
                 );
                 buf[..DcSystemTimeOffset::SIZE].fill(0);
-                let slave = self
+                let (slave, _) = self
                     .network
                     .slave(SlaveAddress::SlavePosition(*pos))
                     .unwrap();
@@ -172,7 +172,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                     DcSystemTimeTransmissionDelay::ADDRESS,
                 );
                 buf[..DcSystemTimeTransmissionDelay::SIZE].fill(0);
-                let slave = self
+                let (slave, _) = self
                     .network
                     .slave(SlaveAddress::SlavePosition(*pos))
                     .unwrap();
@@ -197,7 +197,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             let CommandData { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+                self.state = State::Error(TaskError::UnexpectedCommand);
             }
             (data, wkc)
         };
@@ -207,18 +207,18 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             State::Error(_) => {}
             State::Complete => {}
             State::RequestToLatch(count) => {
-                if wkc != self.network.len() as u16 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                if wkc != self.network.num_slaves() as u16 {
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else {
                     self.state = State::CalculateOffset((*count, 0))
                 }
             }
             State::CalculateOffset((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else {
                     let master_time = sys_time.0;
-                    let slave = self
+                    let (slave, _) = self
                         .network
                         .slave(SlaveAddress::SlavePosition(*pos))
                         .unwrap();
@@ -235,7 +235,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                     } else {
                         dc.offset = offset;
                     }
-                    if self.network.len() <= (pos + 1) as usize {
+                    if self.network.num_slaves() <= (pos + 1) {
                         self.state = State::CalculateOffset((*count, pos + 1));
                     } else {
                         self.state = State::CalculateDelay((*count, 0));
@@ -244,10 +244,10 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::CalculateDelay((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else {
                     let recv_time = DcRecieveTime(data);
-                    let slave = self
+                    let (slave, _) = self
                         .network
                         .slave(SlaveAddress::SlavePosition(*pos))
                         .unwrap();
@@ -289,7 +289,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                             };
 
                         let (parent_pos, parent_port) = dc.parent_port.unwrap();
-                        let parent = self
+                        let (parent, _) = self
                             .network
                             .slave(SlaveAddress::SlavePosition(parent_pos))
                             .unwrap();
@@ -325,7 +325,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                             dc.delay = parent_delay + delay_delta;
                         }
                     }
-                    if self.network.len() <= (pos + 1) as usize {
+                    if self.network.num_slaves() <= (pos + 1) {
                         self.state = State::CalculateDelay((*count, pos + 1));
                     } else if *count < OFFSET_COUNT_MAX {
                         self.state = State::RequestToLatch(*count);
@@ -338,13 +338,13 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetOffset(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else {
                     let next_pos = self
                         .network
                         .slaves()
                         .enumerate()
-                        .position(|(i, s)| s.info.support_dc && *pos < i as u16);
+                        .position(|(i, (s, _))| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
                         self.state = State::SetOffset(next_pos as u16);
                     } else {
@@ -354,13 +354,13 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetDelay(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else {
                     let next_pos = self
                         .network
                         .slaves()
                         .enumerate()
-                        .position(|(i, s)| s.info.support_dc && *pos < i as u16);
+                        .position(|(i, (s, _))| s.info.support_dc && *pos < i as u16);
                     if let Some(next_pos) = next_pos {
                         self.state = State::SetDelay(next_pos as u16);
                     } else {
@@ -370,7 +370,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::CompensateDrift(count) => {
                 if wkc != self.dc_slave_count as u16 {
-                    self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
                 } else if count + 1 < DRIFT_COUNT_MAX {
                     self.state = State::CompensateDrift(count + 1);
                 } else {

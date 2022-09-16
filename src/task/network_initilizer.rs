@@ -1,32 +1,29 @@
-use super::super::command::*;
 use super::slave_initializer::SlaveInitializerError;
 use super::SlaveInitializer;
-use crate::error::EcError;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
 use crate::frame::CommandType;
-use crate::memory::DlControl;
-use crate::memory::SyncManagerStatus;
+use crate::interface::*;
 use crate::network::FmmuConfig;
 use crate::network::NetworkDescription;
 use crate::network::Slave;
-use crate::task::Cyclic;
+use crate::register::DlControl;
+use crate::register::SyncManagerStatus;
 
-use super::super::CommandData;
-use super::super::EtherCatSystemTime;
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetworkInitializerError {
-    Init(EcError<SlaveInitializerError>),
+    Init(TaskError<SlaveInitializerError>),
     TooManySlaves,
 }
 
-impl From<NetworkInitializerError> for EcError<NetworkInitializerError> {
+impl From<NetworkInitializerError> for TaskError<NetworkInitializerError> {
     fn from(err: NetworkInitializerError) -> Self {
         Self::TaskSpecific(err)
     }
 }
 
-impl From<EcError<SlaveInitializerError>> for NetworkInitializerError {
-    fn from(err: EcError<SlaveInitializerError>) -> Self {
+impl From<TaskError<SlaveInitializerError>> for NetworkInitializerError {
+    fn from(err: TaskError<SlaveInitializerError>) -> Self {
         Self::Init(err)
     }
 }
@@ -34,7 +31,7 @@ impl From<EcError<SlaveInitializerError>> for NetworkInitializerError {
 #[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
-    Error(EcError<NetworkInitializerError>),
+    Error(TaskError<NetworkInitializerError>),
     CountSlaves,
     StartInitSlaves(u16),
     WaitInitSlaves(u16),
@@ -82,7 +79,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
         self.lost_count = 0;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<NetworkInitializerError>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<NetworkInitializerError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -178,7 +175,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
         let wkc = {
             let CommandData { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+                self.state = State::Error(TaskError::UnexpectedCommand);
             }
             *wkc
         };

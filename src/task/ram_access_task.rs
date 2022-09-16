@@ -1,11 +1,10 @@
-use super::super::command::*;
-use crate::error::EcError;
-use crate::task::socket::CommandData;
-use crate::task::{Cyclic, EtherCatSystemTime};
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
 
 #[derive(Debug, PartialEq)]
 enum State {
-    Error(EcError<()>),
+    Error(TaskError<()>),
     Idle,
     Read,
     Write,
@@ -65,7 +64,7 @@ impl RamAccessTask {
         self.ado = ado;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<()>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<()>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -101,17 +100,17 @@ impl Cyclic for RamAccessTask {
     fn recieve_and_process(&mut self, recv_data: &CommandData, _sys_time: EtherCatSystemTime) {
         let CommandData { command, wkc, .. } = recv_data;
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-            self.state = State::Error(EcError::UnexpectedCommand);
+            self.state = State::Error(TaskError::UnexpectedCommand);
         }
         match self.slave_address {
             TargetSlave::Single(_slave_address) => {
                 if *wkc != 1 {
-                    self.state = State::Error(EcError::UnexpectedWkc(*wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
                 }
             }
             TargetSlave::All(num_slaves) => {
                 if *wkc != num_slaves {
-                    self.state = State::Error(EcError::UnexpectedWkc(*wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
                 }
             }
         }

@@ -1,6 +1,6 @@
-use crate::memory::RxErrorCounter;
-use crate::task::{Command, CommandData, EtherCatSystemTime};
-use crate::task::{Cyclic, TargetSlave};
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
+use crate::register::RxErrorCounter;
 
 #[derive(Debug)]
 pub struct RxErrorChecker {

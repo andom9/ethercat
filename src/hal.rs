@@ -1,17 +1,12 @@
-//use smoltcp::phy::{RxToken, TxToken};
-
-// use nb;
-// use void::Void;
-
-/// A smoltcp-like raw packet network interface.
+/// A smoltcp-like raw network interface.
 pub trait RawEthernetDevice<'a> {
     type TxToken: TxToken + 'a;
     type RxToken: RxToken + 'a;
 
-    /// If phi is not busy, return token. It should be non-blocking.
+    /// If phi is not busy, return token.
     fn transmit(&'a mut self) -> Option<Self::TxToken>;
 
-    /// If phi is not busy, return token. It should be non-blocking.
+    /// If phi is not busy, return token.
     fn receive(&'a mut self) -> Option<Self::RxToken>;
 }
 

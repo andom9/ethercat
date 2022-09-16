@@ -1,17 +1,10 @@
-//TODO: Initステートから移動するときは、Siiのアクセス権をSlaveに渡すべき
-//TODO: Operationステート以外では出力のシンクマネージャー（プロセスデータ）を無効化すべき？
-//TODO: Siiの読み込みに対応する。
-//TODO: プロセスデータでメールボックスのライトイベントを読み込んで、メールボックスの到着を確認する。
-//      このとき使用するFmmuは３番目となる(3番目のFmmuはMBoxState用みたい)
-
 #![no_std]
-mod error;
 pub mod frame;
 pub mod hal;
+pub mod interface;
 pub(crate) mod master;
-pub mod memory;
 pub mod network;
+pub mod register;
 pub mod task;
-pub use error::*;
 pub(crate) mod util;
 pub use master::*;

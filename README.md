@@ -10,108 +10,106 @@ WIP
 ## Supported Features
 It is difficult to implement all the features of an EtherCAT master. It is also difficult to test with supported slaves. This section describes the features that are supported or planned to be supported and, conversely, those that are not.
 
-Please refer to the ETG1500 for more information on the features listed below.
+Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG1500_V1i0i2_D_R_MasterClasses.pdf) for more information on the features listed below.
+
+*legend*:
+🔳  Supported.
+⬜  Not supported but will be addressed.
+🚫  No plans to support.
 
 **Basic Features**
-- (yes) Service Commands
-- (no) IRQ field in datagram
-- (yes) Slave with Device Emulation
-- (yes) EtherCAT State Machine
-- (no) VLAN
-- (yes) EtherCAT Frame Types
-- (no) UDP Frame Types
+- 🔳 Service Commands
+- 🚫 IRQ field in datagram
+- 🔳 Slave with Device Emulation
+- 🔳 EtherCAT State Machine
+- 🚫 VLAN
+- 🔳 EtherCAT Frame Types
+- 🚫 UDP Frame Types
 
 **Error Detections**
-- (yes) Checking Working Counter
-- (yes) Checking AL Status Code and EtherCAT State
-- (planned) Setting SM Watchdog
-- (no) Checking PDO State
-- (planned) Checking Lost Slaves
-- (yes) Checking Lost Frames
-- (yes) Checking Error Counter in Slaves
-- (no) Checking Sync Error Flag(0x1C33:20)
+- 🔳 Checking Working Counter
+- 🔳 Checking AL Status Code and EtherCAT State
+- ⬜ Setting SM Watchdog
+- 🚫 Checking PDO State
+- ⬜ Checking Lost Slaves
+- 🔳 Checking Lost Frames
+- 🔳 Checking Error Counter in Slaves
+- 🚫 Checking Sync Error Flag(0x1C33:20)
 
 **Process Data Exchenge**
-- (yes) Cyclic PDO
-- (no) Cyclic PDO using LRD and LWR
-- (no) Multiple Tasks
-- (no) Frame repetition
+- 🔳 Cyclic PDO
+- 🚫 Cyclic PDO using LRD and LWR
+- 🚫 Multiple Tasks
+- 🚫 Frame repetition
 
 **Network Configuration**
-- (planned) Online SII Scanning
-- (planned) Reading ENI
-- (planned) Compare Network configuration
-- (no) Explicit Device Identification
-- (planned) Station Alias Addressing
-- (yes) Reading SII
-- (planned) Writing SII
+- ⬜ Online SII Scanning
+- ⬜ Reading ENI
+- ⬜ Compare Network configuration
+- 🚫 Explicit Device Identification
+- ⬜ Station Alias Addressing
+- 🔳 Reading SII(EEPROM)
+- ⬜ Writing SII(EEPROM)
 
 **Mailbox Features**
-- (yes) Mailbox
-- (yes) Mailbox Resilient Layer
-- (no) Multiple Mailbox Channels
-- (planned) Mailbox Polling in OPRATIONAL state
-  - (planned) SDO Emergency Message
-  - (planned) Intermediary for slave-to-slave cmmunication
+- 🔳 Mailbox
+- 🔳 Mailbox Resilient Layer
+- 🚫 Multiple Mailbox Channels
+- ⬜ Mailbox Polling in OPRATIONAL state
+  - ⬜ SDO Emergency Message
+  - ⬜ Intermediary for slave-to-slave cmmunication
 
 **CoE**
-- (yes) CoE
-  - (yes) SDO Up/Donwload
-    - (yes) SDO Download Normal Request
-    - (no) SDO Download Expedited Request
-    - (yes) SDO Download Response
-    - (yes) SDO Upload Request
-    - (yes) SDO Upload Normal Response
-    - (yes) SDO Upload Expedited Response
-    - (yes) SDO Abort Response
-  - (no) Segmented Transfer
-  - (planned) Complete Access
-  - (planned) SDO info service
-  - (planned) Emergency Message
+- 🔳 CoE
+  - 🔳 SDO Up/Donwload
+  - 🚫 Segmented Transfer
+  - ⬜ Complete Access
+  - ⬜ SDO info service
+  - ⬜ Emergency Message
 
 **EoE**
-- (no) EoE
+- 🚫 EoE
 
 **SoE**
-- (no) SoE
+- 🚫 SoE
 
 **AoE**
-- (no) AoE
+- 🚫 AoE
 
 **FoE**
-- (planned) FoE
-- (planned) Boot State
+- ⬜ FoE
+- ⬜ Boot State
 
 **Synchronization with Distributed Clocks**
-- (yes) DC Support
-- (yes) Continous Propagation Delay compemsation
-- (planned) Sync Window monitoring
+- 🔳 DC Support
+- 🔳 Continous Propagation Delay compemsation
+- ⬜ Sync Window monitoring
 
 **Slave-to-Slave Communication**
-- (planned) via Master
+- ⬜ via Master
 
 **Master Information**
-- (no) Master Object Dictionary
+- 🚫 Master Object Dictionary
 
 **FP Cable Redundancy**
-- (no) Cable redundancy
-- (no) Hot Connect
+- 🚫 Cable redundancy
+- 🚫 Hot Connect
 
 **Other Slave Options**
-- (no) UseLrdLwr
-- (planned) SM:OpOnly
-- (no) SeparateSu
-- (no) SeparateFrame
-- (no) FrameRepeatSupport
-- (no) AssignToPdi
-- (planned) InitCmd
-- (no) UnknownFRMW
-- (no) Unknown64Bit
-- (no) Reg0108
-- (no) Reg0400
-- (no) Reg0410
-- (no) Reg0420
-- (no) StateMachine:Behavior
+- 🚫 UseLrdLwr
+- ⬜ SM:OpOnly
+- 🚫 SeparateSu
+- 🚫 SeparateFrame
+- 🚫 FrameRepeatSupport
+- 🚫 AssignToPdi
+- ⬜ InitCmd
+- 🚫 UnknownFRMW
+- 🚫 Unknown64Bit
+- 🚫 Reg0108
+- 🚫 Reg0400
+- 🚫 Reg0410
+- 🚫 Reg0420
+- 🚫 StateMachine:Behavior
 
 ## License
 

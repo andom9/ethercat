@@ -1,19 +1,16 @@
-use super::super::command::*;
-use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTaskError;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
 use crate::frame::MailboxHeader;
+use crate::interface::*;
 use crate::network::SyncManager;
-use crate::{
-    error::EcError,
-    memory::{SyncManagerActivation, SyncManagerStatus},
-    //util::const_max,
-};
+use crate::register::{SyncManagerActivation, SyncManagerStatus};
 
 const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<MailboxTaskError>),
+    Error(TaskError<MailboxTaskError>),
     Idle,
     Complete,
     CheckMailboxEmpty((bool, bool)),
@@ -100,7 +97,7 @@ impl MailboxWriter {
         self.sm_start_address = rx_sm.start_address;
     }
 
-    pub fn wait(&self) -> Option<Result<(), EcError<MailboxTaskError>>> {
+    pub fn wait(&self) -> Option<Result<(), TaskError<MailboxTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -156,7 +153,7 @@ impl Cyclic for MailboxWriter {
     fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
         let CommandData { command, data, wkc } = recv_data;
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-            self.state = State::Error(EcError::UnexpectedCommand);
+            self.state = State::Error(TaskError::UnexpectedCommand);
         }
         let wkc = *wkc;
         match self.state {
@@ -196,7 +193,7 @@ impl Cyclic for MailboxWriter {
         // check timeout
         let timeout_ns = (MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS as u64) * 1000 * 1000;
         if self.timer_start.0 < sys_time.0 && timeout_ns < sys_time.0 - self.timer_start.0 {
-            self.state = State::Error(MailboxTaskError::Timeout.into());
+            self.state = State::Error(TaskError::Timeout);
         }
     }
 }

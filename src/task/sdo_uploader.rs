@@ -1,22 +1,18 @@
-use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTask;
 use super::sdo::SdoTaskError;
-
-use super::super::command::*;
-use crate::task::tasks::{MailboxReader, MailboxWriter};
-//use super::MailboxTaskError;
-//use crate::cyclic_task::tasks::{MailboxReader, MailboxWriter};
-use crate::error::EcError;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
+use super::{MailboxReader, MailboxWriter};
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
+use crate::interface::*;
 use crate::network::{Slave, SyncManager};
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<SdoTaskError>),
+    Error(TaskError<SdoTaskError>),
     Idle,
     Complete,
-    //CheckMailboxEmpty(bool),
     WriteUploadRequest,
     ReadUploadResponse(bool),
 }
@@ -158,7 +154,7 @@ impl SdoUploader {
         self.state = State::WriteUploadRequest;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<SdoTaskError>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<SdoTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -213,7 +209,7 @@ impl Cyclic for SdoUploader {
             //        Some(Ok(_)) => {
             //            self.state = State::Error(SdoTaskError::MailboxAlreadyExisted.into());
             //        }
-            //        Some(Err(EcError::TaskSpecific(MailboxTaskError::MailboxEmpty))) => {
+            //        Some(Err(TaskError::TaskSpecific(MailboxTaskError::MailboxEmpty))) => {
             //            self.state = State::WriteUploadRequest(true)
             //        }
             //        None => self.state = State::CheckMailboxEmpty(false),

@@ -48,9 +48,7 @@ where
     type TxToken = SmolTxTokenWrapper<<D as smoltcp::phy::Device<'a>>::TxToken>;
     type RxToken = SmolRxTokenWrapper<<D as smoltcp::phy::Device<'a>>::RxToken>;
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        self.device
-            .transmit()
-            .map(SmolTxTokenWrapper)
+        self.device.transmit().map(SmolTxTokenWrapper)
     }
 
     fn receive(&'a mut self) -> Option<Self::RxToken> {

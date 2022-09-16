@@ -62,11 +62,11 @@ impl SdoDownloadNormalHeader<[u8; 4]> {
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
 pub enum AbortCode {
-    NoToggleBitChange = 0x05_03_00_00,  //
-    Timeout = 0x05_04_00_00,            //
-    UnknownClient = 0x05_04_00_01,      //
-    OutsideMemoryRange = 0x05_04_00_05, //
-    NotSupportedAccess = 0x06_01_00_00, //
+    NoToggleBitChange = 0x05_03_00_00,
+    Timeout = 0x05_04_00_00,
+    UnknownClient = 0x05_04_00_01,
+    OutsideMemoryRange = 0x05_04_00_05,
+    NotSupportedAccess = 0x06_01_00_00,
     WriteOnly = 0x06_01_00_01,
     ReadOnly = 0x06_01_00_02,
     SubIndexCannotBeWritten = 0x06_01_00_03,

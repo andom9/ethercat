@@ -81,10 +81,10 @@ impl<'a> CommandSocket<'a> {
     pub fn get_recieved_command(&self) -> Option<CommandData> {
         if self.recv_flag {
             self.command.map(|command| CommandData {
-                    command,
-                    data: &self.data_buf[..self.data_length],
-                    wkc: self.wkc,
-                })
+                command,
+                data: &self.data_buf[..self.data_length],
+                wkc: self.wkc,
+            })
         } else {
             None
         }
@@ -235,8 +235,7 @@ where
                 }
                 if let Some(command_data) = socket.take_command() {
                     log::info!("send index{}", i);
-                    self
-                        .iface
+                    self.iface
                         .add_command(i as u8, command_data.command, len, |buf| {
                             for (b, d) in buf.iter_mut().zip(command_data.data) {
                                 *b = *d;

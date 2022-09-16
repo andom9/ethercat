@@ -1,22 +1,19 @@
-use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox::MailboxTask;
-use super::{MailboxReader, MailboxWriter};
-//use super::mailbox::MailboxTaskError;
+use super::mailbox_reader::MailboxReader;
+use super::mailbox_writer::MailboxWriter;
 use super::sdo::SdoTaskError;
-//use super::{MailboxReader, MailboxWriter};
-
-use super::super::command::*;
-use crate::error::EcError;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoDownloadNormalHeader, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
+use crate::interface::*;
 use crate::network::{Slave, SyncManager};
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<SdoTaskError>),
+    Error(TaskError<SdoTaskError>),
     Idle,
     Complete,
-    //CheckMailboxEmpty,
     WriteDownloadRequest,
     ReadDownloadResponse(bool),
 }
@@ -104,7 +101,7 @@ impl SdoDownloader {
         self.state = State::WriteDownloadRequest;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), EcError<SdoTaskError>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<SdoTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),

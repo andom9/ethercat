@@ -1,9 +1,6 @@
 use crate::frame::*;
 use crate::hal::{RawEthernetDevice, RxToken, TxToken};
 
-use crate::util::*;
-use log::*;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandInterfaceError {
     TxError,
@@ -169,7 +166,7 @@ where
                     let ado = pdu.ado();
                     let data = pdu.data();
                     if !ec_frame.add_command(command, adp, ado, data, Some(index)) {
-                        error!("Failed to add command");
+                        log::error!("Failed to add command");
                         panic!();
                     }
                     *tx_count += 1;
@@ -177,7 +174,7 @@ where
                 Ok(())
             });
             if tx_result.is_err() {
-                error!("Failed to consume TX token");
+                log::error!("Failed to consume TX token");
                 return Err(CommandInterfaceError::TxError);
             }
         } else {
@@ -207,7 +204,7 @@ where
         loop {
             if let Some(rx_token) = ethdev.receive() {
                 let rx_result = rx_token.consume(|frame| {
-                    info!("something receive");
+                    log::info!("something receive");
                     let eth = EthernetHeader(&frame);
                     if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
                         return Ok(()); //continue
@@ -285,5 +282,13 @@ impl From<SlaveAddress> for TargetSlave {
 impl Default for TargetSlave {
     fn default() -> Self {
         Self::Single(SlaveAddress::default())
+    }
+}
+
+fn get_ap_adp(slave_number: u16) -> u16 {
+    if slave_number == 0 {
+        0
+    } else {
+        0xFFFF - (slave_number - 1)
     }
 }

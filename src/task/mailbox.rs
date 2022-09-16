@@ -1,14 +1,13 @@
-use super::super::command::*;
-use super::super::{CommandData, Cyclic, EtherCatSystemTime};
 use super::mailbox_reader::MailboxReader;
 use super::mailbox_writer::MailboxWriter;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
 use crate::frame::{MailboxErrorResponse, MailboxHeader};
+use crate::interface::*;
 use crate::network::SyncManager;
-use crate::EcError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailboxTaskError {
-    Timeout,
     MailboxNotAvailable,
     MailboxEmpty,
     MailboxFull,
@@ -16,7 +15,7 @@ pub enum MailboxTaskError {
     ErrorResponse(MailboxErrorResponse<[u8; MailboxErrorResponse::SIZE]>),
 }
 
-impl From<MailboxTaskError> for EcError<MailboxTaskError> {
+impl From<MailboxTaskError> for TaskError<MailboxTaskError> {
     fn from(err: MailboxTaskError) -> Self {
         Self::TaskSpecific(err)
     }
@@ -24,7 +23,7 @@ impl From<MailboxTaskError> for EcError<MailboxTaskError> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<MailboxTaskError>),
+    Error(TaskError<MailboxTaskError>),
     Idle,
     Complete,
     Processing,
@@ -145,7 +144,7 @@ impl MailboxTask {
         self.state = State::Processing;
     }
 
-    pub fn wait<'b>(&'b self) -> Option<Result<(), EcError<MailboxTaskError>>> {
+    pub fn wait<'b>(&'b self) -> Option<Result<(), TaskError<MailboxTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),

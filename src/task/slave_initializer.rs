@@ -1,64 +1,61 @@
-use super::super::command::*;
-use super::super::{CommandData, EtherCatSystemTime};
 use super::sii_reader::SiiTaskError;
 use super::AlStateTransferError;
+use super::TaskError;
 use super::{al_state_transfer::AlStateTransfer, sii_reader::SiiReader};
-use crate::error::EcError;
-use crate::memory::sii::*;
-use crate::memory::{
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
+use crate::network::SyncManagerType;
+use crate::network::{AlState, SlaveInfo, SyncManager};
+use crate::register::sii::*;
+use crate::register::{
     CyclicOperationStartTime, DcActivation, DlControl, DlInformation, DlStatus, DlUserWatchDog,
     FixedStationAddress, FmmuRegister, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
     Latch1NegativeEdgeValue, Latch1PositiveEdgeValue, LatchEdge, LatchEvent, PdiControl,
     RxErrorCounter, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
     SyncManagerChannelWatchDog, SyncManagerControl, SyncManagerStatus, WatchDogDivider,
 };
-use crate::network::SyncManagerType;
-use crate::network::{AlState, SlaveInfo, SyncManager};
-use crate::task::Cyclic;
 use crate::util::const_max;
 use bit_field::BitField;
 
 pub const MAX_SM_SIZE: u16 = 256;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlaveInitializerError {
     AlStateTransition(AlStateTransferError),
     SiiRead(SiiTaskError),
     FailedToLoadEEPROM,
 }
 
-impl From<SlaveInitializerError> for EcError<SlaveInitializerError> {
+impl From<SlaveInitializerError> for TaskError<SlaveInitializerError> {
     fn from(err: SlaveInitializerError) -> Self {
         Self::TaskSpecific(err)
     }
 }
 
-impl From<EcError<AlStateTransferError>> for EcError<SlaveInitializerError> {
-    fn from(err: EcError<AlStateTransferError>) -> Self {
+impl From<TaskError<AlStateTransferError>> for TaskError<SlaveInitializerError> {
+    fn from(err: TaskError<AlStateTransferError>) -> Self {
         match err {
-            EcError::TaskSpecific(err) => {
-                EcError::TaskSpecific(SlaveInitializerError::AlStateTransition(err))
+            TaskError::TaskSpecific(err) => {
+                TaskError::TaskSpecific(SlaveInitializerError::AlStateTransition(err))
             }
-            EcError::Interface(e) => EcError::Interface(e),
-            EcError::LostPacket => EcError::LostPacket,
-            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
-            EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
-            EcError::Timeout => EcError::Timeout,
+            TaskError::Interface(e) => TaskError::Interface(e),
+            TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
+            TaskError::UnexpectedWkc(wkc) => TaskError::UnexpectedWkc(wkc),
+            TaskError::Timeout => TaskError::Timeout,
         }
     }
 }
 
-impl From<EcError<SiiTaskError>> for EcError<SlaveInitializerError> {
-    fn from(err: EcError<SiiTaskError>) -> Self {
+impl From<TaskError<SiiTaskError>> for TaskError<SlaveInitializerError> {
+    fn from(err: TaskError<SiiTaskError>) -> Self {
         match err {
-            EcError::TaskSpecific(err) => {
-                EcError::TaskSpecific(SlaveInitializerError::SiiRead(err))
+            TaskError::TaskSpecific(err) => {
+                TaskError::TaskSpecific(SlaveInitializerError::SiiRead(err))
             }
-            EcError::Interface(e) => EcError::Interface(e),
-            EcError::LostPacket => EcError::LostPacket,
-            EcError::UnexpectedCommand => EcError::UnexpectedCommand,
-            EcError::UnexpectedWkc(wkc) => EcError::UnexpectedWkc(wkc),
-            EcError::Timeout => EcError::Timeout,
+            TaskError::Interface(e) => TaskError::Interface(e),
+            TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
+            TaskError::UnexpectedWkc(wkc) => TaskError::UnexpectedWkc(wkc),
+            TaskError::Timeout => TaskError::Timeout,
         }
     }
 }
@@ -66,7 +63,7 @@ impl From<EcError<SiiTaskError>> for EcError<SlaveInitializerError> {
 #[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
-    Error(EcError<SlaveInitializerError>),
+    Error(TaskError<SlaveInitializerError>),
     SetLoopPort,
     RequestInitState(bool),
     ResetErrorCount,
@@ -131,7 +128,7 @@ impl SlaveInitializer {
         //}
     }
 
-    pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, EcError<SlaveInitializerError>>> {
+    pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, TaskError<SlaveInitializerError>>> {
         match &self.state {
             State::Complete => Some(Ok(core::mem::take(&mut self.slave_info))),
             State::Error(err) => Some(Err(err.clone())),
@@ -396,10 +393,10 @@ impl Cyclic for SlaveInitializer {
         let data = {
             let CommandData { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+                self.state = State::Error(TaskError::UnexpectedCommand);
             }
             if *wkc != 1 {
-                self.state = State::Error(EcError::UnexpectedWkc(*wkc));
+                self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
             }
             data
         };

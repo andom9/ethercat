@@ -1,5 +1,5 @@
-use crate::memory::PortPhysics;
-use crate::task::*;
+use crate::interface::*;
+use crate::register::PortPhysics;
 use core::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct SlaveId {
 }
 
 #[derive(Debug, Default)]
-pub struct Slave<'a, 'b> {
+pub struct Slave {
     pub(crate) info: SlaveInfo,
 
     //0:Outputs
@@ -41,15 +41,14 @@ pub struct Slave<'a, 'b> {
 
     // for Dc init
     pub(crate) dc_context: RefCell<DcContext>,
+    // // inputs
+    // tx_pdo_mappings: &'a mut [PdoMapping<'b>],
 
-    // inputs
-    tx_pdo_mappings: &'a mut [PdoMapping<'b>],
-
-    // outputs
-    rx_pdo_mappings: &'a mut [PdoMapping<'b>],
+    // // outputs
+    // rx_pdo_mappings: &'a mut [PdoMapping<'b>],
 }
 
-impl<'a, 'b> Slave<'a, 'b> {
+impl Slave {
     pub fn info(&self) -> &SlaveInfo {
         &self.info
     }
@@ -72,29 +71,29 @@ impl<'a, 'b> Slave<'a, 'b> {
         self.mailbox_count()
     }
 
-    pub fn tx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
-        if self.tx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(self.tx_pdo_mappings)
-        }
-    }
+    // pub fn tx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+    //     if self.tx_pdo_mappings.is_empty() {
+    //         None
+    //     } else {
+    //         Some(self.tx_pdo_mappings)
+    //     }
+    // }
 
-    pub fn rx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
-        if self.rx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(self.rx_pdo_mappings)
-        }
-    }
+    // pub fn rx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+    //     if self.rx_pdo_mappings.is_empty() {
+    //         None
+    //     } else {
+    //         Some(self.rx_pdo_mappings)
+    //     }
+    // }
 
-    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        self.tx_pdo_mappings = mappings;
-    }
+    // pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+    //     self.tx_pdo_mappings = mappings;
+    // }
 
-    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        self.rx_pdo_mappings = mappings;
-    }
+    // pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+    //     self.rx_pdo_mappings = mappings;
+    // }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -223,19 +222,19 @@ pub struct SyncManager {
     pub start_address: u16,
 }
 
-#[derive(Debug, Clone)]
-pub enum OperationMode {
-    FreeRun,
-    Sync0Event,
-    Sync1Event,
-    SyncManagerEvent,
-}
+// #[derive(Debug, Clone)]
+// pub enum OperationMode {
+//     FreeRun,
+//     Sync0Event,
+//     Sync1Event,
+//     SyncManagerEvent,
+// }
 
-impl Default for OperationMode {
-    fn default() -> Self {
-        OperationMode::FreeRun
-    }
-}
+// impl Default for OperationMode {
+//     fn default() -> Self {
+//         OperationMode::FreeRun
+//     }
+// }
 
 #[derive(Debug)]
 pub struct FmmuConfig {
@@ -244,6 +243,7 @@ pub struct FmmuConfig {
     pub bit_length: u16,
     is_output: bool,
 }
+
 impl FmmuConfig {
     pub fn new(physical_address: u16, bit_length: u16, is_output: bool) -> Self {
         Self {
@@ -268,57 +268,45 @@ impl FmmuConfig {
     }
 }
 
-// #[derive(Debug)]
-// pub enum ProcessDataConfig<'a, 'b> {
-//     Memory(MemoryProcessData),
-//     CoE(&'a mut [PdoMapping<'b>]),
-// }
+#[derive(Debug, Default)]
+pub struct SlaveConfig<'a, 'b> {
+    // inputs
+    tx_pdo_mappings: &'a mut [PdoMapping<'b>],
 
-// impl<'a, 'b> From<MemoryProcessData> for ProcessDataConfig<'a, 'b> {
-//     fn from(config: MemoryProcessData) -> Self {
-//         Self::Memory(config)
-//     }
-// }
+    // outputs
+    rx_pdo_mappings: &'a mut [PdoMapping<'b>],
+}
 
-// impl<'a, 'b> From<&'a mut [PdoMapping<'b>]> for ProcessDataConfig<'a, 'b> {
-//     fn from(config: &'a mut [PdoMapping<'b>]) -> Self {
-//         Self::CoE(config)
-//     }
-// }
+impl<'a, 'b> SlaveConfig<'a, 'b> {
+    pub fn tx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+        if self.tx_pdo_mappings.is_empty() {
+            None
+        } else {
+            Some(self.tx_pdo_mappings)
+        }
+    }
 
-// #[derive(Debug, Clone)]
-// pub struct MemoryProcessData {
-//     pub(crate) logical_start_address: Option<u32>,
-//     pub physical_address: u16,
-//     pub bit_length: u16,
-// }
-// impl MemoryProcessData {
-//     pub fn new(physical_address: u16, bit_length: u16) -> Self {
-//         Self {
-//             logical_start_address: None,
-//             physical_address,
-//             bit_length,
-//         }
-//     }
-//     pub(crate) fn byte_length(&self) -> u16 {
-//         if self.bit_length % 8 == 0 {
-//             self.bit_length / 8
-//         } else {
-//             self.bit_length / 8 + 1
-//         }
-//     }
-// }
+    pub fn rx_process_data_mappings(&'a self) -> Option<&'a [PdoMapping<'b>]> {
+        if self.rx_pdo_mappings.is_empty() {
+            None
+        } else {
+            Some(self.rx_pdo_mappings)
+        }
+    }
 
-//#[derive(Debug)]
-//pub struct SlavePdo<'a, 'b> {
-//    pub rx_mapping: &'a mut [PdoMapping<'b>],
-//    pub tx_mapping: &'a mut [PdoMapping<'b>],
-//}
+    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+        self.tx_pdo_mappings = mappings;
+    }
+
+    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+        self.rx_pdo_mappings = mappings;
+    }
+}
 
 #[derive(Debug)]
 pub struct PdoMapping<'a> {
     pub is_fixed: bool,
-    pub index: u16,
+    //pub index: u16,
     pub entries: &'a mut [PdoEntry],
 }
 

@@ -1,11 +1,8 @@
-use super::super::command::*;
-use crate::error::EcError;
-use crate::memory::{SiiAccess, SiiAddress, SiiControl, SiiData};
-use crate::task::socket::CommandData;
-use crate::task::Cyclic;
+use super::TaskError;
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
+use crate::register::{SiiAccess, SiiAddress, SiiControl, SiiData};
 use crate::util::const_max;
-
-use super::super::EtherCatSystemTime;
 
 const TIMEOUT_MS: u32 = 100;
 
@@ -17,10 +14,9 @@ pub enum SiiTaskError {
     CheckSumError,
     DeviceInfoError,
     CommandError,
-    TimeoutMs(u32),
 }
 
-impl From<SiiTaskError> for EcError<SiiTaskError> {
+impl From<SiiTaskError> for TaskError<SiiTaskError> {
     fn from(err: SiiTaskError) -> Self {
         Self::TaskSpecific(err)
     }
@@ -28,7 +24,7 @@ impl From<SiiTaskError> for EcError<SiiTaskError> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(EcError<SiiTaskError>),
+    Error(TaskError<SiiTaskError>),
     Idle,
     Init,
     SetOwnership,
@@ -83,7 +79,7 @@ impl SiiReader {
 
     pub fn wait(
         &mut self,
-    ) -> Option<Result<(SiiData<[u8; SiiData::SIZE]>, usize), EcError<SiiTaskError>>> {
+    ) -> Option<Result<(SiiData<[u8; SiiData::SIZE]>, usize), TaskError<SiiTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok((self.sii_data.clone(), self.read_size))),
             State::Error(err) => Some(Err(err.clone())),
@@ -158,10 +154,10 @@ impl Cyclic for SiiReader {
             let CommandData { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
-                self.state = State::Error(EcError::UnexpectedCommand);
+                self.state = State::Error(TaskError::UnexpectedCommand);
             }
             if wkc != 1 {
-                self.state = State::Error(EcError::UnexpectedWkc(wkc));
+                self.state = State::Error(TaskError::UnexpectedWkc(wkc));
             }
             data
         };
@@ -221,7 +217,7 @@ impl Cyclic for SiiReader {
                 } else if self.timer_start.0 < sys_time.0
                     && TIMEOUT_MS as u64 * 1000 < sys_time.0 - self.timer_start.0
                 {
-                    self.state = State::Error(SiiTaskError::TimeoutMs(TIMEOUT_MS).into())
+                    self.state = State::Error(TaskError::Timeout)
                 }
             }
             State::Read => {

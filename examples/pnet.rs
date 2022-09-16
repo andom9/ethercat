@@ -1,16 +1,14 @@
-
 use ethercat_master::hal::*;
-use ethercat_master::memory::sii::ProductCode;
+use ethercat_master::interface::*;
 use ethercat_master::network::AlState;
-
-
-
-use ethercat_master::task::socket::{CommandSocket, SocketOption, SocketsInterface};
-use ethercat_master::task::{*};
+use ethercat_master::network::PdoEntry;
+use ethercat_master::network::PdoMapping;
+use ethercat_master::network::SlaveConfig;
+use ethercat_master::register::sii::ProductCode;
 use ethercat_master::EtherCatMaster;
+use ethercat_master::task::EtherCatSystemTime;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
-
 
 struct PnetDevice {
     tx_buf: [u8; 1500],
@@ -128,7 +126,7 @@ fn sdo_test(interf_name: &str) {
     let mut pdu_buffer = vec![0; 1500];
     let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
     master.initilize_slaves().unwrap();
-    let num_slaves = master.network().len() as u16;
+    let num_slaves = master.network().num_slaves();
     master
         .change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)
         .unwrap();
@@ -151,4 +149,57 @@ fn sdo_test(interf_name: &str) {
     master
         .write_sdo(SlaveAddress::SlavePosition(0), 0x2005, 0x01, &data2)
         .unwrap();
+}
+
+fn pdo_test(interf_name: &str) {
+    dbg!("prepare resources");
+    let device = PnetDevice::open(interf_name);
+    let mut buf = vec![0; 1500];
+    let iface = CommandInterface::new(device, &mut buf);
+
+    let tx_pdo_map = PdoMapping {
+        is_fixed: false,
+        entries: &mut [
+            PdoEntry::new(0x603F, 0x00, 16), // error code
+            PdoEntry::new(0x6041, 0x00, 16), // status word
+            PdoEntry::new(0x6064, 0x00, 32), // actual position
+            PdoEntry::new(0x6077, 0x00, 16), // actual torque
+            PdoEntry::new(0x60F4, 0x00, 32), // position error
+        ],
+    };
+    let mut tx_maps = [tx_pdo_map];
+
+    let rx_pdo_map = PdoMapping {
+        is_fixed: false,
+        entries: &mut [
+            PdoEntry::new(0x6040, 0x00, 16), // control word
+            PdoEntry::new(0x607A, 0x00, 32), // target position
+        ],
+    };
+    let mut rx_maps = [rx_pdo_map];
+
+    let mut slaves: Box<[(_, SlaveConfig); 10]> = Box::new(Default::default());
+    slaves[0].1.set_tx_pdo_mappings(&mut tx_maps);
+    slaves[0].1.set_rx_pdo_mappings(&mut rx_maps);
+    let mut pdu_buffer = vec![0; 1500];
+    let mut pdo_buffer = vec![0; 1500];
+    let mut master = EtherCatMaster::new(slaves.as_mut(), &mut pdu_buffer, iface);
+    master
+        .configure_pdo_settings_and_change_to_safe_operational_state(&mut pdo_buffer)
+        .unwrap();
+    let num_slaves = master.network().num_slaves();
+    master.change_al_state(TargetSlave::All(num_slaves), AlState::Operational).unwrap();
+    let mut time = 0;
+    let mut pre_cycle_count=0;
+    for i in 0..1000{
+        loop{
+            time+=1;
+            let cycle_count = master.process_one_cycle(EtherCatSystemTime(time)).unwrap();
+            if pre_cycle_count < cycle_count{
+                pre_cycle_count = cycle_count;
+                break;
+            }
+        }
+    }
+
 }

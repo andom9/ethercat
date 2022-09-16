@@ -1,5 +1,5 @@
-use crate::task::Cyclic;
-use crate::task::{Command, CommandData, EtherCatSystemTime};
+use super::{Cyclic, EtherCatSystemTime};
+use crate::interface::*;
 
 #[derive(Debug)]
 pub struct LogicalProcessData {
@@ -23,6 +23,14 @@ impl LogicalProcessData {
         }
     }
 
+    pub fn expected_wkc(&self) -> u16 {
+        self.expected_wkc
+    }
+
+    pub fn set_expected_wkc(&mut self, expected_wkc: u16) {
+        self.expected_wkc = expected_wkc;
+    }
+
     pub fn last_wkc(&self) -> u16 {
         self.last_wkc
     }
@@ -31,8 +39,16 @@ impl LogicalProcessData {
         self.start_logical_address
     }
 
+    pub fn set_start_logical_address(&mut self, start_logical_address: u32) {
+        self.start_logical_address = start_logical_address;
+    }
+
     pub fn image_size(&self) -> usize {
         self.image_size
+    }
+
+    pub fn set_image_size(&mut self, image_size: usize) {
+        self.image_size = image_size;
     }
 }
 
@@ -42,7 +58,11 @@ impl Cyclic for LogicalProcessData {
     }
 
     fn next_command(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
-        Some((self.command, self.image_size))
+        if self.expected_wkc == 0 {
+            None
+        } else {
+            Some((self.command, self.image_size))
+        }
     }
 
     fn recieve_and_process(&mut self, recv_data: &CommandData, _systime: EtherCatSystemTime) {
