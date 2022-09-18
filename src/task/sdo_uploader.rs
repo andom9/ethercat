@@ -70,7 +70,6 @@ impl SdoUploader {
             //dbg!(&sdo_header.index());
             //dbg!(&sdo_header.sub_index());
 
-
             &mb_data[MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE
                 ..MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE + size]
         // normal

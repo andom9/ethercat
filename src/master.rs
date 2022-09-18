@@ -9,9 +9,9 @@ use crate::{
     },
     network::{AlState, FmmuConfig, NetworkDescription, PdoMapping, Slave, SlaveConfig},
     register::{
-        AlStatusCode, CyclicOperationStartTime, DcActivation, FmmuRegister, RxErrorCounter,
-        SiiData, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation, SyncManagerControl,
-        od::PdoEntry,
+        od::PdoEntry, AlStatusCode, CyclicOperationStartTime, DcActivation, FmmuRegister,
+        RxErrorCounter, SiiData, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
+        SyncManagerControl,
     },
     task::{
         AlStateReader, AlStateTransferError, Cyclic, DcDriftCompensator, EtherCatSystemTime,
@@ -736,10 +736,9 @@ fn cnfigure_pdo_sm_from_object_dictionary<
     is_output: bool,
     start_ram_address: u16,
 ) -> Result<u16, TaskError<SdoTaskError>> {
-
     let num_sm_comm = sif.read_sdo(handle, slave, 0x1C00, 0)?;
     dbg!(num_sm_comm);
-    assert!(4<=num_sm_comm[0]);
+    assert!(4 <= num_sm_comm[0]);
 
     let sm_number = if is_output {
         slave.info().process_data_rx_sm_number()
@@ -748,16 +747,16 @@ fn cnfigure_pdo_sm_from_object_dictionary<
     };
 
     if let Some(sm_number) = sm_number {
-        let is_pdo_map_none = if is_output{
-            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number+1)?[0];
-            match sm_type{
+        let is_pdo_map_none = if is_output {
+            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number + 1)?[0];
+            match sm_type {
                 0 => true,
                 3 => false,
                 _ => panic!("unsupported sm type"),
             }
-        }else{
-            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number+1)?[0];
-            match sm_type{
+        } else {
+            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number + 1)?[0];
+            match sm_type {
                 0 => true,
                 4 => false,
                 _ => panic!("unsupproted sm type"),
@@ -766,16 +765,16 @@ fn cnfigure_pdo_sm_from_object_dictionary<
 
         let mut pdo_map_size = 0;
         let sm_assign = 0x1C10 + sm_number as u16;
-        if !is_pdo_map_none{
+        if !is_pdo_map_none {
             let num_maps = sif.read_sdo(handle, slave, sm_assign, 0)?[0] as usize;
             dbg!(num_maps);
-            for index in 1..(num_maps+1){
+            for index in 1..(num_maps + 1) {
                 let map_address = sif.read_sdo(handle, slave, sm_assign, index as u8)?;
-                let map_address = u16::from_le_bytes([map_address[0],map_address[1]]);
+                let map_address = u16::from_le_bytes([map_address[0], map_address[1]]);
                 dbg!(map_address);
                 let num_entry = sif.read_sdo(handle, slave, map_address, 0)?[0] as usize;
                 dbg!(num_entry);
-                for entry_index in 1..(num_entry+1){
+                for entry_index in 1..(num_entry + 1) {
                     let entry = sif.read_sdo(handle, slave, map_address, entry_index as u8)?;
                     let entry = PdoEntry(entry);
                     //dbg!(&entry);
@@ -783,9 +782,9 @@ fn cnfigure_pdo_sm_from_object_dictionary<
                     //dbg!(size);
                     pdo_map_size += size as u16;
                 }
-                pdo_map_size =2;//こうするとおぺーしょなるステートには入れる。
-                //結局、bit単位でロジカルアドレスに並べられるようになってないと、
-                //bit単位で指定されたときに、遷移に失敗する。
+                pdo_map_size = 2; //こうするとおぺーしょなるステートには入れる。
+                                  //結局、bit単位でロジカルアドレスに並べられるようになってないと、
+                                  //bit単位で指定されたときに、遷移に失敗する。ので改修する。
             }
         }
         dbg!(pdo_map_size);
