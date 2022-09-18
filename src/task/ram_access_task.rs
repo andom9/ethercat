@@ -55,7 +55,7 @@ impl RamAccessTask {
         buf: &mut [u8],
     ) {
         let size = data.len();
-        assert!(buf.len() <= size);
+        assert!(size <= buf.len());
         buf[..size].iter_mut().zip(data).for_each(|(b, d)| *b = *d);
         self.slave_address = slave_address;
         self.state = State::Write;

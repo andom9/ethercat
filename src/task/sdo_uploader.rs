@@ -56,24 +56,20 @@ impl SdoUploader {
     pub fn sdo_data<'a>(&self, mb_data: &'a [u8]) -> &'a [u8] {
         let sdo_header = SdoHeader(&mb_data[MailboxHeader::SIZE + CoeHeader::SIZE..]);
 
-        // log::info!("{:?}", sdo_header.size_indicator());
-        // log::info!("{:?}", sdo_header.transfer_type());
-        // log::info!("{:?}", sdo_header.data_set_size());
-        // log::info!("{:?}", sdo_header.complete_access());
-        // log::info!("{:?}", sdo_header.command_specifier());
-        // log::info!("{:?}", sdo_header.index());
-        // log::info!("{:?}", sdo_header.sub_index());
-
         // expedited
         if sdo_header.transfer_type() {
             let size = match sdo_header.data_set_size() {
                 0 => 4,
                 1 => 3,
                 2 => 2,
-                4 => 1,
+                3 => 1,
                 _ => 0,
             };
-            log::info!("size {}", size);
+            //dbg!(&sdo_header);
+            //dbg!(&sdo_header.data_set_size());
+            //dbg!(&sdo_header.index());
+            //dbg!(&sdo_header.sub_index());
+
 
             &mb_data[MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE
                 ..MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE + size]
@@ -85,7 +81,6 @@ impl SdoUploader {
 
             complete_size.iter_mut().zip(buf).for_each(|(s, b)| *s = *b);
             let size = u32::from_le_bytes(complete_size) as usize;
-            log::info!("{:?}", complete_size);
             &mb_data[SdoHeader::SIZE + 4..SdoHeader::SIZE + size + 4]
         }
     }
@@ -111,26 +106,6 @@ impl SdoUploader {
         sdo.set_size_indicator(false);
         sdo.set_index(index);
         sdo.set_sub_index(sub_index);
-        log::info!("a");
-
-        // self.mailbox
-        //     .mailbox_data_mut()
-        //     .iter_mut()
-        //     .for_each(|b| *b = 0);
-        // log::info!("a");
-
-        // self.mailbox
-        //     .mailbox_header_mut()
-        //     .0
-        //     .iter_mut()
-        //     .for_each(|b| *b = 0);
-        // log::info!("a");
-
-        // self.mailbox
-        //     .mailbox_data_mut()
-        //     .iter_mut()
-        //     .zip(sdo_header)
-        //     .for_each(|(b, d)| *b = d);
 
         let mb_length = 4 + sdo_header.len() as u16;
 
@@ -172,8 +147,6 @@ impl Cyclic for SdoUploader {
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        log::info!("send {:?}", self.state);
-
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -197,8 +170,6 @@ impl Cyclic for SdoUploader {
     }
 
     fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
-        log::info!("recv {:?}", self.state);
-
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
@@ -243,7 +214,6 @@ impl Cyclic for SdoUploader {
                             let abort_code = AbortCode::from(u32::from_le_bytes(abort_code));
                             self.state = State::Error(SdoTaskError::AbortCode(abort_code).into())
                         } else if sdo_header.command_specifier() != 2 {
-                            log::info!("{}", sdo_header.command_specifier());
                             self.state =
                                 State::Error(SdoTaskError::UnexpectedCommandSpecifier.into())
                         } else {

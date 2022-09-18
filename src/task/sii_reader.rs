@@ -97,7 +97,6 @@ impl Cyclic for SiiReader {
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        log::info!("send {:?}", self.state);
         // panic!();
         match self.state {
             State::Idle => None,
@@ -149,7 +148,6 @@ impl Cyclic for SiiReader {
     }
 
     fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
-        log::info!("recv {:?}", self.state);
         let data = {
             let CommandData { command, data, wkc } = recv_data;
             let wkc = *wkc;

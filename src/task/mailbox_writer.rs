@@ -115,7 +115,6 @@ impl Cyclic for MailboxWriter {
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        log::info!("send {:?}", self.state);
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -140,7 +139,6 @@ impl Cyclic for MailboxWriter {
                     .zip(self.empty_check_buffer.iter())
                     .for_each(|(sb, b)| *sb = *b);
                 if buf.len() < self.sm_size as usize {
-                    log::info!("{}", self.sm_size);
                     self.state = State::Error(MailboxTaskError::BufferSmall.into());
                     None
                 } else {

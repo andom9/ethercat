@@ -222,20 +222,6 @@ pub struct SyncManager {
     pub start_address: u16,
 }
 
-// #[derive(Debug, Clone)]
-// pub enum OperationMode {
-//     FreeRun,
-//     Sync0Event,
-//     Sync1Event,
-//     SyncManagerEvent,
-// }
-
-// impl Default for OperationMode {
-//     fn default() -> Self {
-//         OperationMode::FreeRun
-//     }
-// }
-
 #[derive(Debug)]
 pub struct FmmuConfig {
     pub(crate) logical_start_address: Option<u32>,
@@ -268,13 +254,27 @@ impl FmmuConfig {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SlaveConfig<'a, 'b> {
     // inputs
     tx_pdo_mappings: &'a mut [PdoMapping<'b>],
 
     // outputs
     rx_pdo_mappings: &'a mut [PdoMapping<'b>],
+
+    operation_mode: OperationMode,
+    cycle_time_ns: u32,
+}
+
+impl<'a, 'b> Default for SlaveConfig<'a, 'b> {
+    fn default() -> Self {
+        Self {
+            cycle_time_ns: 0x0007A120_u32, //500us
+            operation_mode: OperationMode::FreeRun,
+            rx_pdo_mappings: &mut [],
+            tx_pdo_mappings: &mut [],
+        }
+    }
 }
 
 impl<'a, 'b> SlaveConfig<'a, 'b> {
@@ -303,10 +303,24 @@ impl<'a, 'b> SlaveConfig<'a, 'b> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum OperationMode {
+    FreeRun = 0x00,
+    SyncManagerEvent = 0x01,
+    Sync0Event = 0x02,
+    Sync1Event = 0x03,
+}
+
+impl Default for OperationMode {
+    fn default() -> Self {
+        OperationMode::FreeRun
+    }
+}
+
 #[derive(Debug)]
 pub struct PdoMapping<'a> {
     pub is_fixed: bool,
-    //pub index: u16,
+    pub index: u16,
     pub entries: &'a mut [PdoEntry],
 }
 

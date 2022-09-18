@@ -37,7 +37,7 @@ Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG15
 - 🚫 Checking Sync Error Flag(0x1C33:20)
 
 **Process Data Exchenge**
-- 🔳 Cyclic PDO
+- ⬜ Cyclic PDO
 - 🚫 Cyclic PDO using LRD and LWR
 - 🚫 Multiple Tasks
 - 🚫 Frame repetition
@@ -81,8 +81,8 @@ Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG15
 - ⬜ Boot State
 
 **Synchronization with Distributed Clocks**
-- 🔳 DC Support
-- 🔳 Continous Propagation Delay compemsation
+- ⬜ DC Support
+- ⬜ Continous Propagation Delay compemsation
 - ⬜ Sync Window monitoring
 
 **Slave-to-Slave Communication**

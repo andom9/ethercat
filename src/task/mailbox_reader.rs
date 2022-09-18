@@ -116,7 +116,6 @@ impl Cyclic for MailboxReader {
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        log::info!("send {:?}", self.state);
         match self.state {
             State::Idle => None,
             State::Error(_) => None,

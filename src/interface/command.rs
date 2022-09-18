@@ -70,6 +70,7 @@ where
     pdu_count: usize,
     tx_count: usize,
     capacity: usize,
+    recv_data_size: usize,
 }
 
 impl<'a, D> CommandInterface<'a, D>
@@ -85,6 +86,7 @@ where
             pdu_count: 0,
             tx_count: 0,
             capacity,
+            recv_data_size: 0,
         }
     }
 
@@ -129,13 +131,14 @@ where
         self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + 2] = 0;
 
         self.pdus_total_size += EtherCatPduHeader::SIZE + data_size + WKC_LENGTH;
+        self.pdu_count += 1;
         Ok(())
     }
 
     pub fn consume_commands(&mut self) -> EtherCatPdus {
         let pdus = EtherCatPdus::new(self.buffer, self.pdus_total_size, 0);
         self.pdus_total_size = 0;
-        self.pdu_count = 0;
+        self.recv_data_size = 0;
         pdus
     }
 
@@ -146,10 +149,11 @@ where
             ethdev,
             buffer,
             pdus_total_size,
+            pdu_count,
             tx_count,
             ..
         } = self;
-        if self.pdu_count == 0 {
+        if *pdu_count == 0 {
             return Ok(true);
         }
         let buffer = &buffer[0..*pdus_total_size];
@@ -166,15 +170,14 @@ where
                     let ado = pdu.ado();
                     let data = pdu.data();
                     if !ec_frame.add_command(command, adp, ado, data, Some(index)) {
-                        log::error!("Failed to add command");
                         panic!();
                     }
                     *tx_count += 1;
+                    *pdu_count -= 1;
                 }
                 Ok(())
             });
             if tx_result.is_err() {
-                log::error!("Failed to consume TX token");
                 return Err(CommandInterfaceError::TxError);
             }
         } else {
@@ -195,16 +198,15 @@ where
             ethdev,
             buffer,
             tx_count,
+            recv_data_size,
             ..
         } = self;
-        let mut data_size = 0;
         if *tx_count == 0 {
             return Ok(true);
         }
         loop {
             if let Some(rx_token) = ethdev.receive() {
                 let rx_result = rx_token.consume(|frame| {
-                    log::info!("something receive");
                     let eth = EthernetHeader(&frame);
                     if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
                         return Ok(()); //continue
@@ -212,12 +214,14 @@ where
                     let ec_frame = EtherCatFrame::new_unchecked(frame);
                     for pdu in ec_frame.dlpdus() {
                         let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
-                        buffer[data_size..data_size + pdu_size].copy_from_slice(pdu.0);
-                        data_size += pdu_size;
-                        *tx_count -= 0;
+                        buffer[*recv_data_size..*recv_data_size + pdu_size].copy_from_slice(pdu.0);
+
+                        *recv_data_size += pdu_size;
+                        *tx_count -= 1;
                     }
                     Ok(())
                 });
+                //assert_eq!(data_size, self.pdus_total_size);
                 if rx_result.is_err() {
                     return Err(CommandInterfaceError::RxError);
                 } else {
@@ -227,7 +231,6 @@ where
                 return Err(CommandInterfaceError::Busy);
             }
         }
-        assert_eq!(data_size, self.pdus_total_size);
         if 0 < *tx_count {
             Ok(false)
         } else {

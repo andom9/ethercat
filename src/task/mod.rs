@@ -37,15 +37,25 @@ pub use slave_initializer::*;
 use crate::{
     frame::MailboxHeader,
     hal::RawEthernetDevice,
+    interface::{
+        Command, CommandData, CommandInterfaceError, CommandSocket, SlaveAddress, SocketHandle,
+        SocketsInterface, TargetSlave,
+    },
     network::{AlState, NetworkDescription, Slave, SlaveInfo},
     register::{AlStatusCode, SiiData},
 };
 
-use crate::interface::*;
+use core::time::Duration;
 
-/// Time elapsed since January 1, 2000 in nanoseconds.
+/// Time elapsed since January 1, 2000 in nanoseconds. 64-bit.
 #[derive(Debug, Clone, Copy)]
 pub struct EtherCatSystemTime(pub u64);
+
+impl From<Duration> for EtherCatSystemTime {
+    fn from(duration: Duration) -> Self {
+        EtherCatSystemTime(duration.as_nanos() as u64)
+    }
+}
 
 pub trait Cyclic {
     fn process_one_step(&mut self, socket: &mut CommandSocket, sys_time: EtherCatSystemTime) {
@@ -90,7 +100,7 @@ where
                 break;
             };
             count += 1;
-            if 100 < count {
+            if 10000 < count {
                 return Err(TaskError::Timeout);
             }
         }

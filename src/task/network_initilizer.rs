@@ -97,8 +97,6 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
     }
 
     fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        log::info!("send {:?}", self.state);
-
         let command_and_data = match &self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -170,8 +168,6 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
     }
 
     fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
-        //log::info!("recv {:?}",self.state);
-
         let wkc = {
             let CommandData { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
@@ -211,7 +207,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                                 SyncManagerStatus::ADDRESS + 0x08 * tx_sm_number as u16;
                             let bit_length = SyncManagerStatus::SIZE * 8;
                             slave.fmmu[2] =
-                                Some(FmmuConfig::new(mb_tx_sm_status, bit_length as u16, true));
+                                Some(FmmuConfig::new(mb_tx_sm_status, bit_length as u16, false));
                         }
                         if self.network.push_slave(slave).is_err() {
                             self.state =

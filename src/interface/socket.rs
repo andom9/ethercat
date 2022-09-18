@@ -67,12 +67,10 @@ impl<'a> CommandSocket<'a> {
     ) {
         self.recv_flag = false;
         self.wkc = 0;
-        log::info!("set_command");
         if let Some((command, length)) = command_data(self.data_buf) {
             self.command = Some(command);
             self.data_length = length;
         } else {
-            log::info!("but none");
             self.command = None;
             self.data_length = 0;
         }
@@ -99,6 +97,9 @@ impl<'a> CommandSocket<'a> {
     }
 
     fn take_command(&mut self) -> Option<CommandData> {
+        if self.recv_flag {
+            return None;
+        }
         let command = core::mem::take(&mut self.command)?;
         Some(CommandData::new(
             command,
@@ -206,6 +207,13 @@ where
         }
     }
 
+    pub fn get_socket(&self, socket_handle: &SocketHandle) -> Option<&CommandSocket<'buf>> {
+        match self.sockets.get(socket_handle.0) {
+            Some(SocketOption::Socket(ref socket)) => Some(socket),
+            _ => None,
+        }
+    }
+
     pub fn get_socket_mut(
         &mut self,
         socket_handle: &SocketHandle,
@@ -234,7 +242,6 @@ where
                     break;
                 }
                 if let Some(command_data) = socket.take_command() {
-                    log::info!("send index{}", i);
                     self.iface
                         .add_command(i as u8, command_data.command, len, |buf| {
                             for (b, d) in buf.iter_mut().zip(command_data.data) {
@@ -253,10 +260,12 @@ where
         let Self { iface, sockets, .. } = self;
         let is_tx_ok = iface.transmit_one_frame()?;
         let is_rx_ok = iface.receive_one_frame()?;
+        if !(is_tx_ok && is_rx_ok) {
+            return Ok(false);
+        }
         let pdus = iface.consume_commands();
         for pdu in pdus {
             let index = pdu.index() as usize;
-            log::info!("recv index{}", index);
             if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(index) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
@@ -267,9 +276,8 @@ where
                     wkc,
                 };
                 socket.recieve(recv_data);
-                log::info!("socket recv");
             }
         }
-        Ok(is_rx_ok && is_tx_ok)
+        Ok(true)
     }
 }

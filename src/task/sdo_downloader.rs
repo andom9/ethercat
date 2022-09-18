@@ -89,11 +89,6 @@ impl SdoDownloader {
             .skip(MailboxHeader::SIZE + sdo_header.len())
             .zip(data)
             .for_each(|(b, d)| *b = *d);
-        log::info!("{:X?}", buf);
-        log::info!("{:X?}", data);
-        log::info!("{:X?}", mb_header.0);
-        log::info!("{:X?}", sdo_header);
-        log::info!("{:X?}", index);
 
         self.mailbox
             .start_to_write(self.slave_address, self.rx_sm, true);

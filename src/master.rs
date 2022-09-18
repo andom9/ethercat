@@ -1,3 +1,5 @@
+use core::num;
+
 use crate::{
     frame::{MailboxHeader, MAX_PDU_DATAGRAM},
     hal::RawEthernetDevice,
@@ -7,8 +9,9 @@ use crate::{
     },
     network::{AlState, FmmuConfig, NetworkDescription, PdoMapping, Slave, SlaveConfig},
     register::{
-        AlStatusCode, FmmuRegister, RxErrorCounter, SiiData, SyncManagerActivation,
-        SyncManagerControl,
+        AlStatusCode, CyclicOperationStartTime, DcActivation, FmmuRegister, RxErrorCounter,
+        SiiData, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation, SyncManagerControl,
+        od::PdoEntry,
     },
     task::{
         AlStateReader, AlStateTransferError, Cyclic, DcDriftCompensator, EtherCatSystemTime,
@@ -49,7 +52,7 @@ where
 {
     pub fn new(
         slave_buf: &'slaves mut [(Option<Slave>, SlaveConfig<'pdo_mapping, 'pdo_entry>)],
-        pdu_buffer: &'socket_buf mut [u8],
+        socket_buffer: &'socket_buf mut [u8],
         iface: CommandInterface<'packet, D>,
     ) -> Self {
         assert!(!slave_buf.is_empty());
@@ -58,8 +61,8 @@ where
             + RxErrorChecker::required_buffer_size()
             + DcDriftCompensator::required_buffer_size()
             + MAX_SM_SIZE as usize;
-        assert!(MINIMUM_REQUIRED_BUFFER_SIZE < pdu_buffer.len());
-        let (pdu_buffer1, rest) = pdu_buffer.split_at_mut(AlStateReader::required_buffer_size());
+        assert!(MINIMUM_REQUIRED_BUFFER_SIZE < socket_buffer.len());
+        let (pdu_buffer1, rest) = socket_buffer.split_at_mut(AlStateReader::required_buffer_size());
         let (pdu_buffer2, rest) = rest.split_at_mut(RxErrorChecker::required_buffer_size());
         let (pdu_buffer3, rest) = rest.split_at_mut(DcDriftCompensator::required_buffer_size());
         let (pdu_buffer4, _) = rest.split_at_mut(256);
@@ -98,22 +101,6 @@ where
         &self.network
     }
 
-    /// Easy setup API.
-    /// If the buffer size is smaller than the image size, a panic will occur.
-    pub fn configure_pdo_settings_and_change_to_safe_operational_state(
-        &mut self,
-        proces_data_buf: &'socket_buf mut [u8],
-    ) -> Result<(), TaskError<TaskSpecificErrorKind>> {
-        self.initilize_slaves()?;
-        self.synchronize_dc()?;
-        let num_slaves = self.network.num_slaves();
-        self.change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)?;
-        self.configure_pdo_image()?;
-        assert!(self.register_process_data_buffer(proces_data_buf));
-        self.change_al_state(TargetSlave::All(num_slaves), AlState::SafeOperational)?;
-        Ok(())
-    }
-
     /// Return process data imeze size
     pub fn process_data_image_size(&self) -> usize {
         self.process_data_task.image_size()
@@ -121,7 +108,7 @@ where
 
     /// If the buffer size is smaller than the image size, return false.
     pub fn register_process_data_buffer(&mut self, buf: &'socket_buf mut [u8]) -> bool {
-        if self.process_data_image_size() < buf.len() {
+        if buf.len() < self.process_data_image_size() {
             return false;
         }
         let process_data_handle = self.sif.add_socket(CommandSocket::new(buf)).unwrap();
@@ -214,6 +201,50 @@ where
 
     pub fn lost_frame_count(&self) -> usize {
         self.sif.lost_frame_count
+    }
+
+    pub fn read_pdo_entry<'a>(
+        &'a self,
+        slave_address: SlaveAddress,
+        pdo_map_index: usize,
+        pdo_entry_index: usize,
+    ) -> Option<&'a [u8]> {
+        let handle = self.process_data_handle.as_ref().map(|handle| handle)?;
+        let pdo_image = self.sif.get_socket(handle)?;
+        let (_, config) = self.network().slave(slave_address)?;
+        config
+            .tx_process_data_mappings()
+            .map(|pdo_maps| pdo_maps.get(pdo_map_index))
+            .flatten()
+            .map(|pdo_map| pdo_map.entries.get(pdo_entry_index))
+            .flatten()
+            .map(|pdo_entry| pdo_entry.read(pdo_image.data_buf()))
+            .flatten()
+    }
+
+    pub fn write_pdo_entry(
+        &mut self,
+        slave_address: SlaveAddress,
+        pdo_map_index: usize,
+        pdo_entry_index: usize,
+        data: &[u8],
+    ) -> Option<()> {
+        let Self {
+            sif,
+            process_data_handle,
+            ..
+        } = self;
+        let handle = process_data_handle.as_ref().map(|handle| handle)?;
+        let pdo_image = sif.get_socket_mut(handle)?;
+        let (_, config) = self.network.slave(slave_address)?;
+        config
+            .rx_process_data_mappings()
+            .map(|pdo_maps| pdo_maps.get(pdo_map_index))
+            .flatten()
+            .map(|pdo_map| pdo_map.entries.get(pdo_entry_index))
+            .flatten()
+            .map(|pdo_entry| pdo_entry.write(pdo_image.data_buf_mut(), data))
+            .flatten()
     }
 
     pub fn initilize_slaves(&mut self) -> Result<(), TaskError<NetworkInitializerError>> {
@@ -318,11 +349,31 @@ where
             .write_sdo(&self.gp_socket_handle, slave, index, sub_index, data)
     }
 
+    /// Easy setup API.
+    /// If the buffer size is smaller than the image size, a panic will occur.
+    pub fn configure_pdo_settings_and_change_to_safe_operational_state(
+        &mut self,
+        proces_data_buf: &'socket_buf mut [u8],
+    ) -> Result<(), TaskError<TaskSpecificErrorKind>> {
+        dbg!(1);
+        let num_slaves = self.network.num_slaves();
+        self.change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)?;
+        dbg!(2);
+        self.configure_pdo_image().unwrap();
+        dbg!(3);
+        assert!(self.register_process_data_buffer(proces_data_buf));
+        dbg!(4);
+        //self.configure_event_sync();
+        dbg!(5);
+        self.change_al_state(TargetSlave::All(num_slaves), AlState::SafeOperational)?;
+        Ok(())
+    }
+
     /// Easy API for configuration of PDO mappings
     pub fn configure_pdo_image(&mut self) -> Result<(), TaskError<SdoTaskError>> {
-        self.set_pdo_mappings_to_sm()?;
-        let (image_size, expected_wkc) = self.set_logical_address_to_fmmu_config();
-        self.set_fmmu_from_fmmu_config()
+        self.set_pdo_mappings_to_sm().unwrap();
+        let (image_size, expected_wkc) = self
+            .configure_fmmu()
             .map_err(TaskError::<SdoTaskError>::from)?;
         self.process_data_task.set_image_size(image_size);
         self.process_data_task.set_expected_wkc(expected_wkc);
@@ -339,8 +390,24 @@ where
         } = self;
         let handle = &gp_socket_handle;
         for (slave, slave_config) in network.slaves_mut() {
-            set_pdo_mappings_to_sm_utility(slave, slave_config, sif, handle, false)?;
-            set_pdo_mappings_to_sm_utility(slave, slave_config, sif, handle, true)?;
+            if let Some(ram_address) = slave.info().pdo_start_address {
+                let ram_address = cnfigure_pdo_sm_from_object_dictionary(
+                    slave,
+                    slave_config,
+                    sif,
+                    handle,
+                    true,
+                    ram_address,
+                )?;
+                cnfigure_pdo_sm_from_object_dictionary(
+                    slave,
+                    slave_config,
+                    sif,
+                    handle,
+                    false,
+                    ram_address,
+                )?;
+            }
         }
         Ok(())
     }
@@ -353,15 +420,18 @@ where
             let mut has_tx_data = false;
             let mut has_rx_data = false;
 
-            for fmmu_config in slave.fmmu.iter_mut() {
-                if let Some(fmmu_config) = fmmu_config.as_mut() {
-                    fmmu_config.logical_start_address = Some(start_address);
-                    start_address += fmmu_config.byte_length() as u32;
-                    if fmmu_config.is_output() {
-                        has_tx_data = true;
-                    } else {
-                        has_rx_data = true;
-                    }
+            for fmmu_config in slave
+                .fmmu
+                .iter_mut()
+                .filter_map(|f| f.as_mut())
+                .filter(|f| f.bit_length != 0)
+            {
+                fmmu_config.logical_start_address = Some(start_address);
+                start_address += fmmu_config.byte_length() as u32;
+                if fmmu_config.is_output() {
+                    has_rx_data = true;
+                } else {
+                    has_tx_data = true;
                 }
             }
 
@@ -372,15 +442,18 @@ where
                 expected_wkc += 2;
             }
         }
+        let size = start_address - START_LOGICAL_ADDRESS;
         assert!(
-            start_address <= MAX_PDU_DATAGRAM as u32,
+            size <= MAX_PDU_DATAGRAM as u32,
             "process data size must be less than or equal to 1468 for now"
         );
-        (start_address as usize, expected_wkc)
+        (size as usize, expected_wkc)
     }
 
     /// Set the logical address, physical address, and size for each slave FMMU.
-    fn set_fmmu_from_fmmu_config(&mut self) -> Result<(), TaskError<()>> {
+    /// Return image size and expected wkc.
+    fn configure_fmmu(&mut self) -> Result<(usize, u16), TaskError<()>> {
+        let (image_size, expected_wkc) = self.set_logical_address_to_fmmu_config();
         let Self {
             network,
             sif,
@@ -388,18 +461,15 @@ where
             ..
         } = self;
         for (slave, _) in network.slaves() {
-            for (i, fmmu) in slave.fmmu.iter().enumerate() {
-                if fmmu.is_none() {
-                    continue;
-                }
+            for (i, fmmu) in slave.fmmu.iter().enumerate().filter(|(_, f)| f.is_some()) {
                 let fmmu = fmmu.as_ref().unwrap();
-                if fmmu.logical_start_address.is_none() {
+                if fmmu.logical_start_address.is_none() || fmmu.byte_length() == 0 {
                     continue;
                 }
                 let mut fmmu_reg = FmmuRegister::new();
                 fmmu_reg.set_logical_start_address(fmmu.logical_start_address.unwrap());
                 fmmu_reg.set_length(fmmu.byte_length());
-                fmmu_reg.set_logical_end_bit(0);
+                fmmu_reg.set_logical_end_bit(7);
                 fmmu_reg.set_physical_start_address(fmmu.physical_address);
                 fmmu_reg.set_physical_start_bit(0);
                 if fmmu.is_output() {
@@ -418,11 +488,89 @@ where
                 )?;
             }
         }
-        Ok(())
+        Ok((image_size, expected_wkc))
+    }
+
+    /// super adhoc
+    pub fn configure_event_sync(&mut self) {
+        let Self {
+            sif,
+            network,
+            gp_socket_handle,
+            ..
+        } = self;
+        for (slave, _) in network.slaves().filter(|(s, _)| s.info.support_coe) {
+            // 動作モード設定（FREERUN)
+            let addr = 0x1C30 + slave.info.process_data_tx_sm_number().unwrap() as u16;
+            sif.write_sdo(&gp_socket_handle, slave, addr, 1, &[0x00, 0])
+                .unwrap();
+
+            // FREERUNでもサイクルタイムは必要
+            sif.write_sdo(
+                &gp_socket_handle,
+                slave,
+                addr,
+                2,
+                &0x0007A120_u32.to_le_bytes(),
+            );
+
+            let addr = 0x1C30 + slave.info.process_data_rx_sm_number().unwrap() as u16;
+            sif.write_sdo(&gp_socket_handle, slave, addr, 1, &[0x00, 0])
+                .unwrap();
+            sif.write_sdo(
+                &gp_socket_handle,
+                slave,
+                addr,
+                2,
+                &0x0007A120_u32.to_le_bytes(),
+            )
+            .unwrap();
+
+            //サイクルタイム設定
+            //DC使わないなら不要（sync信号使わないなら不要)
+            sif.write_register(
+                &gp_socket_handle,
+                SlaveAddress::StationAddress(slave.info().configured_address).into(),
+                Sync0CycleTime::ADDRESS,
+                &0x0007A120_u32.to_le_bytes(),
+            )
+            .unwrap();
+            sif.write_register(
+                &gp_socket_handle,
+                SlaveAddress::StationAddress(slave.info().configured_address).into(),
+                Sync1CycleTime::ADDRESS,
+                &0x0003D090_u32.to_le_bytes(),
+            )
+            .unwrap();
+
+            //SYNC信号開始
+            sif.write_register(
+                &gp_socket_handle,
+                SlaveAddress::StationAddress(slave.info().configured_address).into(),
+                CyclicOperationStartTime::ADDRESS,
+                &0_u64.to_le_bytes(),
+            )
+            .unwrap();
+
+            //サイクル許可
+            let mut dc_actiation = DcActivation::new();
+            dc_actiation.set_cyclic_operation_enable(true);
+            dc_actiation.set_sync0_activate(true);
+            dc_actiation.set_sync1_activate(true);
+            sif.write_register(
+                &gp_socket_handle,
+                SlaveAddress::StationAddress(slave.info().configured_address).into(),
+                DcActivation::ADDRESS,
+                &0_u64.to_le_bytes(),
+            )
+            .unwrap();
+        }
     }
 }
 
 /// Assign PDO map to SM.
+/// Return next pdo ram address
+/// NOTE: output = RX of slave.
 fn set_pdo_mappings_to_sm_utility<
     'packet,
     'socket_buf,
@@ -435,8 +583,9 @@ fn set_pdo_mappings_to_sm_utility<
     slave_config: &mut SlaveConfig<'pdo_mapping, 'pdo_entry>,
     sif: &mut SocketsInterface<'packet, 'socket_buf, D, S>,
     handle: &SocketHandle,
-    is_output: bool, //NOTE: output = RX of slave
-) -> Result<(), TaskError<SdoTaskError>> {
+    is_output: bool,
+    start_ram_address: u16,
+) -> Result<u16, TaskError<SdoTaskError>> {
     let (pdo_mappings, sm_number) = if is_output {
         (
             slave_config.rx_process_data_mappings(),
@@ -450,23 +599,25 @@ fn set_pdo_mappings_to_sm_utility<
     };
 
     let mut pdo_map_size = 0;
+
     if let (Some(sm_number), Some(pdo_mappings)) = (sm_number, pdo_mappings) {
-        let sm_assign = 0x1c10 + sm_number as u16;
-        let sm_address = SyncManagerControl::ADDRESS + 0x08 * sm_number as u16;
+        let sm_assign = 0x1C10 + sm_number as u16;
+        // if pdo_mappings.is_empty() {
+        //     return Ok(start_ram_address);
+        // }
 
         // Clear PDO mappings
         sif.write_sdo(handle, slave, sm_assign, 0, &[0])?;
 
         let mut map_index = 0;
-        for (index, pdo_map) in pdo_mappings.iter().enumerate() {
+        for pdo_map in pdo_mappings.iter() {
             if pdo_map.entries.is_empty() {
                 continue;
             }
-            let pdo_index = index as u16 + 1;
             map_index += 1;
             let PdoMapping {
                 is_fixed,
-                //index: pdo_index,
+                index: pdo_map_index,
                 entries,
             } = pdo_map;
             // Assign pdo map to SM
@@ -475,13 +626,15 @@ fn set_pdo_mappings_to_sm_utility<
                 slave,
                 sm_assign,
                 map_index,
-                &pdo_index.to_le_bytes(),
+                &pdo_map_index.to_le_bytes(),
             )?;
             if *is_fixed {
                 continue;
             }
+            dbg!("W");
+
             // Clear PDO entry of PDO map
-            sif.write_sdo(handle, slave, pdo_index, 0, &[0])?;
+            sif.write_sdo(handle, slave, *pdo_map_index, 0, &[0])?;
             let mut entry_index = 0;
             for entry in entries.iter() {
                 let mut data: u32 = 0;
@@ -493,19 +646,18 @@ fn set_pdo_mappings_to_sm_utility<
                 sif.write_sdo(
                     handle,
                     slave,
-                    //slave_info,
-                    pdo_index,
+                    *pdo_map_index,
                     entry_index,
                     &data.to_le_bytes(),
                 )?;
-                let bit_diff = entry.bit_length() * 8 - entry.bit_length;
+                let bit_diff = entry.byte_length() * 8 - entry.bit_length;
                 // NOTE: Padding so that PDOs are aligned in bytes
                 if bit_diff != 0 {
                     entry_index += 1;
                     sif.write_sdo(
                         handle,
                         slave,
-                        pdo_index,
+                        *pdo_map_index,
                         entry_index,
                         &(bit_diff as u32).to_le_bytes(),
                     )?;
@@ -513,15 +665,15 @@ fn set_pdo_mappings_to_sm_utility<
                 pdo_map_size += entry.byte_length();
             }
             // How many entries were assigned to the PDO map?
-            sif.write_sdo(handle, slave, pdo_index, 0, &entry_index.to_le_bytes())?;
+            sif.write_sdo(handle, slave, *pdo_map_index, 0, &entry_index.to_le_bytes())?;
         }
-
         // How many PDO maps were assigned to the SM?
-        sif.write_sdo(handle, slave, sm_assign, 0, &map_index.to_be_bytes())?;
+        sif.write_sdo(handle, slave, sm_assign, 0, &map_index.to_le_bytes())?;
 
         // Configure sm control register
+        let sm_control_address = SyncManagerControl::ADDRESS + 0x08 * sm_number as u16;
         let mut sm_control = SyncManagerControl::new();
-        sm_control.set_physical_start_address(slave.info().pdo_start_address.unwrap());
+        sm_control.set_physical_start_address(start_ram_address);
         sm_control.set_length(pdo_map_size);
         sm_control.set_buffer_type(0b00); //buffer mode
         if is_output {
@@ -533,24 +685,157 @@ fn set_pdo_mappings_to_sm_utility<
         sif.write_register(
             handle,
             slave.info().slave_address().into(),
-            sm_address,
+            sm_control_address,
             &sm_control.0,
         )
         .unwrap(); //unwrap for now
+
+        // Configure sm activation register
+        let sm_activation_address = SyncManagerActivation::ADDRESS + 0x08 * sm_number as u16;
         let mut sm_active = SyncManagerActivation::new();
-        sm_active.set_channel_enable(true);
+        if pdo_map_size != 0 {
+            sm_active.set_channel_enable(true);
+        } else {
+            sm_active.set_channel_enable(false);
+        }
         sm_active.set_repeat(false);
         sif.write_register(
             handle,
             slave.info().slave_address().into(),
-            sm_address,
+            sm_activation_address,
             &sm_active.0,
         )
         .unwrap(); //unwrap for now
 
         // Set FMMU config of slave struct
-        let fmmu_config = FmmuConfig::new(sm_address, pdo_map_size * 8, is_output);
-        slave.fmmu[1] = Some(fmmu_config);
+        let fmmu_config = FmmuConfig::new(start_ram_address, pdo_map_size * 8, is_output);
+        if is_output {
+            slave.fmmu[0] = Some(fmmu_config);
+        } else {
+            slave.fmmu[1] = Some(fmmu_config);
+        }
     }
-    Ok(())
+    Ok(start_ram_address + pdo_map_size * 3)
+}
+
+/// Assign PDO map to SM.
+/// Return next pdo ram address
+/// NOTE: output = RX of slave.
+fn cnfigure_pdo_sm_from_object_dictionary<
+    'packet,
+    'socket_buf,
+    'pdo_mapping,
+    'pdo_entry,
+    D: for<'d> RawEthernetDevice<'d>,
+    const S: usize,
+>(
+    slave: &mut Slave,
+    slave_config: &mut SlaveConfig<'pdo_mapping, 'pdo_entry>,
+    sif: &mut SocketsInterface<'packet, 'socket_buf, D, S>,
+    handle: &SocketHandle,
+    is_output: bool,
+    start_ram_address: u16,
+) -> Result<u16, TaskError<SdoTaskError>> {
+
+    let num_sm_comm = sif.read_sdo(handle, slave, 0x1C00, 0)?;
+    dbg!(num_sm_comm);
+    assert!(4<=num_sm_comm[0]);
+
+    let sm_number = if is_output {
+        slave.info().process_data_rx_sm_number()
+    } else {
+        slave.info().process_data_tx_sm_number()
+    };
+
+    if let Some(sm_number) = sm_number {
+        let is_pdo_map_none = if is_output{
+            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number+1)?[0];
+            match sm_type{
+                0 => true,
+                3 => false,
+                _ => panic!("unsupported sm type"),
+            }
+        }else{
+            let sm_type = sif.read_sdo(handle, slave, 0x1C00, sm_number+1)?[0];
+            match sm_type{
+                0 => true,
+                4 => false,
+                _ => panic!("unsupproted sm type"),
+            }
+        };
+
+        let mut pdo_map_size = 0;
+        let sm_assign = 0x1C10 + sm_number as u16;
+        if !is_pdo_map_none{
+            let num_maps = sif.read_sdo(handle, slave, sm_assign, 0)?[0] as usize;
+            dbg!(num_maps);
+            for index in 1..(num_maps+1){
+                let map_address = sif.read_sdo(handle, slave, sm_assign, index as u8)?;
+                let map_address = u16::from_le_bytes([map_address[0],map_address[1]]);
+                dbg!(map_address);
+                let num_entry = sif.read_sdo(handle, slave, map_address, 0)?[0] as usize;
+                dbg!(num_entry);
+                for entry_index in 1..(num_entry+1){
+                    let entry = sif.read_sdo(handle, slave, map_address, entry_index as u8)?;
+                    let entry = PdoEntry(entry);
+                    //dbg!(&entry);
+                    let size = crate::util::byte_length(entry.bit_length() as u16);
+                    //dbg!(size);
+                    pdo_map_size += size as u16;
+                }
+                pdo_map_size =2;//こうするとおぺーしょなるステートには入れる。
+                //結局、bit単位でロジカルアドレスに並べられるようになってないと、
+                //bit単位で指定されたときに、遷移に失敗する。
+            }
+        }
+        dbg!(pdo_map_size);
+
+        // Configure sm control register
+        let sm_control_address = SyncManagerControl::ADDRESS + 0x08 * sm_number as u16;
+        let mut sm_control = SyncManagerControl::new();
+        sm_control.set_physical_start_address(start_ram_address);
+        sm_control.set_length(pdo_map_size);
+        sm_control.set_buffer_type(0b00); //buffer mode
+        if is_output {
+            sm_control.set_direction(1); //pdi read access
+        } else {
+            sm_control.set_direction(0); //pdi write access
+        }
+        sm_control.set_dls_user_event_enable(true);
+        sif.write_register(
+            handle,
+            slave.info().slave_address().into(),
+            sm_control_address,
+            &sm_control.0,
+        )
+        .unwrap(); //unwrap for now
+
+        // Configure sm activation register
+        let sm_activation_address = SyncManagerActivation::ADDRESS + 0x08 * sm_number as u16;
+        let mut sm_active = SyncManagerActivation::new();
+        if pdo_map_size != 0 {
+            sm_active.set_channel_enable(true);
+        } else {
+            sm_active.set_channel_enable(false);
+        }
+        sm_active.set_repeat(false);
+        sif.write_register(
+            handle,
+            slave.info().slave_address().into(),
+            sm_activation_address,
+            &sm_active.0,
+        )
+        .unwrap(); //unwrap for now
+
+        // Set FMMU config of slave struct
+        let fmmu_config = FmmuConfig::new(start_ram_address, pdo_map_size * 8, is_output);
+        if is_output {
+            slave.fmmu[0] = Some(fmmu_config);
+        } else {
+            slave.fmmu[1] = Some(fmmu_config);
+        }
+        Ok(start_ram_address + pdo_map_size * 3)
+    } else {
+        Ok(start_ram_address)
+    }
 }

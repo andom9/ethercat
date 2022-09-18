@@ -11,7 +11,7 @@ use crate::util::const_max;
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
 
 const OFFSET_COUNT_MAX: usize = 16;
-const DRIFT_COUNT_MAX: usize = 15000;
+const DRIFT_COUNT_MAX: usize = 1500;
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
@@ -131,29 +131,29 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             State::Error(_) => None,
             State::Complete => None,
             State::RequestToLatch(_) => {
-                let command = Command::new(CommandType::BWR, 0, DcRecieveTime::ADDRESS);
+                self.command = Command::new(CommandType::BWR, 0, DcRecieveTime::ADDRESS);
                 buf[..DcRecieveTime::SIZE].fill(0);
-                Some((command, DcRecieveTime::SIZE))
+                Some((self.command, DcRecieveTime::SIZE))
             }
             State::CalculateOffset((_, pos)) => {
-                let command = Command::new_read(
+                self.command = Command::new_read(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTime::ADDRESS,
                 );
                 buf[..DcSystemTime::SIZE].fill(0);
-                Some((command, DcSystemTime::SIZE))
+                Some((self.command, DcSystemTime::SIZE))
             }
             State::CalculateDelay((_, pos)) => {
-                let command = Command::new_read(
+                self.command = Command::new_read(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcRecieveTime::ADDRESS,
                 );
                 buf[..DcRecieveTime::SIZE].fill(0);
                 //self.sys_time = sys_time;
-                Some((command, DcRecieveTime::SIZE))
+                Some((self.command, DcRecieveTime::SIZE))
             }
             State::SetOffset(pos) => {
-                let command = Command::new_write(
+                self.command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeOffset::ADDRESS,
                 );
@@ -164,10 +164,10 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                     .unwrap();
                 let dc = slave.dc_context.borrow();
                 DcSystemTimeOffset(buf).set_system_time_offset(dc.offset);
-                Some((command, DcSystemTimeOffset::SIZE))
+                Some((self.command, DcSystemTimeOffset::SIZE))
             }
             State::SetDelay(pos) => {
-                let command = Command::new_write(
+                self.command = Command::new_write(
                     SlaveAddress::SlavePosition(*pos).into(),
                     DcSystemTimeTransmissionDelay::ADDRESS,
                 );
@@ -178,16 +178,16 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                     .unwrap();
                 let dc = slave.dc_context.borrow();
                 DcSystemTimeTransmissionDelay(buf).set_system_time_transmission_delay(dc.delay);
-                Some((command, DcSystemTimeTransmissionDelay::SIZE))
+                Some((self.command, DcSystemTimeTransmissionDelay::SIZE))
             }
             State::CompensateDrift(_) => {
-                let command = Command::new(
+                self.command = Command::new(
                     CommandType::ARMW,
                     SlaveAddress::SlavePosition(self.first_dc_slave.unwrap()).get_ado(),
                     DcSystemTime::ADDRESS,
                 );
                 buf[..DcSystemTime::SIZE].fill(0);
-                Some((command, DcSystemTime::SIZE))
+                Some((self.command, DcSystemTime::SIZE))
             }
         }
     }
