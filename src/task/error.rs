@@ -9,13 +9,13 @@ use super::{
 pub enum TaskError<E> {
     UnexpectedCommand,
     UnexpectedWkc(u16),
-    Interface(CommandInterfaceError),
+    Interface(PhyError),
     TaskSpecific(E),
     Timeout,
 }
 
-impl<E> From<CommandInterfaceError> for TaskError<E> {
-    fn from(err: CommandInterfaceError) -> Self {
+impl<E> From<PhyError> for TaskError<E> {
+    fn from(err: PhyError) -> Self {
         Self::Interface(err)
     }
 }

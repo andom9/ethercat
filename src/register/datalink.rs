@@ -333,7 +333,7 @@ bitfield! {
     pub u16, physical_start_address, set_physical_start_address: 8*10-1, 8*8;
     pub u8, physical_start_bit, set_physical_start_bit: 8*10+2, 8*10;
     pub read_enable, set_read_enable: 8*11;
-    pub write_enable, set_write_enable: 8*11;
+    pub write_enable, set_write_enable: 8*11+1;
     pub enable, set_enable: 8*12;
 }
 

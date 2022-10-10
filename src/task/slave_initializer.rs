@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     interface::{Command, CommandData, SlaveAddress},
-    network::{AlState, SlaveInfo, SyncManager, SyncManagerType},
+    network::{AlState, SlaveInfo, SyncManagerTypeBuilder, SlaveInfoBuilder, SyncManagerBuilder},
     register::{
         sii::{
             MailboxProtocol, ProductCode, RevisionNumber, StandardRxMailboxOffset,
@@ -103,7 +103,7 @@ pub struct SlaveInitializer {
     slave_address: SlaveAddress,
     state: State,
     command: Command,
-    slave_info: Option<SlaveInfo>,
+    slave_info: Option<SlaveInfoBuilder>,
 }
 
 impl SlaveInitializer {
@@ -124,12 +124,18 @@ impl SlaveInitializer {
     pub fn start(&mut self, slave_position: u16) {
         self.slave_address = SlaveAddress::SlavePosition(slave_position);
         self.state = State::SetLoopPort;
-        self.slave_info = Some(SlaveInfo::default());
+        self.slave_info = Some(SlaveInfoBuilder::default());
     }
 
     pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, TaskError<SlaveInitializerError>>> {
         match &self.state {
-            State::Complete => Some(Ok(core::mem::take(&mut self.slave_info))),
+            State::Complete => {
+                if let Some(info) = core::mem::take(&mut self.slave_info) {
+                    Some(Ok(Some(info.build())))
+                }else{
+                    Some(Ok(None))
+                }
+            }
             State::Error(err) => Some(Err(err.clone())),
             _ => None,
         }
@@ -295,7 +301,7 @@ impl Cyclic for SlaveInitializer {
                 );
                 buf[..SyncManagerControl::SIZE].fill(0);
                 match self.slave_info.as_mut().unwrap().sm[num] {
-                    Some(SyncManagerType::MailboxRx(ref sm_info)) => {
+                    Some(SyncManagerTypeBuilder::MailboxRx(ref sm_info)) => {
                         let mut sm = SyncManagerControl(buf);
                         sm.set_physical_start_address(sm_info.start_address);
                         sm.set_length(sm_info.size);
@@ -303,7 +309,7 @@ impl Cyclic for SlaveInitializer {
                         sm.set_direction(1); //pdi read access
                         sm.set_dls_user_event_enable(true);
                     }
-                    Some(SyncManagerType::MailboxTx(ref sm_info)) => {
+                    Some(SyncManagerTypeBuilder::MailboxTx(ref sm_info)) => {
                         let mut sm = SyncManagerControl(buf);
                         sm.set_physical_start_address(sm_info.start_address);
                         sm.set_length(sm_info.size);
@@ -322,7 +328,7 @@ impl Cyclic for SlaveInitializer {
                 );
                 buf[..SyncManagerActivation::SIZE].fill(0);
                 match self.slave_info.as_mut().unwrap().sm[num] {
-                    Some(SyncManagerType::MailboxRx(_)) | Some(SyncManagerType::MailboxTx(_)) => {
+                    Some(SyncManagerTypeBuilder::MailboxRx(_)) | Some(SyncManagerTypeBuilder::MailboxTx(_)) => {
                         let mut sm = SyncManagerActivation(buf);
                         sm.set_channel_enable(true);
                         sm.set_repeat(false);
@@ -473,7 +479,7 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.vender_id = data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.vender_id=data.sii_data() as u16;
                         self.state = State::GetProductCode(true);
                     }
                     None => self.state = State::GetVenderID(false),
@@ -487,7 +493,7 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.product_code = data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.product_code=data.sii_data() as u16;
                         self.state = State::GetRevision(true);
                     }
                     None => self.state = State::GetProductCode(false),
@@ -501,8 +507,7 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.revision_number =
-                            data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.revision_number=data.sii_data() as u16;
                         self.state = State::GetProtocol(true);
                     }
                     None => self.state = State::GetRevision(false),
@@ -534,16 +539,16 @@ impl Cyclic for SlaveInitializer {
                             && data.sii_data() != 0
                         {
                             self.slave_info.as_mut().unwrap().sm[0] =
-                                Some(SyncManagerType::MailboxRx(SyncManager {
+                                Some(SyncManagerTypeBuilder::MailboxRx(SyncManagerBuilder {
                                     number: 0,
                                     size: (data.sii_data() as u16).min(MAX_SM_SIZE),
                                     start_address: 0,
                                 }));
                             self.slave_info.as_mut().unwrap().sm[2] =
-                                Some(SyncManagerType::ProcessDataRx);
+                                Some(SyncManagerTypeBuilder::ProcessDataRx);
                         } else if 2 <= self.slave_info.as_ref().unwrap().number_of_sm {
                             self.slave_info.as_mut().unwrap().sm[0] =
-                                Some(SyncManagerType::ProcessDataRx);
+                                Some(SyncManagerTypeBuilder::ProcessDataRx);
                         }
                         self.state = State::GetRxMailboxOffset(true);
                     }
@@ -560,8 +565,8 @@ impl Cyclic for SlaveInitializer {
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().sm[0] {
-                            Some(SyncManagerType::MailboxRx(ref mut sm)) => {
-                                sm.start_address = data.sii_data() as u16
+                            Some(SyncManagerTypeBuilder::MailboxRx(ref mut sm)) => {
+                                sm.start_address=data.sii_data() as u16
                             }
                             _ => {}
                         }
@@ -583,16 +588,16 @@ impl Cyclic for SlaveInitializer {
                             && data.sii_data() != 0
                         {
                             self.slave_info.as_mut().unwrap().sm[1] =
-                                Some(SyncManagerType::MailboxTx(SyncManager {
+                                Some(SyncManagerTypeBuilder::MailboxTx(SyncManagerBuilder {
                                     number: 1,
                                     size: (data.sii_data() as u16).min(MAX_SM_SIZE),
                                     start_address: 0,
                                 }));
                             self.slave_info.as_mut().unwrap().sm[3] =
-                                Some(SyncManagerType::ProcessDataTx);
+                                Some(SyncManagerTypeBuilder::ProcessDataTx);
                         } else if 2 <= self.slave_info.as_ref().unwrap().number_of_sm {
                             self.slave_info.as_mut().unwrap().sm[1] =
-                                Some(SyncManagerType::ProcessDataTx);
+                                Some(SyncManagerTypeBuilder::ProcessDataTx);
                         }
                         self.state = State::GetTxMailboxOffset(true);
                     }
@@ -608,8 +613,8 @@ impl Cyclic for SlaveInitializer {
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().sm[1] {
-                            Some(SyncManagerType::MailboxTx(ref mut sm)) => {
-                                sm.start_address = data.sii_data() as u16
+                            Some(SyncManagerTypeBuilder::MailboxTx(ref mut sm)) => {
+                                sm.start_address=data.sii_data() as u16
                             }
                             _ => {}
                         }
@@ -683,8 +688,8 @@ const fn buffer_size() -> usize {
     size
 }
 
-fn set_process_data_sm_size_offset(slave: &mut SlaveInfo) {
-    if let (Some(SyncManagerType::MailboxRx(ref sm0)), Some(SyncManagerType::MailboxTx(ref sm1))) =
+fn set_process_data_sm_size_offset(slave: &mut SlaveInfoBuilder) {
+    if let (Some(SyncManagerTypeBuilder::MailboxRx(ref sm0)), Some(SyncManagerTypeBuilder::MailboxTx(ref sm1))) =
         (&slave.sm[0], &slave.sm[1])
     {
         let sm_address0 = sm0.start_address;

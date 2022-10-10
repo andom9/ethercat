@@ -1,6 +1,6 @@
 use super::Command;
 use super::CommandInterface;
-use super::CommandInterfaceError;
+use super::PhyError;
 use crate::frame::*;
 use crate::hal::*;
 
@@ -139,22 +139,22 @@ impl<S> Default for SocketOption<S> {
 }
 
 #[derive(Debug)]
-pub struct SocketsInterface<'packet, 'buf, D, const N: usize>
+pub struct SocketsInterface<'frame, 'buf, D, const N: usize>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
-    iface: CommandInterface<'packet, D>,
+    iface: CommandInterface<'frame, D>,
     sockets: [SocketOption<CommandSocket<'buf>>; N],
     free_index: SocketHandle,
     pub lost_frame_count: usize,
 }
 
-impl<'packet, 'buf, D, const N: usize> SocketsInterface<'packet, 'buf, D, N>
+impl<'frame, 'buf, D, const N: usize> SocketsInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
     pub fn new(
-        iface: CommandInterface<'packet, D>,
+        iface: CommandInterface<'frame, D>,
         mut sockets: [SocketOption<CommandSocket<'buf>>; N],
     ) -> Self {
         sockets
@@ -225,14 +225,14 @@ where
     }
 
     /// If true, all PDUs are transmitted and received,
-    pub fn poll_tx_rx(&mut self) -> Result<bool, CommandInterfaceError> {
+    pub fn poll_tx_rx(&mut self) -> Result<bool, PhyError> {
         let is_all_commands_enqueued = self.enqueue_commands()?;
 
         let is_all_enqueued_commands_processed = self.transmit_and_receive()?;
         Ok(is_all_commands_enqueued && is_all_enqueued_commands_processed)
     }
 
-    fn enqueue_commands(&mut self) -> Result<bool, CommandInterfaceError> {
+    fn enqueue_commands(&mut self) -> Result<bool, PhyError> {
         let mut complete = true;
         for (i, socket_enum) in self.sockets.iter_mut().enumerate() {
             if let SocketOption::Socket(socket) = socket_enum {
@@ -256,7 +256,7 @@ where
     }
 
     /// If true, all PDUs are transmitted and received
-    fn transmit_and_receive(&mut self) -> Result<bool, CommandInterfaceError> {
+    fn transmit_and_receive(&mut self) -> Result<bool, PhyError> {
         let Self { iface, sockets, .. } = self;
         let is_tx_ok = iface.transmit_one_frame()?;
         let is_rx_ok = iface.receive_one_frame()?;

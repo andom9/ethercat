@@ -92,9 +92,9 @@ impl MailboxWriter {
         //self.buffer.fill(0);
         self.state = State::CheckMailboxEmpty((true, wait_empty));
 
-        self.sm_ado_offset = rx_sm.number as u16 * 0x08;
-        self.sm_size = rx_sm.size;
-        self.sm_start_address = rx_sm.start_address;
+        self.sm_ado_offset = rx_sm.number() as u16 * 0x08;
+        self.sm_size = rx_sm.size();
+        self.sm_start_address = rx_sm.start_address();
     }
 
     pub fn wait(&self) -> Option<Result<(), TaskError<MailboxTaskError>>> {

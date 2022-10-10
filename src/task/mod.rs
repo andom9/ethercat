@@ -38,7 +38,7 @@ use crate::{
     frame::MailboxHeader,
     hal::RawEthernetDevice,
     interface::{
-        Command, CommandData, CommandInterfaceError, CommandSocket, SlaveAddress, SocketHandle,
+        Command, CommandData, CommandSocket, PhyError, SlaveAddress, SocketHandle,
         SocketsInterface, TargetSlave,
     },
     network::{AlState, NetworkDescription, Slave, SlaveInfo},
@@ -73,7 +73,7 @@ pub trait Cyclic {
     fn is_finished(&self) -> bool;
 }
 
-impl<'packet, 'buf, D, const N: usize> SocketsInterface<'packet, 'buf, D, N>
+impl<'frame, 'buf, D, const N: usize> SocketsInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
@@ -91,7 +91,7 @@ where
                         continue;
                     }
                 }
-                Err(CommandInterfaceError::Busy) => continue,
+                Err(PhyError::Busy) => continue,
                 Err(err) => return Err(err.into()),
             }
             let socket = self.get_socket_mut(handle).unwrap();
@@ -146,10 +146,10 @@ where
         unit.wait().unwrap()
     }
 
-    pub fn initilize_slaves<'slaves, 'pdo_mapping, 'pdo_entry>(
+    pub fn initilize_slaves<'slave, 'pdo_mapping, 'pdo_entry>(
         &mut self,
         handle: &SocketHandle,
-        network: &mut NetworkDescription<'slaves, 'pdo_mapping, 'pdo_entry>,
+        network: &mut NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry>,
     ) -> Result<(), TaskError<NetworkInitializerError>> {
         let mut unit = NetworkInitializer::new(network);
 
@@ -161,10 +161,10 @@ where
         unit.wait().unwrap()
     }
 
-    pub fn synchronize_dc<'slaves, 'pdo_mapping, 'pdo_entry>(
+    pub fn synchronize_dc<'slave, 'pdo_mapping, 'pdo_entry>(
         &mut self,
         handle: &SocketHandle,
-        network: &mut NetworkDescription<'slaves, 'pdo_mapping, 'pdo_entry>,
+        network: &mut NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry>,
     ) -> Result<(), TaskError<()>> {
         let mut unit = DcInitializer::new(network);
 
@@ -238,7 +238,7 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave_info.mailbox_tx_sm().unwrap_or_default().size as usize) <= socket.capacity()
+                (slave_info.mailbox_tx_sm().unwrap_or_default().size() as usize) <= socket.capacity()
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
@@ -262,7 +262,7 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave_info.mailbox_rx_sm().unwrap_or_default().size as usize) <= socket.capacity()
+                (slave_info.mailbox_rx_sm().unwrap_or_default().size() as usize) <= socket.capacity()
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
@@ -284,7 +284,7 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave.info().mailbox_tx_sm().unwrap_or_default().size as usize)
+                (slave.info().mailbox_tx_sm().unwrap_or_default().size() as usize)
                     <= socket.capacity()
             );
             unit.start(slave, index, sub_index, socket.data_buf_mut());
@@ -307,7 +307,7 @@ where
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
-                (slave.info().mailbox_rx_sm().unwrap_or_default().size as usize)
+                (slave.info().mailbox_rx_sm().unwrap_or_default().size() as usize)
                     <= socket.capacity()
             );
             unit.start(slave, index, sub_index, data, socket.data_buf_mut());

@@ -2,7 +2,7 @@ use crate::frame::*;
 use crate::hal::{RawEthernetDevice, RxToken, TxToken};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandInterfaceError {
+pub enum PhyError {
     TxError,
     RxError,
     Busy,
@@ -102,12 +102,12 @@ where
         data_writer: F,
     ) -> Result<(), Command> {
         if self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
-            //return Err(CommandInterfaceError::NotEnoughCapacityLeft);
+            //return Err(PhyError::NotEnoughCapacityLeft);
             return Err(command);
         }
 
         if data_size > MAX_PDU_DATAGRAM {
-            //return Err(CommandInterfaceError::TooLargeData);
+            //return Err(PhyError::TooLargeData);
             return Err(command);
         }
 
@@ -144,7 +144,7 @@ where
 
     /// If true, all PDUs are transmitted
     /// If None, Phy is not ready
-    pub fn transmit_one_frame(&mut self) -> Result<bool, CommandInterfaceError> {
+    pub fn transmit_one_frame(&mut self) -> Result<bool, PhyError> {
         let Self {
             ethdev,
             buffer,
@@ -178,10 +178,10 @@ where
                 Ok(())
             });
             if tx_result.is_err() {
-                return Err(CommandInterfaceError::TxError);
+                return Err(PhyError::TxError);
             }
         } else {
-            return Err(CommandInterfaceError::Busy);
+            return Err(PhyError::Busy);
         }
 
         if *tx_count < self.pdu_count {
@@ -193,7 +193,7 @@ where
 
     /// If true, all PDUs are received
     /// If None, Phy is not ready
-    pub fn receive_one_frame(&mut self) -> Result<bool, CommandInterfaceError> {
+    pub fn receive_one_frame(&mut self) -> Result<bool, PhyError> {
         let Self {
             ethdev,
             buffer,
@@ -223,12 +223,12 @@ where
                 });
                 //assert_eq!(data_size, self.pdus_total_size);
                 if rx_result.is_err() {
-                    return Err(CommandInterfaceError::RxError);
+                    return Err(PhyError::RxError);
                 } else {
                     break;
                 }
             } else {
-                return Err(CommandInterfaceError::Busy);
+                return Err(PhyError::Busy);
             }
         }
         if 0 < *tx_count {

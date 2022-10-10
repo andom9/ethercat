@@ -1,11 +1,12 @@
-use core::num;
 use ethercat_master::frame::CommandType;
 use ethercat_master::hal::*;
 use ethercat_master::interface::*;
 use ethercat_master::network::AlState;
+use ethercat_master::network::OperationMode;
 use ethercat_master::network::PdoEntry;
 use ethercat_master::network::PdoMapping;
 use ethercat_master::network::SlaveConfig;
+use ethercat_master::register::od::cia402::*;
 use ethercat_master::register::sii::ProductCode;
 use ethercat_master::EtherCatMaster;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
@@ -160,21 +161,6 @@ fn sdo_test(interf_name: &str) {
         .unwrap();
     let data = master.read_sdo(slave_address, 0x1018, 0x01).unwrap();
     dbg!(data);
-
-    // let data2 = [data[0] + 1, data[1]];
-    // master
-    //     .write_sdo(slave_address, 0x2005, 0x01, &data2)
-    //     .unwrap();
-
-    // let data = master
-    //     .read_sdo(slave_address, 0x2005, 0x01)
-    //     .unwrap();
-    // dbg!(data);
-
-    // let data2 = [data[0] - 1, data[1]];
-    // master
-    //     .write_sdo(slave_address, 0x2005, 0x01, &data2)
-    //     .unwrap();
 }
 
 fn pdo_test(interf_name: &str) {
@@ -183,36 +169,37 @@ fn pdo_test(interf_name: &str) {
     let mut buf = vec![0; 1500];
     let iface = CommandInterface::new(device, &mut buf);
 
-    let rx_pdo_map = PdoMapping {
+    let mut output_pdo_map = [PdoMapping {
         is_fixed: false,
         index: 0x1702,
         entries: &mut [
-            // PdoEntry::new(0x6040, 0x00, 16), // control word
-            // PdoEntry::new(0x607A, 0x00, 32), // target position
-            //PdoEntry::new(0x2005, 0x01, 16),
-            PdoEntry::new(0, 0, 8),
+            PdoEntry::new(0x6040, 0x00, 16), // control word
+            PdoEntry::new(0x607A, 0x00, 32), // target position
+            PdoEntry::new(0x200D, 0x01, 16), // misc
+                                             //PdoEntry::new(0x2005, 0x01, 16),
+                                             //PdoEntry::new(0x6300, 1, 16),
         ],
-    };
-    let mut rx_maps = [rx_pdo_map];
+    }];
 
-    let tx_pdo_map = PdoMapping {
-        is_fixed: true,
-        index: 0x1B00,
+    let mut input_pdo_map = [PdoMapping {
+        is_fixed: false,
+        index: 0x1B03,
         entries: &mut [
-            // PdoEntry::new(0x603F, 0x00, 16), // error code
-            // PdoEntry::new(0x6041, 0x00, 16), // status word
-            // PdoEntry::new(0x6064, 0x00, 32), // actual position
-            // PdoEntry::new(0x6077, 0x00, 16), // actual torque
-            // PdoEntry::new(0x60F4, 0x00, 32), // position error
-            //PdoEntry::new(0x2005, 0x01, 16),
-            PdoEntry::new(6100, 1, 16),
+            PdoEntry::new(0x603F, 0x00, 16), // error code
+            PdoEntry::new(0x6041, 0x00, 16), // status word
+            PdoEntry::new(0x6064, 0x00, 32), // actual position
+            PdoEntry::new(0x6077, 0x00, 16), // actual torque
+            PdoEntry::new(0x60F4, 0x00, 32), // position error
+            PdoEntry::new(0x200D, 0x01, 16), // misc
+                                             //PdoEntry::new(0x2005, 0x01, 16),
+                                             //PdoEntry::new(0x6100, 1, 16),
         ],
-    };
-    let mut tx_maps = [tx_pdo_map];
+    }];
 
     let mut slaves: Box<[(_, SlaveConfig); 10]> = Box::new(Default::default());
-    //slaves[0].1.set_tx_pdo_mappings(&mut tx_maps);
-    //slaves[0].1.set_rx_pdo_mappings(&mut rx_maps);
+    slaves[0].1.set_tx_pdo_mappings(&mut input_pdo_map);
+    slaves[0].1.set_rx_pdo_mappings(&mut output_pdo_map);
+    slaves[0].1.operation_mode = OperationMode::FreeRun;
     let mut socket_buffer = vec![0; 1500];
     let mut pdo_buffer = vec![0; 1500];
     let mut master = EtherCatMaster::new(slaves.as_mut(), &mut socket_buffer, iface);
@@ -225,39 +212,124 @@ fn pdo_test(interf_name: &str) {
         dbg!(&slave.info().id);
         dbg!(&config);
     }
+    master
+        .change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)
+        .unwrap();
+    //let t_lim = master.read_sdo(SlaveAddress::SlavePosition(0), 0x6072, 0).unwrap();
+    //dbg!(t_lim);
 
     master
-        .configure_pdo_settings_and_change_to_safe_operational_state(&mut pdo_buffer)
+        .write_sdo(
+            SlaveAddress::SlavePosition(0),
+            0x6072,
+            0,
+            &40_u16.to_le_bytes(),
+        )
         .unwrap();
+    //let t_lim = master.read_sdo(SlaveAddress::SlavePosition(0), 0x6072, 0).unwrap();
+    //dbg!(t_lim);
+    //panic!();
+    master
+        .write_sdo(
+            SlaveAddress::SlavePosition(0),
+            0x20F8,
+            7,
+            &0x1_u8.to_le_bytes(),
+        )
+        .unwrap();
+    //master.synchronize_dc().unwrap();
+    master.configure_slave_settings(&mut pdo_buffer).unwrap();
 
+    //panic!();
+    let ret = master
+        .change_al_state(TargetSlave::All(num_slaves), AlState::SafeOperational)
+        .unwrap();
     let ret = master
         .change_al_state(TargetSlave::All(num_slaves), AlState::Operational)
         .unwrap();
     dbg!(ret);
-    return;
+
+    // master
+    //     .write_pdo_u16(
+    //         SlaveAddress::SlavePosition(0),
+    //         0,
+    //         0,
+    //         u16::from_le_bytes(ControlWord::new_switch_on_and_enable_operation().0),
+    //     )
+    //     .unwrap();
 
     let mut pre_cycle_count = 0;
     let instance = Instant::now();
-    for i in 0..1000 {
+    let mut count = 0;
+    let mut count2 = 0;
+    for i in 0..100 {
         loop {
+            count += 1;
             let cycle_count = master.process_one_cycle(instance.elapsed().into()).unwrap();
             if pre_cycle_count != cycle_count {
                 pre_cycle_count = cycle_count;
                 break;
             }
         }
-        let pdo = master
-            .read_pdo_entry(SlaveAddress::SlavePosition(0), 0, 0)
+        let error_code = master
+            .read_pdo_u16(SlaveAddress::SlavePosition(0), 0, 0)
             .unwrap();
-        dbg!(pdo);
-        if i % 2 == 0 {
+        let status_word = master
+            .read_pdo_u16(SlaveAddress::SlavePosition(0), 0, 1)
+            .unwrap();
+        let actual_position = master
+            .read_pdo_u32(SlaveAddress::SlavePosition(0), 0, 2)
+            .unwrap();
+        let actual_torque = master
+            .read_pdo_u16(SlaveAddress::SlavePosition(0), 0, 3)
+            .unwrap();
+        let position_error = master
+            .read_pdo_u32(SlaveAddress::SlavePosition(0), 0, 4)
+            .unwrap();
+        let misc = master
+            .read_pdo_u16(SlaveAddress::SlavePosition(0), 0, 5)
+            .unwrap();
+
+        let status_word = StatusWord(status_word.to_le_bytes());
+        if !status_word.switched_on() {
+            dbg!(status_word.nquick_stop());
+            dbg!(status_word.internal_limit_active());
+            dbg!(status_word.fault());
+            dbg!(status_word.ready_to_switch_on());
+            dbg!(status_word.operation_enabled());
+            dbg!(status_word.ready_to_switch_on());
+            dbg!(status_word.switch_on_disabled());
+            dbg!(status_word.switched_on());
+            dbg!(status_word.voltage_enabled());
+            let mut c_word = ControlWord::new_switch_on_and_enable_operation();
+            if !status_word.nquick_stop() {
+                c_word = ControlWord::new();
+                c_word.0[0] = 0b0000_0110;
+            }
             master
-                .write_pdo_entry(SlaveAddress::SlavePosition(0), 0, 0, &[pdo[0] + 1, pdo[1]])
+                .write_pdo_u16(
+                    SlaveAddress::SlavePosition(0),
+                    0,
+                    0,
+                    u16::from_le_bytes(c_word.0),
+                )
                 .unwrap();
         } else {
+            dbg!(error_code);
+            dbg!(status_word);
+            dbg!(actual_position);
+            dbg!(actual_torque);
+            dbg!(position_error);
+            dbg!(misc);
             master
-                .write_pdo_entry(SlaveAddress::SlavePosition(0), 0, 0, &[pdo[0] - 1, pdo[1]])
+                .write_pdo_u32(SlaveAddress::SlavePosition(0), 0, 1, count2 * 500)
                 .unwrap();
+            count2 += 1;
         }
     }
+    dbg!(count);
+    let t_lim = master
+        .read_sdo(SlaveAddress::SlavePosition(0), 0x6072, 0)
+        .unwrap();
+    dbg!(t_lim);
 }

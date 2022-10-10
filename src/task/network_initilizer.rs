@@ -117,48 +117,6 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                 self.initilizer.next_command(buf)
             }
             State::WaitInitSlaves(_) => self.initilizer.next_command(buf),
-            // State::SetMBoxStateFmmu((slave_count, add_count)) => {
-            //     // FMMU2でメールボックスステータスをポーリングする。
-            //     let addr = SlaveAddress::SlavePosition(*slave_count);
-            //     if let Some(tx_sm) = self
-            //         .network
-            //         .slave(addr)
-            //         .filter(|s| 3 <= s.info().number_of_fmmu)
-            //         .and_then(|s| s.info().mailbox_tx_sm())
-            //     {
-            //         let mb_tx_sm_address = SyncManagerStatus::ADDRESS + 0x08 * tx_sm.number as u16;
-            //         buf[..FmmuRegister::SIZE].fill(0);
-            //         let mut fmmu2 = FmmuRegister(buf);
-            //         let logical_address = *add_count as u32 * SyncManagerStatus::SIZE as u32;
-            //         self.network
-            //             .slave_mut(addr)
-            //             .unwrap()
-            //             .fmmu2_process_data = Some(ProcessDataConfig::Memory(MemoryProcessData{
-            //                 logical_start_address: Some(logical_address),
-            //                 address: mb_tx_sm_address,
-            //                 bit_length: (SyncManagerStatus::SIZE *8) as u16,
-            //             }));
-            //         fmmu2.set_logical_start_address(logical_address);
-            //         fmmu2.set_length(SyncManagerStatus::SIZE as u16);
-            //         fmmu2.set_logical_start_address(0);
-            //         fmmu2.set_logical_end_bit(0);
-            //         fmmu2.set_physical_start_address(mb_tx_sm_address);
-            //         fmmu2.set_physical_start_bit(0);
-            //         fmmu2.set_read_enable(false);
-            //         fmmu2.set_write_enable(true);
-            //         fmmu2.set_enable(true);
-            //         let fmmu_reg_addr = FmmuRegister::ADDRESS + 2 * FmmuRegister::SIZE as u16;
-            //         let command = Command::new_write(addr.into(), fmmu_reg_addr);
-            //         self.state = State::SetMBoxStateFmmu((*slave_count, add_count + 1));
-            //         Some((command, FmmuRegister::SIZE))
-            //     } else {
-            //         // clear
-            //         buf[..FmmuRegister::SIZE].fill(0);
-            //         let fmmu_reg_addr = FmmuRegister::ADDRESS + 2 * FmmuRegister::SIZE as u16;
-            //         let command = Command::new_write(addr.into(), fmmu_reg_addr);
-            //         Some((command, FmmuRegister::SIZE))
-            //     }
-            // }
             State::Complete => None,
         };
         if let Some((command, _)) = command_and_data {
@@ -198,15 +156,17 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                 match self.initilizer.wait() {
                     Some(Ok(Some(slave_info))) => {
                         let mut slave = Slave::default();
-                        slave.info = slave_info;
-                        slave.mailbox_count.set(1);
+                        *slave.info_mut() = slave_info;
+                        slave.set_mailbox_count(1).expect("unreachable");
                         //3番目のfmmuはメールボックスのポーリングに使う
-                        if 2 <= slave.info.number_of_fmmu && slave.info.mailbox_tx_sm().is_some() {
-                            let tx_sm_number = slave.info.mailbox_tx_sm().unwrap().number;
+                        if 2 <= slave.info().number_of_fmmu()
+                            && slave.info().mailbox_tx_sm().is_some()
+                        {
+                            let tx_sm_number = slave.info().mailbox_tx_sm().unwrap().number();
                             let mb_tx_sm_status =
                                 SyncManagerStatus::ADDRESS + 0x08 * tx_sm_number as u16;
                             let bit_length = SyncManagerStatus::SIZE * 8;
-                            slave.fmmu[2] =
+                            slave.fmmu_config_mut()[2] =
                                 Some(FmmuConfig::new(mb_tx_sm_status, bit_length as u16, false));
                         }
                         if self.network.push_slave(slave).is_err() {
@@ -225,13 +185,6 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                     }
                 }
             }
-            // State::SetMBoxStateFmmu((slave_count, add_count)) => {
-            //     if *slave_count + 1 < self.num_slaves {
-            //         self.state = State::SetMBoxStateFmmu((*slave_count + 1, *add_count));
-            //     } else {
-            //         self.state = State::Complete;
-            //     }
-            // }
             State::Complete => {}
         }
     }

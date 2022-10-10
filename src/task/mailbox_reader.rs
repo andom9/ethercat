@@ -93,9 +93,9 @@ impl MailboxReader {
         //self.buffer.fill(0);
         self.state = State::CheckMailboxFull((true, wait_full));
 
-        self.sm_ado_offset = tx_sm.number as u16 * 0x08;
-        self.sm_size = tx_sm.size;
-        self.sm_start_address = tx_sm.start_address;
+        self.sm_ado_offset = tx_sm.number() as u16 * 0x08;
+        self.sm_size = tx_sm.size();
+        self.sm_start_address = tx_sm.start_address();
     }
 
     pub fn wait(&self) -> Option<Result<(), TaskError<MailboxTaskError>>> {
