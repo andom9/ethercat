@@ -1,10 +1,9 @@
 //#![no_std]
 pub mod frame;
-pub mod hal;
 pub mod interface;
-pub(crate) mod master;
-pub mod network;
+mod master;
 pub mod register;
+pub mod slave;
 pub mod task;
 pub(crate) mod util;
 pub use master::*;

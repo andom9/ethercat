@@ -1,10 +1,10 @@
 use super::mailbox::MailboxTaskError;
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::{MailboxErrorResponse, MailboxHeader, MailboxType};
 use crate::interface::*;
-use crate::network::SyncManager;
 use crate::register::{SyncManagerActivation, SyncManagerPdiControl, SyncManagerStatus};
+use crate::slave::SyncManager;
 
 const MAILBOX_RESPONSE_RETRY_TIMEOUT_DEFAULT_MS: u32 = 2000;
 
@@ -26,58 +26,30 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-pub struct MailboxReader {
+pub struct MailboxReadTask {
     timer_start: EtherCatSystemTime,
     command: Command,
     slave_address: SlaveAddress,
-    //buffer: [u8; buffer_size()],
     state: State,
-    //recv_buf: &'a mut [u8],
     activation_buf: SyncManagerActivation<[u8; SyncManagerActivation::SIZE]>,
     sm_ado_offset: u16,
     sm_size: u16,
     sm_start_address: u16,
 }
 
-impl MailboxReader {
-    //pub fn required_buffer_size(&self) -> usize {
-    //    (self.sm_size as usize).max(buffer_size())
-    //}
-
+impl MailboxReadTask {
     pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),
             command: Command::default(),
             slave_address: SlaveAddress::default(),
-            //buffer: [0; buffer_size()],
             state: State::Idle,
-            //recv_buf,
             activation_buf: SyncManagerActivation([0; SyncManagerActivation::SIZE]),
             sm_ado_offset: 0,
             sm_size: 0,
             sm_start_address: 0,
         }
     }
-
-    //pub fn take_buffer(self) -> &'a mut [u8] {
-    //    self.recv_buf
-    //}
-
-    // pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
-    //     MailboxHeader(&self.recv_buf[..MailboxHeader::SIZE])
-    // }
-
-    // pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
-    //     MailboxHeader(&mut self.recv_buf[..MailboxHeader::SIZE])
-    // }
-
-    // pub fn mailbox_data(&self) -> &[u8] {
-    //     &self.recv_buf[MailboxHeader::SIZE..]
-    // }
-
-    // pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-    //     &mut self.recv_buf[MailboxHeader::SIZE..]
-    // }
 
     pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
         (
@@ -90,7 +62,6 @@ impl MailboxReader {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
-        //self.buffer.fill(0);
         self.state = State::CheckMailboxFull((true, wait_full));
 
         self.sm_ado_offset = tx_sm.number() as u16 * 0x08;
@@ -107,7 +78,7 @@ impl MailboxReader {
     }
 }
 
-impl Cyclic for MailboxReader {
+impl CyclicTask for MailboxReadTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -195,10 +166,6 @@ impl Cyclic for MailboxReader {
                 if wkc != 1 {
                     self.state = State::RequestRepeat;
                 } else {
-                    //self.recv_buf
-                    //    .iter_mut()
-                    //    .zip(data.iter())
-                    //    .for_each(|(buf, data)| *buf = *data);
                     let header = MailboxHeader(&data);
                     if header.mailbox_type() == MailboxType::Error as u8 {
                         let mut err = MailboxErrorResponse::new();
@@ -214,7 +181,7 @@ impl Cyclic for MailboxReader {
             }
             State::WaitRepeatAck => {
                 if wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else if SyncManagerPdiControl(data).repeat_ack() == self.activation_buf.repeat() {
                     self.state = State::CheckMailboxFull((false, true));
                 } else {
@@ -230,10 +197,3 @@ impl Cyclic for MailboxReader {
         }
     }
 }
-
-// const fn buffer_size() -> usize {
-//     let mut size = 0;
-//     size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
-//     size = const_max(size, SyncManagerPdiControl::SIZE);
-//     size
-// }

@@ -1,5 +1,5 @@
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
 
 #[derive(Debug, PartialEq)]
@@ -12,16 +12,15 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct RamAccessTask {
+pub struct AddressAccessTask {
     state: State,
     slave_address: TargetSlave,
     command: Command,
-    //buffer: [u8; 16],
     data_size: usize,
     ado: u16,
 }
 
-impl RamAccessTask {
+impl AddressAccessTask {
     pub fn data_size(&self) -> usize {
         self.data_size
     }
@@ -31,17 +30,14 @@ impl RamAccessTask {
             state: State::Idle,
             slave_address: TargetSlave::default(),
             command: Command::default(),
-            //buffer: [0; 4],
             data_size: 0,
             ado: 0,
         }
     }
 
     pub fn start_to_read(&mut self, slave_address: TargetSlave, ado: u16, data_size: usize) {
-        //assert!(data_size <= 16);
         self.slave_address = slave_address;
         self.state = State::Read;
-        //self.buffer.fill(0);
         self.command = Command::default();
         self.data_size = data_size;
         self.ado = ado;
@@ -73,7 +69,7 @@ impl RamAccessTask {
     }
 }
 
-impl Cyclic for RamAccessTask {
+impl CyclicTask for AddressAccessTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -105,22 +101,20 @@ impl Cyclic for RamAccessTask {
         match self.slave_address {
             TargetSlave::Single(_slave_address) => {
                 if *wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, *wkc).into()));
                 }
             }
             TargetSlave::All(num_slaves) => {
                 if *wkc != num_slaves {
-                    self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((num_slaves, *wkc).into()));
                 }
             }
         }
-        //data
 
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
             State::Read => {
-                //buf.iter_mut().zip(data).for_each(|(b, d)| *b = *d);
                 self.state = State::Complete;
             }
             State::Write => {

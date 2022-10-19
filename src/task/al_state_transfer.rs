@@ -1,10 +1,10 @@
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
-use crate::network::AlState;
 use crate::register::AlStatusCode;
 use crate::register::SiiAccess;
 use crate::register::{AlControl, AlStatus};
+use crate::slave::AlState;
 use crate::util::const_max;
 use core::convert::TryFrom;
 
@@ -32,19 +32,19 @@ const fn max_timeout_ms() -> u32 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AlStateTransferError {
+pub enum AlStateTransferTaskError {
     AlStatusCode((AlState, AlStatusCode)),
 }
 
-impl From<AlStateTransferError> for TaskError<AlStateTransferError> {
-    fn from(err: AlStateTransferError) -> Self {
+impl From<AlStateTransferTaskError> for TaskError<AlStateTransferTaskError> {
+    fn from(err: AlStateTransferTaskError) -> Self {
         Self::TaskSpecific(err)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
-    Error(TaskError<AlStateTransferError>),
+    Error(TaskError<AlStateTransferTaskError>),
     Idle,
     Read,
     ResetError(AlState),
@@ -56,18 +56,17 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct AlStateTransfer {
+pub struct AlStateTransferTask {
     timer_start: EtherCatSystemTime,
     state: State,
     slave_address: TargetSlave,
     target_al: AlState,
     command: Command,
-    //buffer: [u8; buffer_size()],
     current_al_state: AlState,
     timeout_ms: u32,
 }
 
-impl AlStateTransfer {
+impl AlStateTransferTask {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
@@ -79,7 +78,6 @@ impl AlStateTransfer {
             slave_address: TargetSlave::default(),
             target_al: AlState::Init,
             command: Command::default(),
-            //buffer: [0; buffer_size()],
             current_al_state: AlState::Init,
             timeout_ms: 0,
         }
@@ -89,11 +87,10 @@ impl AlStateTransfer {
         self.slave_address = slave_address;
         self.target_al = target_al_state;
         self.state = State::Read;
-        //self.buffer.fill(0);
         self.command = Command::default();
     }
 
-    pub fn wait(&mut self) -> Option<Result<AlState, TaskError<AlStateTransferError>>> {
+    pub fn wait(&mut self) -> Option<Result<AlState, TaskError<AlStateTransferTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(self.current_al_state)),
             State::Error(err) => Some(Err(err.clone())),
@@ -102,7 +99,7 @@ impl AlStateTransfer {
     }
 }
 
-impl Cyclic for AlStateTransfer {
+impl CyclicTask for AlStateTransferTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -185,12 +182,13 @@ impl Cyclic for AlStateTransfer {
             match self.slave_address {
                 TargetSlave::Single(_slave_address) => {
                     if wkc != 1 {
-                        self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                        self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                     }
                 }
                 TargetSlave::All(num_slaves) => {
                     if wkc != num_slaves {
-                        self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                        self.state =
+                            State::Error(TaskError::UnexpectedWkc((num_slaves, wkc).into()));
                     }
                 }
             }
@@ -234,7 +232,7 @@ impl Cyclic for AlStateTransfer {
                     let al_status_code =
                         AlStatusCode::try_from(al_status.al_status_code()).unwrap();
                     self.state = State::Error(
-                        AlStateTransferError::AlStatusCode((al_state, al_status_code)).into(),
+                        AlStateTransferTaskError::AlStatusCode((al_state, al_status_code)).into(),
                     );
                 } else if self.timer_start.0 < sys_time.0
                     && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0

@@ -27,16 +27,16 @@ pub struct SlaveId {
     revision_number: u16,
 }
 
-impl SlaveId{
-    pub fn vender_id(&self) -> u16{
+impl SlaveId {
+    pub fn vender_id(&self) -> u16 {
         self.vender_id
     }
 
-    pub fn product_code(&self) -> u16{
+    pub fn product_code(&self) -> u16 {
         self.product_code
     }
 
-    pub fn revision_number(&self) -> u16{
+    pub fn revision_number(&self) -> u16 {
         self.revision_number
     }
 }
@@ -48,10 +48,18 @@ pub(crate) struct SlaveIdBuilder {
     pub revision_number: u16,
 }
 
-impl SlaveIdBuilder{
-    pub(crate) fn build(self) -> SlaveId{
-        let Self { vender_id, product_code, revision_number } = self;
-        SlaveId { vender_id, product_code, revision_number }
+impl SlaveIdBuilder {
+    pub(crate) fn build(self) -> SlaveId {
+        let Self {
+            vender_id,
+            product_code,
+            revision_number,
+        } = self;
+        SlaveId {
+            vender_id,
+            product_code,
+            revision_number,
+        }
     }
 }
 
@@ -76,7 +84,7 @@ impl Slave {
         &self.info
     }
 
-    pub fn info_mut(&mut self) -> &mut SlaveInfo {
+    pub(crate) fn info_mut(&mut self) -> &mut SlaveInfo {
         &mut self.info
     }
 
@@ -84,12 +92,12 @@ impl Slave {
         self.al_state
     }
 
-    pub fn mailbox_count(&self) -> u8 {
+    pub(crate) fn mailbox_count(&self) -> u8 {
         self.mailbox_count.get()
     }
 
     /// Mailbox count is specified in the range of 1~7
-    pub fn set_mailbox_count(&self, count: u8) -> Result<(), ()> {
+    pub(crate) fn set_mailbox_count(&self, count: u8) -> Result<(), ()> {
         if count < 1 || 7 < count {
             self.mailbox_count.set(count);
             Ok(())
@@ -98,7 +106,7 @@ impl Slave {
         }
     }
 
-    pub fn increment_mb_count(&self) -> u8 {
+    pub(crate) fn increment_mb_count(&self) -> u8 {
         let count = self.mailbox_count();
         if count < 7 {
             self.mailbox_count.set(count + 1);
@@ -276,15 +284,15 @@ impl SlaveInfoBuilder {
             support_coe,
             strict_al_control,
         } = self;
-        let mut sm_arr:[Option<SyncManagerType>;4] = Default::default();
-        sm_arr[0] = sm[0].clone().map(|builder|builder.build());
-        sm_arr[1] = sm[1].clone().map(|builder|builder.build());
-        sm_arr[2] = sm[2].clone().map(|builder|builder.build());
-        sm_arr[3] = sm[3].clone().map(|builder|builder.build());
+        let mut sm_arr: [Option<SyncManagerType>; 4] = Default::default();
+        sm_arr[0] = sm[0].clone().map(|builder| builder.build());
+        sm_arr[1] = sm[1].clone().map(|builder| builder.build());
+        sm_arr[2] = sm[2].clone().map(|builder| builder.build());
+        sm_arr[3] = sm[3].clone().map(|builder| builder.build());
 
         SlaveInfo {
             configured_address,
-            id:id.build(),
+            id: id.build(),
             linked_ports,
             ports,
             ram_size_kb,
@@ -351,13 +359,13 @@ pub(crate) enum SyncManagerTypeBuilder {
     ProcessDataTx,
 }
 
-impl SyncManagerTypeBuilder{
-    pub(crate) fn build(self) -> SyncManagerType{
-        match self{
+impl SyncManagerTypeBuilder {
+    pub(crate) fn build(self) -> SyncManagerType {
+        match self {
             Self::MailboxRx(sm) => SyncManagerType::MailboxRx(sm.build()),
             Self::MailboxTx(sm) => SyncManagerType::MailboxTx(sm.build()),
             Self::ProcessDataRx => SyncManagerType::ProcessDataRx,
-            Self::ProcessDataTx => SyncManagerType::ProcessDataTx
+            Self::ProcessDataTx => SyncManagerType::ProcessDataTx,
         }
     }
 }
@@ -369,16 +377,16 @@ pub struct SyncManager {
     start_address: u16,
 }
 
-impl SyncManager{
-    pub fn number(&self) -> u8{
+impl SyncManager {
+    pub fn number(&self) -> u8 {
         self.number
     }
 
-    pub fn size(&self) -> u16{
+    pub fn size(&self) -> u16 {
         self.size
     }
 
-    pub fn start_address(&self) -> u16{
+    pub fn start_address(&self) -> u16 {
         self.start_address
     }
 }
@@ -390,10 +398,18 @@ pub struct SyncManagerBuilder {
     pub start_address: u16,
 }
 
-impl SyncManagerBuilder{
-    pub(crate) fn build(self) -> SyncManager{
-        let Self { number, size, start_address } = self;
-        SyncManager { number, size, start_address }
+impl SyncManagerBuilder {
+    pub(crate) fn build(self) -> SyncManager {
+        let Self {
+            number,
+            size,
+            start_address,
+        } = self;
+        SyncManager {
+            number,
+            size,
+            start_address,
+        }
     }
 }
 
@@ -436,176 +452,5 @@ impl FmmuConfig {
 
     pub fn set_logical_address(&mut self, logical_address: u32) {
         self.logical_start_address = Some(logical_address);
-    }
-}
-
-#[derive(Debug)]
-pub struct SlaveConfig<'a, 'b> {
-    // inputs
-    tx_pdo_mappings: &'a mut [PdoMapping<'b>],
-
-    // outputs
-    rx_pdo_mappings: &'a mut [PdoMapping<'b>],
-
-    pub operation_mode: OperationMode,
-    pub cycle_time_ns: u32,
-}
-
-impl<'a, 'b> Default for SlaveConfig<'a, 'b> {
-    fn default() -> Self {
-        Self {
-            cycle_time_ns: 0x0007A120_u32, //500us
-            operation_mode: OperationMode::FreeRun,
-            rx_pdo_mappings: &mut [],
-            tx_pdo_mappings: &mut [],
-        }
-    }
-}
-
-impl<'a, 'b> SlaveConfig<'a, 'b> {
-    pub fn tx_process_data_mappings(&self) -> Option<&[PdoMapping<'b>]> {
-        if self.tx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(self.tx_pdo_mappings)
-        }
-    }
-
-    pub(crate) fn tx_process_data_mappings_mut(&mut self) -> Option<&mut [PdoMapping<'b>]> {
-        if self.tx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(&mut self.tx_pdo_mappings)
-        }
-    }
-
-    pub fn rx_process_data_mappings(&self) -> Option<&[PdoMapping<'b>]> {
-        if self.rx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(self.rx_pdo_mappings)
-        }
-    }
-
-    pub(crate) fn rx_process_data_mappings_mut(&mut self) -> Option<&mut [PdoMapping<'b>]> {
-        if self.rx_pdo_mappings.is_empty() {
-            None
-        } else {
-            Some(&mut self.rx_pdo_mappings)
-        }
-    }
-
-    pub fn set_tx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        self.tx_pdo_mappings = mappings;
-    }
-
-    pub fn set_rx_pdo_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
-        self.rx_pdo_mappings = mappings;
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum OperationMode {
-    FreeRun = 0x00,
-    SyncManagerEvent = 0x01,
-    Sync0Event = 0x02,
-    Sync1Event = 0x03,
-}
-
-impl Default for OperationMode {
-    fn default() -> Self {
-        OperationMode::FreeRun
-    }
-}
-
-#[derive(Debug)]
-pub struct PdoMapping<'a> {
-    pub is_fixed: bool,
-    pub index: u16,
-    pub entries: &'a mut [PdoEntry],
-}
-
-#[derive(Debug, Clone)]
-pub struct PdoEntry {
-    pub(crate) logical_start_address: Option<u32>,
-    pub(crate) start_bit: u8,
-    pub(crate) index: u16,
-    pub(crate) sub_index: u8,
-    pub(crate) bit_length: u8,
-}
-impl PdoEntry {
-    pub fn new(index: u16, sub_index: u8, bit_length: u8) -> Self {
-        PdoEntry {
-            logical_start_address: None,
-            start_bit: 0,
-            index,
-            sub_index,
-            bit_length,
-        }
-    }
-
-    pub fn index(&self) -> u16 {
-        self.index
-    }
-
-    pub fn sub_index(&self) -> u8 {
-        self.sub_index
-    }
-
-    pub fn bit_length(&self) -> u8 {
-        self.bit_length
-    }
-
-    pub(crate) fn byte_length(&self) -> u8 {
-        let length = self.bit_length + self.start_bit;
-        if length % 8 == 0 {
-            length >> 3
-        } else {
-            (length >> 3) + 1
-        }
-    }
-
-    pub fn read(
-        &self,
-        logical_address_offset: u32,
-        pdo_image: &[u8],
-        buf: &mut [u8],
-    ) -> Option<()> {
-        let size = self.byte_length() as usize;
-        let logical_start_address = self.logical_start_address?;
-        let start_bit = self.start_bit;
-        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
-        pdo_image.get(pdo_offset + size - 1)?;
-        buf.get(size - 1)?;
-        (0..size - 1).for_each(|i| {
-            let v = pdo_image[pdo_offset + i] >> start_bit;
-            let next_v = pdo_image[pdo_offset + i + 1] << (7 - start_bit);
-            buf[i] = v | next_v;
-        });
-        buf[size - 1] = pdo_image[pdo_offset + size - 1] >> start_bit;
-        Some(())
-    }
-
-    pub fn write(
-        &self,
-        logical_address_offset: u32,
-        pdo_image: &mut [u8],
-        data: &[u8],
-    ) -> Option<()> {
-        let size = self.byte_length() as usize;
-        let logical_start_address = self.logical_start_address?;
-        let start_bit = self.start_bit;
-        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
-        pdo_image.get(pdo_offset + size - 1)?;
-        (0..size - 1).for_each(|i| {
-            pdo_image[pdo_offset + i] &= 0xFF >> (7 - start_bit);
-            pdo_image[pdo_offset + i] |= data[i] << start_bit;
-        });
-        pdo_image[pdo_offset + size - 1] &= 0xFF << ((self.bit_length + start_bit) % 8) as u8;
-        pdo_image[pdo_offset + size - 1] |= data[size - 1] << start_bit;
-        if size - 2 != 0 {
-            pdo_image[pdo_offset + size - 1] |= data[size - 2] >> (7 - start_bit);
-        }
-        Some(())
     }
 }

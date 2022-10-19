@@ -1,11 +1,10 @@
 use super::{
-    al_state_transfer::AlStateTransfer,
-    sii_reader::{SiiReader, SiiTaskError},
-    AlStateTransferError, Cyclic, EtherCatSystemTime, TaskError,
+    al_state_transfer::AlStateTransferTask,
+    sii_read::{SiiReader, SiiTaskError},
+    AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, TaskError,
 };
 use crate::{
     interface::{Command, CommandData, SlaveAddress},
-    network::{AlState, SlaveInfo, SyncManagerTypeBuilder, SlaveInfoBuilder, SyncManagerBuilder},
     register::{
         sii::{
             MailboxProtocol, ProductCode, RevisionNumber, StandardRxMailboxOffset,
@@ -17,6 +16,7 @@ use crate::{
         RxErrorCounter, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
         SyncManagerChannelWatchDog, SyncManagerControl, SyncManagerStatus, WatchDogDivider,
     },
+    slave::{AlState, SlaveInfo, SlaveInfoBuilder, SyncManagerBuilder, SyncManagerTypeBuilder},
     util::const_max,
 };
 use bit_field::BitField;
@@ -24,23 +24,23 @@ use bit_field::BitField;
 pub const MAX_SM_SIZE: u16 = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SlaveInitializerError {
-    AlStateTransition(AlStateTransferError),
+pub enum SlaveInitTaskError {
+    AlStateTransition(AlStateTransferTaskError),
     SiiRead(SiiTaskError),
     FailedToLoadEEPROM,
 }
 
-impl From<SlaveInitializerError> for TaskError<SlaveInitializerError> {
-    fn from(err: SlaveInitializerError) -> Self {
+impl From<SlaveInitTaskError> for TaskError<SlaveInitTaskError> {
+    fn from(err: SlaveInitTaskError) -> Self {
         Self::TaskSpecific(err)
     }
 }
 
-impl From<TaskError<AlStateTransferError>> for TaskError<SlaveInitializerError> {
-    fn from(err: TaskError<AlStateTransferError>) -> Self {
+impl From<TaskError<AlStateTransferTaskError>> for TaskError<SlaveInitTaskError> {
+    fn from(err: TaskError<AlStateTransferTaskError>) -> Self {
         match err {
             TaskError::TaskSpecific(err) => {
-                TaskError::TaskSpecific(SlaveInitializerError::AlStateTransition(err))
+                TaskError::TaskSpecific(SlaveInitTaskError::AlStateTransition(err))
             }
             TaskError::Interface(e) => TaskError::Interface(e),
             TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
@@ -50,11 +50,11 @@ impl From<TaskError<AlStateTransferError>> for TaskError<SlaveInitializerError> 
     }
 }
 
-impl From<TaskError<SiiTaskError>> for TaskError<SlaveInitializerError> {
+impl From<TaskError<SiiTaskError>> for TaskError<SlaveInitTaskError> {
     fn from(err: TaskError<SiiTaskError>) -> Self {
         match err {
             TaskError::TaskSpecific(err) => {
-                TaskError::TaskSpecific(SlaveInitializerError::SiiRead(err))
+                TaskError::TaskSpecific(SlaveInitTaskError::SiiRead(err))
             }
             TaskError::Interface(e) => TaskError::Interface(e),
             TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
@@ -67,7 +67,7 @@ impl From<TaskError<SiiTaskError>> for TaskError<SlaveInitializerError> {
 #[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
-    Error(TaskError<SlaveInitializerError>),
+    Error(TaskError<SlaveInitTaskError>),
     SetLoopPort,
     RequestInitState(bool),
     ResetErrorCount,
@@ -98,7 +98,7 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct SlaveInitializer {
+pub struct SlaveInitTask {
     inner: InnerFunction,
     slave_address: SlaveAddress,
     state: State,
@@ -106,7 +106,7 @@ pub struct SlaveInitializer {
     slave_info: Option<SlaveInfoBuilder>,
 }
 
-impl SlaveInitializer {
+impl SlaveInitTask {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
@@ -127,12 +127,12 @@ impl SlaveInitializer {
         self.slave_info = Some(SlaveInfoBuilder::default());
     }
 
-    pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, TaskError<SlaveInitializerError>>> {
+    pub fn wait(&mut self) -> Option<Result<Option<SlaveInfo>, TaskError<SlaveInitTaskError>>> {
         match &self.state {
             State::Complete => {
                 if let Some(info) = core::mem::take(&mut self.slave_info) {
                     Some(Ok(Some(info.build())))
-                }else{
+                } else {
                     Some(Ok(None))
                 }
             }
@@ -142,7 +142,7 @@ impl SlaveInitializer {
     }
 }
 
-impl Cyclic for SlaveInitializer {
+impl CyclicTask for SlaveInitTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -328,7 +328,8 @@ impl Cyclic for SlaveInitializer {
                 );
                 buf[..SyncManagerActivation::SIZE].fill(0);
                 match self.slave_info.as_mut().unwrap().sm[num] {
-                    Some(SyncManagerTypeBuilder::MailboxRx(_)) | Some(SyncManagerTypeBuilder::MailboxTx(_)) => {
+                    Some(SyncManagerTypeBuilder::MailboxRx(_))
+                    | Some(SyncManagerTypeBuilder::MailboxTx(_)) => {
                         let mut sm = SyncManagerActivation(buf);
                         sm.set_channel_enable(true);
                         sm.set_repeat(false);
@@ -395,7 +396,7 @@ impl Cyclic for SlaveInitializer {
                 self.state = State::Error(TaskError::UnexpectedCommand);
             }
             if *wkc != 1 {
-                self.state = State::Error(TaskError::UnexpectedWkc(*wkc));
+                self.state = State::Error(TaskError::UnexpectedWkc((1, *wkc).into()));
             }
             data
         };
@@ -428,7 +429,7 @@ impl Cyclic for SlaveInitializer {
             State::CheckDlStatus => {
                 let dl_status = DlStatus(data);
                 if !dl_status.pdi_operational() {
-                    self.state = State::Error(SlaveInitializerError::FailedToLoadEEPROM.into());
+                    self.state = State::Error(SlaveInitTaskError::FailedToLoadEEPROM.into());
                 } else {
                     let slave = self.slave_info.as_mut().unwrap();
                     slave.linked_ports[0] = dl_status.signal_detection_port0();
@@ -479,7 +480,7 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.vender_id=data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.vender_id = data.sii_data() as u16;
                         self.state = State::GetProductCode(true);
                     }
                     None => self.state = State::GetVenderID(false),
@@ -493,7 +494,7 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.product_code=data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.product_code = data.sii_data() as u16;
                         self.state = State::GetRevision(true);
                     }
                     None => self.state = State::GetProductCode(false),
@@ -507,7 +508,8 @@ impl Cyclic for SlaveInitializer {
                 sii_reader.recieve_and_process(recv_data, sys_time);
                 match sii_reader.wait() {
                     Some(Ok((data, _size))) => {
-                        self.slave_info.as_mut().unwrap().id.revision_number=data.sii_data() as u16;
+                        self.slave_info.as_mut().unwrap().id.revision_number =
+                            data.sii_data() as u16;
                         self.state = State::GetProtocol(true);
                     }
                     None => self.state = State::GetRevision(false),
@@ -566,7 +568,7 @@ impl Cyclic for SlaveInitializer {
                     Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().sm[0] {
                             Some(SyncManagerTypeBuilder::MailboxRx(ref mut sm)) => {
-                                sm.start_address=data.sii_data() as u16
+                                sm.start_address = data.sii_data() as u16
                             }
                             _ => {}
                         }
@@ -614,7 +616,7 @@ impl Cyclic for SlaveInitializer {
                     Some(Ok((data, _size))) => {
                         match self.slave_info.as_mut().unwrap().sm[1] {
                             Some(SyncManagerTypeBuilder::MailboxTx(ref mut sm)) => {
-                                sm.start_address=data.sii_data() as u16
+                                sm.start_address = data.sii_data() as u16
                             }
                             _ => {}
                         }
@@ -689,8 +691,10 @@ const fn buffer_size() -> usize {
 }
 
 fn set_process_data_sm_size_offset(slave: &mut SlaveInfoBuilder) {
-    if let (Some(SyncManagerTypeBuilder::MailboxRx(ref sm0)), Some(SyncManagerTypeBuilder::MailboxTx(ref sm1))) =
-        (&slave.sm[0], &slave.sm[1])
+    if let (
+        Some(SyncManagerTypeBuilder::MailboxRx(ref sm0)),
+        Some(SyncManagerTypeBuilder::MailboxTx(ref sm1)),
+    ) = (&slave.sm[0], &slave.sm[1])
     {
         let sm_address0 = sm0.start_address;
         let sm_size0 = sm0.size;
@@ -725,7 +729,7 @@ fn set_process_data_sm_size_offset(slave: &mut SlaveInfoBuilder) {
 enum InnerFunction {
     This,
     Sii(SiiReader),
-    AlStateTransfer(AlStateTransfer),
+    AlStateTransferTask(AlStateTransferTask),
 }
 
 impl Default for InnerFunction {
@@ -743,10 +747,10 @@ impl InnerFunction {
     }
 
     fn into_al_state_transfer(&mut self) {
-        if let Self::AlStateTransfer(_) = &self {
+        if let Self::AlStateTransferTask(_) = &self {
             return;
         }
-        *self = Self::AlStateTransfer(AlStateTransfer::new());
+        *self = Self::AlStateTransferTask(AlStateTransferTask::new());
     }
 
     fn sii(&mut self) -> Option<&mut SiiReader> {
@@ -757,8 +761,8 @@ impl InnerFunction {
         }
     }
 
-    fn al_state_transfer(&mut self) -> Option<&mut AlStateTransfer> {
-        if let Self::AlStateTransfer(al) = self {
+    fn al_state_transfer(&mut self) -> Option<&mut AlStateTransferTask> {
+        if let Self::AlStateTransferTask(al) = self {
             Some(al)
         } else {
             None

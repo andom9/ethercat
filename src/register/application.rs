@@ -137,11 +137,6 @@ bitfield! {
     pub struct PdiControl([u8]);
     pub u8, pdi_type, _: 7, 0;
     pub strict_al_control, _: 8;
-
-    // I cannot find these three discriptions in the ETG specifications but in the SANYO manual.
-    //pub enhanced_link_detection, _ :9;
-    //pub enable_dc_sync_outputs, _: 10;
-    //pub enable_dc_latch_inputs, _: 11;
 }
 
 impl PdiControl<[u8; 2]> {

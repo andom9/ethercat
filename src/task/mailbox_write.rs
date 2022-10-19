@@ -1,10 +1,10 @@
 use super::mailbox::MailboxTaskError;
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::MailboxHeader;
 use crate::interface::*;
-use crate::network::SyncManager;
 use crate::register::{SyncManagerActivation, SyncManagerStatus};
+use crate::slave::SyncManager;
 
 const MAILBOX_REQUEST_RETRY_TIMEOUT_DEFAULT_MS: u32 = 100;
 
@@ -24,23 +24,18 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-pub struct MailboxWriter {
+pub struct MailboxWriteTask {
     timer_start: EtherCatSystemTime,
     command: Command,
     slave_address: SlaveAddress,
     empty_check_buffer: [u8; SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
     state: State,
-    //send_buf: &'a mut [u8],
     sm_ado_offset: u16,
     sm_size: u16,
     sm_start_address: u16,
 }
 
-impl MailboxWriter {
-    //pub fn required_buffer_size(&self) -> usize {
-    //    (self.sm_size as usize).max(buffer_size())
-    //}
-
+impl MailboxWriteTask {
     pub fn new() -> Self {
         Self {
             timer_start: EtherCatSystemTime(0),
@@ -48,32 +43,12 @@ impl MailboxWriter {
             slave_address: SlaveAddress::default(),
             empty_check_buffer: [0; SyncManagerStatus::SIZE + SyncManagerActivation::SIZE],
             state: State::Idle,
-            //send_buf,
             sm_ado_offset: 0,
             sm_size: 0,
             sm_start_address: 0,
         }
     }
 
-    //pub fn take_buffer(self) -> &'a mut [u8] {
-    //    self.send_buf
-    //}
-
-    // pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
-    //     MailboxHeader(&self.send_buf[..MailboxHeader::SIZE])
-    // }
-
-    // pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
-    //     MailboxHeader(&mut self.send_buf[..MailboxHeader::SIZE])
-    // }
-
-    // pub fn mailbox_data(&self) -> &[u8] {
-    //     &self.send_buf[MailboxHeader::SIZE..]
-    // }
-
-    // pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-    //     &mut self.send_buf[MailboxHeader::SIZE..]
-    // }
     pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
         buf[..MailboxHeader::SIZE]
             .iter_mut()
@@ -89,7 +64,6 @@ impl MailboxWriter {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
-        //self.buffer.fill(0);
         self.state = State::CheckMailboxEmpty((true, wait_empty));
 
         self.sm_ado_offset = rx_sm.number() as u16 * 0x08;
@@ -106,7 +80,7 @@ impl MailboxWriter {
     }
 }
 
-impl Cyclic for MailboxWriter {
+impl CyclicTask for MailboxWriteTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -166,9 +140,6 @@ impl Cyclic for MailboxWriter {
                     self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
                 } else {
                     let status = SyncManagerStatus(data);
-                    //self.activation_buf
-                    //    .0
-                    //    .copy_from_slice(&data[SyncManagerStatus::SIZE..]);
                     if !status.is_mailbox_full() {
                         self.state = State::Write;
                     } else if wait_empty {
@@ -195,9 +166,3 @@ impl Cyclic for MailboxWriter {
         }
     }
 }
-
-// const fn buffer_size() -> usize {
-//     let mut size = 0;
-//     size = const_max(size, SyncManagerStatus::SIZE + SyncManagerActivation::SIZE);
-//     size
-// }

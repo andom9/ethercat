@@ -1,4 +1,5 @@
 use bitfield::*;
+use num_enum::FromPrimitive;
 
 const DST_MAC: u64 = 0xFF_FF_FF_FF_FF_FF;
 pub(crate) const SRC_MAC: u64 = 0x05_05_05_05_05_05;
@@ -108,8 +109,10 @@ impl MailboxHeader<[u8; 6]> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq, Eq)]
+#[repr(u8)]
 pub enum MailboxType {
+    #[num_enum(default)]
     Error = 0,
     AoE = 1,
     EoE = 2,
@@ -142,7 +145,8 @@ impl<T: AsRef<[u8]>> MailboxErrorResponse<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq, Eq)]
+#[repr(u8)]
 pub enum CommandType {
     /// No operation
     /// A slave ignores the command.
@@ -187,34 +191,15 @@ pub enum CommandType {
     /// A slave increments the Address field. A slave writes data it has read to the EtherCat datagram when the address received is zero, otherwise it writes data to the memory area.
     ARMW,
     FRMW,
+    #[num_enum(default)]
     Invalid,
 }
 
-impl CommandType {
-    pub fn new(value: u8) -> Self {
-        match value {
-            0 => Self::NOP,
-            1 => Self::APRD,
-            2 => Self::APWR,
-            3 => Self::APRW,
-            4 => Self::FPRD,
-            5 => Self::FPWR,
-            6 => Self::FPRW,
-            7 => Self::BRD,
-            8 => Self::BWR,
-            9 => Self::BRW,
-            10 => Self::LRD,
-            11 => Self::LWR,
-            12 => Self::LRW,
-            13 => Self::ARMW,
-            14 => Self::FRMW,
-            _ => Self::Invalid,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Copy)]
+#[derive(Debug, Clone, Copy, FromPrimitive, PartialEq, Eq)]
+#[repr(u16)]
 pub enum MailboxErrorDetail {
+    #[num_enum(default)]
+    Unspecified,
     Syntax = 0x01,
     UnsupportedProtocol = 0x02,
     InvalidChannel = 0x03,
@@ -223,21 +208,4 @@ pub enum MailboxErrorDetail {
     SizeTooShort = 0x06,
     NoMoreMemory = 0x07,
     InvalidSize = 0x08,
-    Unspecified = 0x00,
-}
-
-impl From<u16> for MailboxErrorDetail {
-    fn from(value: u16) -> Self {
-        match value {
-            1 => Self::Syntax,
-            2 => Self::UnsupportedProtocol,
-            3 => Self::InvalidChannel,
-            4 => Self::ServiceNotSupported,
-            5 => Self::InvalidHeader,
-            6 => Self::SizeTooShort,
-            7 => Self::NoMoreMemory,
-            8 => Self::InvalidSize,
-            _ => Self::Unspecified,
-        }
-    }
 }

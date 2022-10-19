@@ -1,12 +1,12 @@
-use super::{Cyclic, EtherCatSystemTime};
+use super::super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
-use crate::network::AlState;
 use crate::register::AlStatus;
 use crate::register::AlStatusCode;
+use crate::slave::AlState;
 use crate::util::const_max;
 
 #[derive(Debug)]
-pub struct AlStateReader {
+pub struct AlStateReadTask {
     target: TargetSlave,
     command: Command,
     last_al_state: Option<AlState>,
@@ -15,7 +15,7 @@ pub struct AlStateReader {
     last_wkc: u16,
 }
 
-impl AlStateReader {
+impl AlStateReadTask {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
@@ -42,9 +42,16 @@ impl AlStateReader {
     pub fn last_wkc(&self) -> u16 {
         self.last_wkc
     }
+
+    pub fn expected_wkc(&self) -> u16 {
+        match self.target {
+            TargetSlave::All(num) => num,
+            TargetSlave::Single(_) => 1,
+        }
+    }
 }
 
-impl Cyclic for AlStateReader {
+impl CyclicTask for AlStateReadTask {
     fn is_finished(&self) -> bool {
         true
     }

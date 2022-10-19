@@ -1,11 +1,11 @@
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::CommandType;
 use crate::interface::*;
-use crate::network::NetworkDescription;
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
+use crate::slave::NetworkDescription;
 use crate::util::const_max;
 
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
@@ -27,7 +27,7 @@ enum State {
 }
 
 #[derive(Debug)]
-pub struct DcInitializer<'a, 'b, 'c, 'd> {
+pub struct DcInitTask<'a, 'b, 'c, 'd> {
     //sys_time: EtherCatSystemTime,
     state: State,
     command: Command,
@@ -37,7 +37,7 @@ pub struct DcInitializer<'a, 'b, 'c, 'd> {
     network: &'d NetworkDescription<'a, 'b, 'c>,
 }
 
-impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
@@ -119,7 +119,7 @@ impl<'a, 'b, 'c, 'd> DcInitializer<'a, 'b, 'c, 'd> {
     }
 }
 
-impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -211,15 +211,16 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             State::Error(_) => {}
             State::Complete => {}
             State::RequestToLatch(count) => {
-                if wkc != self.network.num_slaves() as u16 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                let num_slaves = self.network.num_slaves() as u16;
+                if wkc != num_slaves {
+                    self.state = State::Error(TaskError::UnexpectedWkc((num_slaves, wkc).into()));
                 } else {
                     self.state = State::CalculateOffset((*count, 0))
                 }
             }
             State::CalculateOffset((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else {
                     let master_time = sys_time.0;
                     let (slave, _) = self
@@ -248,7 +249,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::CalculateDelay((count, pos)) => {
                 if wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else {
                     let recv_time = DcRecieveTime(data);
                     let (slave, _) = self
@@ -342,7 +343,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetOffset(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else {
                     let next_pos = self
                         .network
@@ -358,7 +359,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
             }
             State::SetDelay(pos) => {
                 if wkc != 1 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                    self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else {
                     let next_pos = self
                         .network
@@ -373,8 +374,9 @@ impl<'a, 'b, 'c, 'd> Cyclic for DcInitializer<'a, 'b, 'c, 'd> {
                 }
             }
             State::CompensateDrift(count) => {
-                if wkc != self.dc_slave_count as u16 {
-                    self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                let num_dc_slave = self.dc_slave_count as u16;
+                if wkc != num_dc_slave {
+                    self.state = State::Error(TaskError::UnexpectedWkc((num_dc_slave, wkc).into()));
                 } else if count + 1 < DRIFT_COUNT_MAX {
                     self.state = State::CompensateDrift(count + 1);
                 } else {

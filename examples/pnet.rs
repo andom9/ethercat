@@ -1,13 +1,13 @@
 use ethercat_master::frame::CommandType;
 use ethercat_master::hal::*;
 use ethercat_master::interface::*;
-use ethercat_master::network::AlState;
-use ethercat_master::network::OperationMode;
-use ethercat_master::network::PdoEntry;
-use ethercat_master::network::PdoMapping;
-use ethercat_master::network::SlaveConfig;
 use ethercat_master::register::od::cia402::*;
 use ethercat_master::register::sii::ProductCode;
+use ethercat_master::slave::AlState;
+use ethercat_master::slave::PdoEntry;
+use ethercat_master::slave::PdoMapping;
+use ethercat_master::slave::SlaveConfig;
+use ethercat_master::slave::SyncMode;
 use ethercat_master::EtherCatMaster;
 use pnet_datalink::{self, Channel::Ethernet, DataLinkReceiver, DataLinkSender, NetworkInterface};
 use std::env;
@@ -107,8 +107,8 @@ fn premitive_test(interf_name: &str) {
 
     let mut socket_buf = vec![0; 256];
     let sockets = [SocketOption::default()];
-    let mut sif = SocketsInterface::new(iface, sockets);
-    let handle = sif.add_socket(CommandSocket::new(&mut socket_buf)).unwrap();
+    let mut sif = SocketInterface::new(iface, sockets);
+    let handle = sif.add_socket(PduSocket::new(&mut socket_buf)).unwrap();
     let socket = sif.get_socket_mut(&handle).unwrap();
     socket.set_command(|_buf| Some((Command::new(CommandType::BRD, 0, 0), 1)));
     loop {
@@ -132,8 +132,8 @@ fn read_eeprom_test(interf_name: &str) {
     let sockets = [
         SocketOption::default(), // al state
     ];
-    let mut sif = SocketsInterface::new(iface, sockets);
-    let handle = sif.add_socket(CommandSocket::new(&mut socket_buf)).unwrap();
+    let mut sif = SocketInterface::new(iface, sockets);
+    let handle = sif.add_socket(PduSocket::new(&mut socket_buf)).unwrap();
     let (data, size) = sif
         .read_sii(
             &handle,
@@ -153,7 +153,7 @@ fn sdo_test(interf_name: &str) {
     let mut slaves: [_; 10] = Default::default();
     let mut pdu_buffer = vec![0; 1500];
     let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
-    master.initilize_slaves().unwrap();
+    master.init().unwrap();
     let num_slaves = master.network().num_slaves();
     let slave_address = SlaveAddress::SlavePosition(0);
     master
@@ -199,7 +199,7 @@ fn pdo_test(interf_name: &str) {
     let mut slaves: Box<[(_, SlaveConfig); 10]> = Box::new(Default::default());
     slaves[0].1.set_tx_pdo_mappings(&mut input_pdo_map);
     slaves[0].1.set_rx_pdo_mappings(&mut output_pdo_map);
-    slaves[0].1.operation_mode = OperationMode::FreeRun;
+    slaves[0].1.operation_mode = SyncMode::FreeRun;
     let mut socket_buffer = vec![0; 1500];
     let mut pdo_buffer = vec![0; 1500];
     let mut master = EtherCatMaster::new(slaves.as_mut(), &mut socket_buffer, iface);

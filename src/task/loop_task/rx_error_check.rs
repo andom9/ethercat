@@ -1,9 +1,9 @@
-use super::{Cyclic, EtherCatSystemTime};
+use super::super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
 use crate::register::RxErrorCounter;
 
 #[derive(Debug)]
-pub struct RxErrorChecker {
+pub struct RxErrorReadTask {
     command: Command,
     target: TargetSlave,
     rx_error_count: RxErrorCounter<[u8; RxErrorCounter::SIZE]>,
@@ -11,7 +11,7 @@ pub struct RxErrorChecker {
     last_wkc: u16,
 }
 
-impl RxErrorChecker {
+impl RxErrorReadTask {
     pub const fn required_buffer_size() -> usize {
         RxErrorCounter::SIZE
     }
@@ -34,12 +34,19 @@ impl RxErrorChecker {
         self.last_wkc
     }
 
+    pub fn expected_wkc(&self) -> u16 {
+        match self.target {
+            TargetSlave::All(num) => num,
+            TargetSlave::Single(_) => 1,
+        }
+    }
+
     pub fn rx_error_count(&self) -> &RxErrorCounter<[u8; RxErrorCounter::SIZE]> {
         &self.rx_error_count
     }
 }
 
-impl Cyclic for RxErrorChecker {
+impl CyclicTask for RxErrorReadTask {
     fn is_finished(&self) -> bool {
         true
     }

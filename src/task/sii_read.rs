@@ -1,5 +1,5 @@
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
 use crate::register::{SiiAccess, SiiAddress, SiiControl, SiiData};
 use crate::util::const_max;
@@ -88,7 +88,7 @@ impl SiiReader {
     }
 }
 
-impl Cyclic for SiiReader {
+impl CyclicTask for SiiReader {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -155,7 +155,7 @@ impl Cyclic for SiiReader {
                 self.state = State::Error(TaskError::UnexpectedCommand);
             }
             if wkc != 1 {
-                self.state = State::Error(TaskError::UnexpectedWkc(wkc));
+                self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
             }
             data
         };

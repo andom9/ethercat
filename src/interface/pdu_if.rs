@@ -1,5 +1,5 @@
+use super::hal::{RawEthernetDevice, RxToken, TxToken};
 use crate::frame::*;
-use crate::hal::{RawEthernetDevice, RxToken, TxToken};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhyError {
@@ -60,7 +60,7 @@ impl Command {
 }
 
 #[derive(Debug)]
-pub struct CommandInterface<'a, D>
+pub struct PduInterface<'a, D>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
@@ -73,7 +73,7 @@ where
     recv_data_size: usize,
 }
 
-impl<'a, D> CommandInterface<'a, D>
+impl<'a, D> PduInterface<'a, D>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
@@ -94,7 +94,7 @@ where
         self.capacity - self.pdus_total_size - EtherCatPduHeader::SIZE - WKC_LENGTH
     }
 
-    pub fn add_command<F: FnOnce(&mut [u8])>(
+    pub fn add_pdu<F: FnOnce(&mut [u8])>(
         &mut self,
         pdu_index: u8,
         command: Command,
@@ -102,12 +102,10 @@ where
         data_writer: F,
     ) -> Result<(), Command> {
         if self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
-            //return Err(PhyError::NotEnoughCapacityLeft);
             return Err(command);
         }
 
         if data_size > MAX_PDU_DATAGRAM {
-            //return Err(PhyError::TooLargeData);
             return Err(command);
         }
 
@@ -135,7 +133,7 @@ where
         Ok(())
     }
 
-    pub fn consume_commands(&mut self) -> EtherCatPdus {
+    pub fn consume_pdus(&mut self) -> EtherCatPdus {
         let pdus = EtherCatPdus::new(self.buffer, self.pdus_total_size, 0);
         self.pdus_total_size = 0;
         self.recv_data_size = 0;
@@ -165,7 +163,7 @@ where
                 let pdus = EtherCatPdus::new(buffer, *pdus_total_size, 0);
                 for pdu in pdus {
                     let index = pdu.index();
-                    let command = CommandType::new(pdu.command_type());
+                    let command = CommandType::from(pdu.command_type());
                     let adp = pdu.adp();
                     let ado = pdu.ado();
                     let data = pdu.data();
@@ -221,7 +219,6 @@ where
                     }
                     Ok(())
                 });
-                //assert_eq!(data_size, self.pdus_total_size);
                 if rx_result.is_err() {
                     return Err(PhyError::RxError);
                 } else {
@@ -239,7 +236,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlaveAddress {
     StationAddress(u16),
     SlavePosition(u16),

@@ -247,16 +247,15 @@ pub mod cia402 {
     }
 
     impl<B: AsRef<[u8]>> ModesOfOperation<B> {
-        pub fn kind(&self) -> OperationModeKind {
-            OperationModeKind::try_from(self.modes_of_operation())
-                .unwrap_or(OperationModeKind::Other)
+        pub fn kind(&self) -> SyncModeKind {
+            SyncModeKind::try_from(self.modes_of_operation()).unwrap_or(SyncModeKind::Other)
         }
     }
 
     #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
     #[repr(i8)]
     /// Operation mode for servo drives
-    pub enum OperationModeKind {
+    pub enum SyncModeKind {
         /// Profile position mode
         PP = 1,
         /// Velocity mode
@@ -297,9 +296,8 @@ pub mod cia402 {
     }
 
     impl<B: AsRef<[u8]>> ModesOfOperationDisplay<B> {
-        pub fn kind(&self) -> OperationModeKind {
-            OperationModeKind::try_from(self.modes_of_operation())
-                .unwrap_or(OperationModeKind::Other)
+        pub fn kind(&self) -> SyncModeKind {
+            SyncModeKind::try_from(self.modes_of_operation()).unwrap_or(SyncModeKind::Other)
         }
     }
 

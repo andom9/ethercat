@@ -1,47 +1,54 @@
-use super::slave_initializer::SlaveInitializerError;
-use super::SlaveInitializer;
+use super::slave_initialize::SlaveInitTaskError;
+use super::SlaveInitTask;
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::CommandType;
 use crate::interface::*;
-use crate::network::FmmuConfig;
-use crate::network::NetworkDescription;
-use crate::network::Slave;
 use crate::register::DlControl;
 use crate::register::SyncManagerStatus;
+use crate::slave::FmmuConfig;
+use crate::slave::NetworkDescription;
+use crate::slave::Slave;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NetworkInitializerError {
-    Init(TaskError<SlaveInitializerError>),
+pub enum NetworkInitTaskError {
+    Init(SlaveInitTaskError),
     TooManySlaves,
 }
 
-impl From<NetworkInitializerError> for TaskError<NetworkInitializerError> {
-    fn from(err: NetworkInitializerError) -> Self {
+impl From<NetworkInitTaskError> for TaskError<NetworkInitTaskError> {
+    fn from(err: NetworkInitTaskError) -> Self {
         Self::TaskSpecific(err)
     }
 }
 
-impl From<TaskError<SlaveInitializerError>> for NetworkInitializerError {
-    fn from(err: TaskError<SlaveInitializerError>) -> Self {
-        Self::Init(err)
+impl From<TaskError<SlaveInitTaskError>> for TaskError<NetworkInitTaskError> {
+    fn from(err: TaskError<SlaveInitTaskError>) -> Self {
+        match err {
+            TaskError::Interface(err) => TaskError::Interface(err),
+            TaskError::Timeout => TaskError::Timeout,
+            TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
+            TaskError::UnexpectedWkc(wkc) => TaskError::UnexpectedWkc(wkc),
+            TaskError::TaskSpecific(init_err) => {
+                TaskError::TaskSpecific(NetworkInitTaskError::Init(init_err))
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum State {
     Idle,
-    Error(TaskError<NetworkInitializerError>),
+    Error(TaskError<NetworkInitTaskError>),
     CountSlaves,
     StartInitSlaves(u16),
     WaitInitSlaves(u16),
-    //SetMBoxStateFmmu((u16, usize)),
     Complete,
 }
 
 #[derive(Debug)]
-pub struct NetworkInitializer<'a, 'b, 'c, 'd> {
-    initilizer: SlaveInitializer,
+pub struct NetworkInitTask<'a, 'b, 'c, 'd> {
+    initilizer: SlaveInitTask,
     network: &'d mut NetworkDescription<'a, 'b, 'c>,
     state: State,
     command: Command,
@@ -50,14 +57,14 @@ pub struct NetworkInitializer<'a, 'b, 'c, 'd> {
     lost_count: u8,
 }
 
-impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c, 'd> NetworkInitTask<'a, 'b, 'c, 'd> {
     pub const fn required_buffer_size() -> usize {
         buffer_size()
     }
 
     pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
         Self {
-            initilizer: SlaveInitializer::new(),
+            initilizer: SlaveInitTask::new(),
             state: State::Idle,
             command: Command::default(),
             buffer: [0; buffer_size()],
@@ -79,7 +86,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
         self.lost_count = 0;
     }
 
-    pub fn wait(&mut self) -> Option<Result<(), TaskError<NetworkInitializerError>>> {
+    pub fn wait(&mut self) -> Option<Result<(), TaskError<NetworkInitTaskError>>> {
         match &self.state {
             State::Complete => Some(Ok(())),
             State::Error(err) => Some(Err(err.clone())),
@@ -88,7 +95,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitializer<'a, 'b, 'c, 'd> {
     }
 }
 
-impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -158,7 +165,6 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                         let mut slave = Slave::default();
                         *slave.info_mut() = slave_info;
                         slave.set_mailbox_count(1).expect("unreachable");
-                        //3番目のfmmuはメールボックスのポーリングに使う
                         if 2 <= slave.info().number_of_fmmu()
                             && slave.info().mailbox_tx_sm().is_some()
                         {
@@ -170,8 +176,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                                 Some(FmmuConfig::new(mb_tx_sm_status, bit_length as u16, false));
                         }
                         if self.network.push_slave(slave).is_err() {
-                            self.state =
-                                State::Error(NetworkInitializerError::TooManySlaves.into());
+                            self.state = State::Error(NetworkInitTaskError::TooManySlaves.into());
                         } else if *count + 1 < self.num_slaves {
                             self.state = State::StartInitSlaves(*count + 1);
                         } else {
@@ -181,7 +186,7 @@ impl<'a, 'b, 'c, 'd> Cyclic for NetworkInitializer<'a, 'b, 'c, 'd> {
                     Some(Ok(None)) => unreachable!(),
                     None => {}
                     Some(Err(err)) => {
-                        self.state = State::Error(NetworkInitializerError::Init(err).into());
+                        self.state = State::Error(err.into());
                     }
                 }
             }

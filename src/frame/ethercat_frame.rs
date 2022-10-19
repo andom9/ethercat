@@ -1,6 +1,6 @@
 //https://infosys.beckhoff.com/english.php?content=../content/1033/tc3_io_intro/1257993099.html
 
-use crate::frame::ethercat_header::*;
+use crate::frame::ethercat::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct EtherCatFrame<B> {

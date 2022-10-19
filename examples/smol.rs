@@ -1,4 +1,4 @@
-use ethercat_master::hal::*;
+use ethercat_master::interface::*;
 
 struct SmolDeviceWrapper<D>
 where

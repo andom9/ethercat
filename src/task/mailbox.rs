@@ -1,10 +1,10 @@
-use super::mailbox_reader::MailboxReader;
-use super::mailbox_writer::MailboxWriter;
+use super::mailbox_read::MailboxReadTask;
+use super::mailbox_write::MailboxWriteTask;
 use super::TaskError;
-use super::{Cyclic, EtherCatSystemTime};
+use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::{MailboxErrorResponse, MailboxHeader};
 use crate::interface::*;
-use crate::network::SyncManager;
+use crate::slave::SyncManager;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailboxTaskError {
@@ -37,26 +37,9 @@ impl Default for State {
 
 #[derive(Debug)]
 enum Inner {
-    Reader(MailboxReader),
-    Writer(MailboxWriter),
-    //Taked,
+    Reader(MailboxReadTask),
+    Writer(MailboxWriteTask),
 }
-
-//impl<'a> Inner<'a> {
-//    fn take_buffer(self) -> &'a mut [u8] {
-//        match self {
-//            Inner::Reader(reader) => reader.take_buffer(),
-//            Inner::Writer(writer) => writer.take_buffer(),
-//            Inner::Taked => unreachable!(),
-//        }
-//    }
-//}
-
-//impl<'a> Default for Inner<'a> {
-//    fn default() -> Self {
-//        Inner::Taked
-//    }
-//}
 
 #[derive(Debug)]
 pub struct MailboxTask {
@@ -68,52 +51,16 @@ impl MailboxTask {
     pub fn new() -> Self {
         Self {
             state: State::Idle,
-            inner: Inner::Reader(MailboxReader::new()),
+            inner: Inner::Reader(MailboxReadTask::new()),
         }
     }
 
-    //pub fn take_buffer(self) -> &'a mut [u8] {
-    //    self.inner.take_buffer()
-    //}
-
-    //pub fn mailbox_header(&self) -> MailboxHeader<&[u8]> {
-    //    match &self.inner {
-    //        Inner::Reader(reader) => reader.mailbox_header(),
-    //        Inner::Writer(writer) => writer.mailbox_header(),
-    //        //Inner::Taked => unreachable!(),
-    //    }
-    //}
-
-    //pub fn mailbox_header_mut(&mut self) -> MailboxHeader<&mut [u8]> {
-    //    match &mut self.inner {
-    //        Inner::Reader(reader) => reader.mailbox_header_mut(),
-    //        Inner::Writer(writer) => writer.mailbox_header_mut(),
-    //        //Inner::Taked => unreachable!(),
-    //    }
-    //}
-
-    //pub fn mailbox_data(&self) -> &[u8] {
-    //    match &self.inner {
-    //        Inner::Reader(reader) => reader.mailbox_data(),
-    //        Inner::Writer(writer) => writer.mailbox_data(),
-    //        //Inner::Taked => unreachable!(),
-    //    }
-    //}
-
-    //pub fn mailbox_data_mut(&mut self) -> &mut [u8] {
-    //    match &mut self.inner {
-    //        Inner::Reader(reader) => reader.mailbox_data_mut(),
-    //        Inner::Writer(writer) => writer.mailbox_data_mut(),
-    //        //Inner::Taked => unreachable!(),
-    //    }
-    //}
-
     pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
-        MailboxWriter::set_mailbox_data(mb_header, mb_data, buf);
+        MailboxWriteTask::set_mailbox_data(mb_header, mb_data, buf);
     }
 
     pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
-        MailboxReader::mailbox_data(buf)
+        MailboxReadTask::mailbox_data(buf)
     }
 
     pub fn start_to_read(
@@ -122,9 +69,7 @@ impl MailboxTask {
         tx_sm: SyncManager,
         wait_full: bool,
     ) {
-        //let inner = core::mem::take(&mut self.inner);
-        //let buf = inner.take_buffer();
-        let mut reader = MailboxReader::new();
+        let mut reader = MailboxReadTask::new();
         reader.start(slave_address, tx_sm, wait_full);
         self.inner = Inner::Reader(reader);
         self.state = State::Processing;
@@ -136,9 +81,7 @@ impl MailboxTask {
         rx_sm: SyncManager,
         wait_full: bool,
     ) {
-        //let inner = core::mem::take(&mut self.inner);
-        //let buf = inner.take_buffer();
-        let mut writer = MailboxWriter::new();
+        let mut writer = MailboxWriteTask::new();
         writer.start(slave_address, rx_sm, wait_full);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
@@ -153,7 +96,7 @@ impl MailboxTask {
     }
 }
 
-impl Cyclic for MailboxTask {
+impl CyclicTask for MailboxTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -169,7 +112,6 @@ impl Cyclic for MailboxTask {
             State::Processing => match &mut self.inner {
                 Inner::Reader(reader) => reader.next_command(buf),
                 Inner::Writer(writer) => writer.next_command(buf),
-                //Inner::Taked => unreachable!(),
             },
         }
     }
@@ -195,7 +137,7 @@ impl Cyclic for MailboxTask {
                         Some(Ok(_)) => self.state = State::Complete,
                         Some(Err(err)) => self.state = State::Error(err),
                     }
-                } //Inner::Taked => unreachable!(),
+                }
             },
         }
     }

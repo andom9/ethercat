@@ -1,8 +1,8 @@
-use super::{Cyclic, EtherCatSystemTime};
+use super::super::{CyclicTask, EtherCatSystemTime};
 use crate::interface::*;
 
 #[derive(Debug)]
-pub struct LogicalProcessData {
+pub struct ProcessTask {
     command: Command,
     start_logical_address: u32,
     expected_wkc: u16,
@@ -11,7 +11,7 @@ pub struct LogicalProcessData {
     last_wkc: u16,
 }
 
-impl LogicalProcessData {
+impl ProcessTask {
     pub fn new(start_logical_address: u32, expected_wkc: u16, image_size: usize) -> Self {
         Self {
             command: Command::new_logical_read_write(start_logical_address),
@@ -23,16 +23,16 @@ impl LogicalProcessData {
         }
     }
 
+    pub fn last_wkc(&self) -> u16 {
+        self.last_wkc
+    }
+
     pub fn expected_wkc(&self) -> u16 {
         self.expected_wkc
     }
 
     pub fn set_expected_wkc(&mut self, expected_wkc: u16) {
         self.expected_wkc = expected_wkc;
-    }
-
-    pub fn last_wkc(&self) -> u16 {
-        self.last_wkc
     }
 
     pub fn start_logical_address(&self) -> u32 {
@@ -52,7 +52,7 @@ impl LogicalProcessData {
     }
 }
 
-impl Cyclic for LogicalProcessData {
+impl CyclicTask for ProcessTask {
     fn is_finished(&self) -> bool {
         true
     }

@@ -1,10 +1,10 @@
-use super::{Cyclic, EtherCatSystemTime};
+use super::super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::CommandType;
 use crate::interface::*;
 use crate::register::DcSystemTime;
 
 #[derive(Debug)]
-pub struct DcDriftCompensator {
+pub struct DcSyncTask {
     sys_time_offset: i64,
     last_dc_time: EtherCatSystemTime,
     first_dc_slave: u16,
@@ -13,7 +13,7 @@ pub struct DcDriftCompensator {
     last_wkc: u16,
 }
 
-impl DcDriftCompensator {
+impl DcSyncTask {
     pub const fn required_buffer_size() -> usize {
         DcSystemTime::SIZE
     }
@@ -33,6 +33,10 @@ impl DcDriftCompensator {
         self.last_wkc
     }
 
+    pub fn expected_wkc(&self) -> u16{
+        self.dc_slave_count
+    }
+
     /// offset = DC system time - local system time
     pub fn systemtime_offset_ns(&self) -> i64 {
         self.sys_time_offset
@@ -43,7 +47,7 @@ impl DcDriftCompensator {
     }
 }
 
-impl Cyclic for DcDriftCompensator {
+impl CyclicTask for DcSyncTask {
     fn is_finished(&self) -> bool {
         true
     }

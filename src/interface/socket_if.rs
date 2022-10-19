@@ -1,8 +1,8 @@
+use super::hal::{RawEthernetDevice, RxToken, TxToken};
 use super::Command;
-use super::CommandInterface;
+use super::PduInterface;
 use super::PhyError;
 use crate::frame::*;
-use crate::hal::*;
 
 #[derive(Debug, Clone)]
 pub struct CommandData<'a> {
@@ -22,7 +22,7 @@ impl<'a> CommandData<'a> {
 }
 
 #[derive(Debug)]
-pub struct CommandSocket<'a> {
+pub struct PduSocket<'a> {
     command: Option<Command>,
     data_buf: &'a mut [u8],
     wkc: u16,
@@ -30,7 +30,7 @@ pub struct CommandSocket<'a> {
     recv_flag: bool,
 }
 
-impl<'a> CommandSocket<'a> {
+impl<'a> PduSocket<'a> {
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
             command: None,
@@ -47,10 +47,6 @@ impl<'a> CommandSocket<'a> {
 
     pub fn data_buf_mut(&mut self) -> &mut [u8] {
         self.data_buf
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.data_buf.len()
     }
 
     pub fn clear(&mut self) {
@@ -139,23 +135,23 @@ impl<S> Default for SocketOption<S> {
 }
 
 #[derive(Debug)]
-pub struct SocketsInterface<'frame, 'buf, D, const N: usize>
+pub struct SocketInterface<'frame, 'buf, D, const N: usize>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
-    iface: CommandInterface<'frame, D>,
-    sockets: [SocketOption<CommandSocket<'buf>>; N],
+    iface: PduInterface<'frame, D>,
+    sockets: [SocketOption<PduSocket<'buf>>; N],
     free_index: SocketHandle,
     pub lost_frame_count: usize,
 }
 
-impl<'frame, 'buf, D, const N: usize> SocketsInterface<'frame, 'buf, D, N>
+impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
     pub fn new(
-        iface: CommandInterface<'frame, D>,
-        mut sockets: [SocketOption<CommandSocket<'buf>>; N],
+        iface: PduInterface<'frame, D>,
+        mut sockets: [SocketOption<PduSocket<'buf>>; N],
     ) -> Self {
         sockets
             .iter_mut()
@@ -169,10 +165,7 @@ where
         }
     }
 
-    pub fn add_socket(
-        &mut self,
-        socket: CommandSocket<'buf>,
-    ) -> Result<SocketHandle, CommandSocket> {
+    pub fn add_socket(&mut self, socket: PduSocket<'buf>) -> Result<SocketHandle, PduSocket> {
         let index = self.free_index.clone();
         if let Some(socket_enum) = self.sockets.get_mut(index.0) {
             if let SocketOption::NextFreeIndex(next) = socket_enum {
@@ -187,7 +180,7 @@ where
         }
     }
 
-    pub fn remove_socket(&mut self, socket_handle: SocketHandle) -> Option<CommandSocket> {
+    pub fn remove_socket(&mut self, socket_handle: SocketHandle) -> Option<PduSocket> {
         if let Some(socket_enum) = self.sockets.get_mut(socket_handle.0) {
             match socket_enum {
                 SocketOption::Socket(_) => {
@@ -207,17 +200,14 @@ where
         }
     }
 
-    pub fn get_socket(&self, socket_handle: &SocketHandle) -> Option<&CommandSocket<'buf>> {
+    pub fn get_socket(&self, socket_handle: &SocketHandle) -> Option<&PduSocket<'buf>> {
         match self.sockets.get(socket_handle.0) {
             Some(SocketOption::Socket(ref socket)) => Some(socket),
             _ => None,
         }
     }
 
-    pub fn get_socket_mut(
-        &mut self,
-        socket_handle: &SocketHandle,
-    ) -> Option<&mut CommandSocket<'buf>> {
+    pub fn get_socket_mut(&mut self, socket_handle: &SocketHandle) -> Option<&mut PduSocket<'buf>> {
         match self.sockets.get_mut(socket_handle.0) {
             Some(SocketOption::Socket(ref mut socket)) => Some(socket),
             _ => None,
@@ -243,7 +233,7 @@ where
                 }
                 if let Some(command_data) = socket.take_command() {
                     self.iface
-                        .add_command(i as u8, command_data.command, len, |buf| {
+                        .add_pdu(i as u8, command_data.command, len, |buf| {
                             for (b, d) in buf.iter_mut().zip(command_data.data) {
                                 *b = *d;
                             }
@@ -263,13 +253,13 @@ where
         if !(is_tx_ok && is_rx_ok) {
             return Ok(false);
         }
-        let pdus = iface.consume_commands();
+        let pdus = iface.consume_pdus();
         for pdu in pdus {
             let index = pdu.index() as usize;
             if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(index) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
-                    Command::new(CommandType::new(pdu.command_type()), pdu.adp(), pdu.ado());
+                    Command::new(CommandType::from(pdu.command_type()), pdu.adp(), pdu.ado());
                 let recv_data = CommandData {
                     command,
                     data: pdu.data(),
