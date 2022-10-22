@@ -86,7 +86,7 @@ impl CyclicTask for MailboxReadTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -131,8 +131,8 @@ impl CyclicTask for MailboxReadTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
-        let CommandData { command, data, wkc } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
+        let Pdu { command, data, wkc } = recv_data;
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
             self.state = State::Error(TaskError::UnexpectedCommand);
         }
@@ -146,7 +146,7 @@ impl CyclicTask for MailboxReadTask {
                     self.timer_start = sys_time;
                 }
                 if wkc != 1 {
-                    self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
+                    self.state = State::Error(MailboxTaskError::NoSlaveReaction.into());
                 } else {
                     let status = SyncManagerStatus(data);
                     self.activation_buf

@@ -55,14 +55,12 @@ Please refer to the [ETG.1500](https://www.ethercat.org/download/documents/ETG15
 - 🔳 Mailbox
 - 🔳 Mailbox Resilient Layer
 - 🚫 Multiple Mailbox Channels
-- ⬜ Mailbox Polling in OPRATIONAL state
-  - ⬜ SDO Emergency Message
-  - ⬜ Intermediary for slave-to-slave cmmunication
+- ⬜ Mailbox Polling
 
 **CoE**
 - 🔳 CoE
   - 🔳 SDO Up/Donwload
-  - 🚫 Segmented Transfer
+  - ⬜ Segmented Transfer
   - ⬜ Complete Access
   - ⬜ SDO info service
   - ⬜ Emergency Message

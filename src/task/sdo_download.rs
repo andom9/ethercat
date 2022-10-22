@@ -25,7 +25,7 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-pub struct SdoDownloadTask {
+pub struct SdoWriteTask {
     slave_address: SlaveAddress,
     state: State,
     mailbox: MailboxTask,
@@ -34,7 +34,7 @@ pub struct SdoDownloadTask {
     rx_sm: SyncManager,
 }
 
-impl SdoDownloadTask {
+impl SdoWriteTask {
     pub fn new() -> Self {
         let mailbox = MailboxTask::new();
 
@@ -80,7 +80,7 @@ impl SdoDownloadTask {
         mb_header.set_length(data_len + sdo_header.len() as u16);
         mb_header.set_prioriry(0);
 
-        MailboxWriteTask::set_mailbox_data(&mb_header.0, &sdo_header, buf);
+        MailboxWriteTask::set_mailbox_data(&mb_header, &sdo_header, buf);
         buf.iter_mut()
             .skip(MailboxHeader::SIZE + sdo_header.len())
             .zip(data)
@@ -101,7 +101,7 @@ impl SdoDownloadTask {
     }
 }
 
-impl CyclicTask for SdoDownloadTask {
+impl CyclicTask for SdoWriteTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -109,23 +109,23 @@ impl CyclicTask for SdoDownloadTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
-            State::WriteDownloadRequest => self.mailbox.next_command(buf),
+            State::WriteDownloadRequest => self.mailbox.next_pdu(buf),
             State::ReadDownloadResponse(is_first) => {
                 if is_first {
                     self.mailbox
                         .start_to_read(self.slave_address, self.tx_sm, true);
                 }
-                self.mailbox.next_command(buf)
+                self.mailbox.next_pdu(buf)
             }
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         match self.state {
             State::Idle => {}
             State::Error(_) => {}

@@ -51,15 +51,15 @@ impl CyclicTask for RxErrorReadTask {
         true
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         buf[..RxErrorCounter::SIZE].fill(0);
         self.command = Command::new_read(self.target, RxErrorCounter::ADDRESS);
         Some((self.command, RxErrorCounter::SIZE))
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, _systime: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, _systime: EtherCatSystemTime) {
         let data = {
-            let CommandData { wkc, data, .. } = recv_data;
+            let Pdu { wkc, data, .. } = recv_data;
             let wkc = *wkc;
             if wkc != self.target.num_targets() {
                 self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);

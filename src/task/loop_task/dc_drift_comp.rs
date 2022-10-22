@@ -33,7 +33,7 @@ impl DcSyncTask {
         self.last_wkc
     }
 
-    pub fn expected_wkc(&self) -> u16{
+    pub fn expected_wkc(&self) -> u16 {
         self.dc_slave_count
     }
 
@@ -52,7 +52,7 @@ impl CyclicTask for DcSyncTask {
         true
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         let command = Command::new(
             CommandType::ARMW,
             SlaveAddress::SlavePosition(self.first_dc_slave).get_ado(),
@@ -62,9 +62,9 @@ impl CyclicTask for DcSyncTask {
         Some((command, DcSystemTime::SIZE))
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, systime: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, systime: EtherCatSystemTime) {
         let data = {
-            let CommandData { data, wkc, .. } = recv_data;
+            let Pdu { data, wkc, .. } = recv_data;
             let wkc = *wkc;
             if wkc != self.dc_slave_count {
                 self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);

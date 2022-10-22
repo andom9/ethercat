@@ -415,17 +415,17 @@ impl SyncManagerBuilder {
 
 #[derive(Debug)]
 pub struct FmmuConfig {
-    pub(crate) logical_start_address: Option<u32>,
-    pub(crate) start_bit: u8,
-    pub physical_address: u16,
-    pub bit_length: u16,
+    logical_address: Option<u32>,
+    start_bit: u8,
+    physical_address: u16,
+    bit_length: u16,
     is_output: bool,
 }
 
 impl FmmuConfig {
     pub fn new(physical_address: u16, bit_length: u16, is_output: bool) -> Self {
         Self {
-            logical_start_address: None,
+            logical_address: None,
             start_bit: 0,
             physical_address,
             bit_length,
@@ -433,24 +433,61 @@ impl FmmuConfig {
         }
     }
 
+    pub fn logical_address(&self) -> Option<u32> {
+        self.logical_address
+    }
+
+    pub fn set_logical_address(&mut self, logical_address: Option<u32>) {
+        self.logical_address = logical_address;
+    }
+
+    pub fn physical_address(&self) -> u16 {
+        self.physical_address
+    }
+
+    pub fn set_physical_address(&mut self, physical_address: u16) {
+        self.physical_address = physical_address;
+    }
+
+    pub fn start_bit(&self) -> u8 {
+        self.start_bit
+    }
+
+    pub fn set_start_bit(&mut self, start_bit: u8) {
+        self.start_bit = start_bit;
+    }
+
     pub fn is_output(&self) -> bool {
         self.is_output
     }
 
-    pub(crate) fn byte_length(&self) -> u16 {
-        crate::util::byte_length(self.bit_length + self.start_bit as u16)
+    pub fn set_direction(&mut self, is_output: bool) {
+        self.is_output = is_output;
     }
 
-    pub(crate) fn byte_length_and_end_bit(&self) -> (u16, u8) {
-        let mod8 = (self.bit_length + self.start_bit as u16) % 8;
-        if mod8 == 0 {
-            (self.bit_length >> 3, 7)
+    pub fn bit_length(&self) -> u16 {
+        self.bit_length
+    }
+
+    pub fn set_bit_length(&mut self, bit_length: u16) {
+        self.bit_length = bit_length;
+    }
+
+    pub fn byte_length(&self) -> u16 {
+        let len = self.bit_length + self.start_bit as u16;
+        if len % 8 == 0 {
+            len >> 3
         } else {
-            ((self.bit_length >> 3) + 1, mod8 as u8 - 1)
+            (len >> 3) + 1
         }
     }
 
-    pub fn set_logical_address(&mut self, logical_address: u32) {
-        self.logical_start_address = Some(logical_address);
+    pub fn end_bit(&self) -> u8 {
+        let mod8 = (self.bit_length + self.start_bit as u16) % 8;
+        if mod8 == 0 {
+            7
+        } else {
+            mod8 as u8 - 1
+        }
     }
 }

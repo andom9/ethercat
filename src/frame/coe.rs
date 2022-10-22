@@ -88,6 +88,7 @@ pub enum AbortCode {
     ValueRangeExceeded = 0x06_09_00_30,
     WriteParameterTooLarge = 0x06_09_00_31,
     WriteParameterTooSmall = 0x06_09_00_32,
+    ConfiguredModuleListDoesNotMatch = 0x06_09_00_33,
     MaxValueIsLessThanMinValue = 0x06_09_00_36,
     GeneralError = 0x08_00_00_00,
     CannotTransfer = 0x08_00_00_20,

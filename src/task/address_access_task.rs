@@ -77,7 +77,7 @@ impl CyclicTask for AddressAccessTask {
         }
     }
 
-    fn next_command(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -93,8 +93,8 @@ impl CyclicTask for AddressAccessTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, _sys_time: EtherCatSystemTime) {
-        let CommandData { command, wkc, .. } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &Pdu, _sys_time: EtherCatSystemTime) {
+        let Pdu { command, wkc, .. } = recv_data;
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
             self.state = State::Error(TaskError::UnexpectedCommand);
         }

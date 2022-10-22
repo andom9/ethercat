@@ -232,11 +232,11 @@ pub mod cia402 {
 
     bitfield! {
         #[derive(Debug, Clone)]
-        pub struct ModesOfOperation([u8]);
+        pub struct OperationMode([u8]);
         pub i8, modes_of_operation, set_modes_of_operation: 7, 0;
     }
 
-    impl ModesOfOperation<[u8; 1]> {
+    impl OperationMode<[u8; 1]> {
         pub const INDEX: u16 = 0x6060;
         pub const SUB_INDEX: u8 = 0;
         pub const SIZE: usize = 1;
@@ -246,16 +246,17 @@ pub mod cia402 {
         }
     }
 
-    impl<B: AsRef<[u8]>> ModesOfOperation<B> {
-        pub fn kind(&self) -> SyncModeKind {
-            SyncModeKind::try_from(self.modes_of_operation()).unwrap_or(SyncModeKind::Other)
+    impl<B: AsRef<[u8]>> OperationMode<B> {
+        pub fn kind(&self) -> OperationModeKind {
+            OperationModeKind::try_from(self.modes_of_operation())
+                .unwrap_or(OperationModeKind::Other)
         }
     }
 
     #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
     #[repr(i8)]
     /// Operation mode for servo drives
-    pub enum SyncModeKind {
+    pub enum OperationModeKind {
         /// Profile position mode
         PP = 1,
         /// Velocity mode
@@ -281,11 +282,11 @@ pub mod cia402 {
 
     bitfield! {
         #[derive(Debug, Clone)]
-        pub struct ModesOfOperationDisplay([u8]);
+        pub struct OperationModeDisplay([u8]);
         pub i8, modes_of_operation, set_modes_of_operation: 7, 0;
     }
 
-    impl ModesOfOperationDisplay<[u8; 1]> {
+    impl OperationModeDisplay<[u8; 1]> {
         pub const INDEX: u16 = 0x6061;
         pub const SUB_INDEX: u8 = 0;
         pub const SIZE: usize = 1;
@@ -295,9 +296,10 @@ pub mod cia402 {
         }
     }
 
-    impl<B: AsRef<[u8]>> ModesOfOperationDisplay<B> {
-        pub fn kind(&self) -> SyncModeKind {
-            SyncModeKind::try_from(self.modes_of_operation()).unwrap_or(SyncModeKind::Other)
+    impl<B: AsRef<[u8]>> OperationModeDisplay<B> {
+        pub fn kind(&self) -> OperationModeKind {
+            OperationModeKind::try_from(self.modes_of_operation())
+                .unwrap_or(OperationModeKind::Other)
         }
     }
 

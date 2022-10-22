@@ -56,15 +56,15 @@ impl CyclicTask for AlStateReadTask {
         true
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         self.command = Command::new_read(self.target, AlStatus::ADDRESS);
         buf[..AlStatus::SIZE].fill(0);
         Some((self.command, AlStatus::SIZE))
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, _: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, _: EtherCatSystemTime) {
         let data = {
-            let CommandData { wkc, data, .. } = recv_data;
+            let Pdu { wkc, data, .. } = recv_data;
             let wkc = *wkc;
             if wkc != self.target.num_targets() {
                 self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);

@@ -34,8 +34,8 @@ impl Checksum {
     pub const SIZE: usize = 2;
 }
 
-pub struct VenderID;
-impl VenderID {
+pub struct VenderId;
+impl VenderId {
     pub const ADDRESS: u16 = 8;
     pub const SIZE: usize = 2;
 }

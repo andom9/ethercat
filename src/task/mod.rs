@@ -3,6 +3,7 @@ mod al_state_transfer;
 mod dc_initilize;
 mod error;
 mod mailbox;
+mod mailbox_app;
 mod mailbox_read;
 mod mailbox_write;
 mod network_initilize;
@@ -12,31 +13,30 @@ mod sdo_upload;
 mod sii_read;
 mod slave_initialize;
 
-pub use address_access_task::*;
-pub use al_state_transfer::*;
-pub use dc_initilize::*;
-pub use error::*;
+pub use address_access_task::AddressAccessTask;
+pub use al_state_transfer::{AlStateTransferTask, AlStateTransferTaskError};
+pub use dc_initilize::DcInitTask;
+pub use error::TaskError;
 pub use mailbox::{MailboxTask, MailboxTaskError};
-pub use mailbox_read::*;
-pub use mailbox_write::*;
-pub use network_initilize::*;
-pub use sdo::*;
-pub use sdo_download::*;
-pub use sdo_upload::*;
-pub use sii_read::*;
+pub use network_initilize::{NetworkInitTask, NetworkInitTaskError};
+pub use sdo::SdoTaskError;
+pub use sdo_download::SdoWriteTask;
+pub use sdo_upload::SdoReadTask;
+pub use sii_read::{SiiReader, SiiTaskError};
 pub use slave_initialize::*;
 
 pub mod loop_task;
-use loop_task::*;
+use loop_task::AlStateReadTask;
 
 use crate::{
     frame::MailboxHeader,
     interface::{
-        Command, CommandData, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
+        Command, Pdu, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
         SocketInterface, TargetSlave,
     },
     register::{AlStatusCode, SiiData},
-    slave::{AlState, NetworkDescription, Slave, SlaveInfo},
+    slave::{AlState, Network, Slave, SlaveInfo},
+    util::SetOption,
 };
 
 use core::time::Duration;
@@ -53,16 +53,16 @@ impl From<Duration> for EtherCatSystemTime {
 
 pub trait CyclicTask {
     fn process_one_step(&mut self, socket: &mut PduSocket, sys_time: EtherCatSystemTime) {
-        let recv_data = socket.get_recieved_command();
+        let recv_data = socket.get_recieved_pdu();
         if let Some(recv_data) = recv_data {
             self.recieve_and_process(&recv_data, sys_time);
         }
-        socket.set_command(|buf| self.next_command(buf))
+        socket.set_pdu(|buf| self.next_pdu(buf))
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)>;
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)>;
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime);
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime);
 
     fn is_finished(&self) -> bool;
 }
@@ -70,6 +70,7 @@ pub trait CyclicTask {
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
+    [SetOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
     fn block<C: CyclicTask, E>(
         &mut self,
@@ -79,7 +80,6 @@ where
         let mut count = 0;
         loop {
             match self.poll_tx_rx() {
-                // There are commands that have not been processed yet.
                 Ok(is_ok) => {
                     if !is_ok {
                         continue;
@@ -111,7 +111,7 @@ where
         let mut unit = AddressAccessTask::new();
 
         {
-            let socket = self.get_socket_mut(handle).expect("socket not found");
+            let socket = self.get_socket_mut(&handle).expect("socket not found");
             assert!(data_size <= socket.data_buf().len());
 
             unit.start_to_read(target_slave, register_address, data_size);
@@ -143,7 +143,7 @@ where
     pub fn init<'slave, 'pdo_mapping, 'pdo_entry>(
         &mut self,
         handle: &SocketHandle,
-        network: &mut NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry>,
+        network: &mut Network<'slave, 'pdo_mapping, 'pdo_entry>,
     ) -> Result<(), TaskError<NetworkInitTaskError>> {
         let mut unit = NetworkInitTask::new(network);
 
@@ -158,7 +158,7 @@ where
     pub fn init_dc<'slave, 'pdo_mapping, 'pdo_entry>(
         &mut self,
         handle: &SocketHandle,
-        network: &mut NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry>,
+        network: &mut Network<'slave, 'pdo_mapping, 'pdo_entry>,
     ) -> Result<(), TaskError<()>> {
         let mut unit = DcInitTask::new(network);
 
@@ -230,7 +230,7 @@ where
         slave_info: &SlaveInfo,
         wait_full: bool,
     ) -> Result<(MailboxHeader<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
-        let mut unit = MailboxReadTask::new();
+        let mut unit = MailboxTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
@@ -239,23 +239,23 @@ where
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-            unit.start(slave_address, tx_sm, wait_full);
+            unit.start_to_read(slave_address, tx_sm, wait_full);
         }
         self.block(handle, &mut unit)?;
         unit.wait().unwrap()?;
         let socket = self.get_socket_mut(handle).expect("socket not found");
-        Ok(MailboxReadTask::mailbox_data(socket.data_buf()))
+        Ok(MailboxTask::mailbox_data(socket.data_buf()))
     }
 
     pub fn write_mailbox(
         &mut self,
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
-        mb_header: &[u8; MailboxHeader::SIZE],
+        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
         mb_data: &[u8],
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {
-        let mut unit = MailboxWriteTask::new();
+        let mut unit = MailboxTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
@@ -264,8 +264,8 @@ where
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-            MailboxWriteTask::set_mailbox_data(mb_header, mb_data, socket.data_buf_mut());
-            unit.start(slave_address, tx_sm, wait_empty);
+            MailboxTask::set_mailbox_data(mb_header, mb_data, socket.data_buf_mut());
+            unit.start_to_write(slave_address, tx_sm, wait_empty);
         }
         self.block(handle, &mut unit)?;
         unit.wait().unwrap()
@@ -278,7 +278,7 @@ where
         index: u16,
         sub_index: u8,
     ) -> Result<&[u8], TaskError<SdoTaskError>> {
-        let mut unit = SdoUploader::new();
+        let mut unit = SdoReadTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(
@@ -301,7 +301,7 @@ where
         sub_index: u8,
         data: &[u8],
     ) -> Result<(), TaskError<SdoTaskError>> {
-        let mut unit = SdoDownloadTask::new();
+        let mut unit = SdoWriteTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
             assert!(

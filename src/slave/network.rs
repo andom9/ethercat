@@ -1,15 +1,13 @@
 use super::*;
 use crate::interface::*;
 
-//pub const EMPTY_SLAVE: Option<Slave> = None;
-
 #[derive(Debug)]
-pub struct NetworkDescription<'a, 'b, 'c> {
+pub struct Network<'a, 'b, 'c> {
     slaves: &'a mut [(Option<Slave>, SlaveConfig<'b, 'c>)],
     push_count: u16,
 }
 
-impl<'a, 'b, 'c> NetworkDescription<'a, 'b, 'c> {
+impl<'a, 'b, 'c> Network<'a, 'b, 'c> {
     pub fn new(slave_buf: &'a mut [(Option<Slave>, SlaveConfig<'b, 'c>)]) -> Self {
         Self {
             slaves: slave_buf,
@@ -135,7 +133,7 @@ impl<'a, 'b, 'c> RecievedPorts<'a, 'b, 'c> {
 
 #[derive(Debug, Clone)]
 pub struct RecievedPort {
-    pub position: u16,
+    pub slave_position: u16,
     pub port: u8,
 }
 
@@ -166,9 +164,6 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
                 if 1 <= self.position {
                     self.position -= 1;
                 }
-                //else {
-                //    continue;
-                //}
             }
             dbg!(posision_tmp);
             dbg!(self.length);
@@ -178,7 +173,7 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
                 dbg!("some");
                 return Some(RecievedPort {
                     port: current_port_tmp,
-                    position: posision_tmp,
+                    slave_position: posision_tmp,
                 });
             } else {
                 return None;

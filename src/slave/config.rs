@@ -1,12 +1,11 @@
+use super::SlaveId;
+
 #[derive(Debug)]
 pub struct SlaveConfig<'a, 'b> {
-    // inputs
-    tx_pdo_mappings: &'a mut [PdoMapping<'b>],
-
-    // outputs
-    rx_pdo_mappings: &'a mut [PdoMapping<'b>],
-
-    pub operation_mode: SyncMode,
+    input_pdo_mappings: &'a mut [PdoMapping<'b>],
+    output_pdo_mappings: &'a mut [PdoMapping<'b>],
+    expectec_id: Option<SlaveId>,
+    pub sync_mode: SyncMode,
     pub cycle_time_ns: u32,
 }
 
@@ -14,28 +13,29 @@ impl<'a, 'b> Default for SlaveConfig<'a, 'b> {
     fn default() -> Self {
         Self {
             cycle_time_ns: 0x0007A120_u32, //500us
-            operation_mode: SyncMode::FreeRun,
-            rx_pdo_mappings: &mut [],
-            tx_pdo_mappings: &mut [],
+            sync_mode: SyncMode::FreeRun,
+            output_pdo_mappings: &mut [],
+            input_pdo_mappings: &mut [],
+            expectec_id: None,
         }
     }
 }
 
 impl<'a, 'b> SlaveConfig<'a, 'b> {
-    pub fn tx_process_data_mappings(&self) -> &[PdoMapping<'b>] {
-        &self.tx_pdo_mappings
+    pub fn input_process_data_mappings(&self) -> &[PdoMapping<'b>] {
+        &self.input_pdo_mappings
     }
 
-    pub fn tx_process_data_mappings_mut(&mut self) -> &mut [PdoMapping<'b>] {
-        &mut self.tx_pdo_mappings
+    pub fn input_process_data_mappings_mut(&mut self) -> &mut [PdoMapping<'b>] {
+        &mut self.input_pdo_mappings
     }
 
-    pub fn rx_process_data_mappings(&self) -> &[PdoMapping<'b>] {
-        self.rx_pdo_mappings
+    pub fn output_process_data_mappings(&self) -> &[PdoMapping<'b>] {
+        self.output_pdo_mappings
     }
 
-    pub fn rx_process_data_mappings_mut(&mut self) -> &mut [PdoMapping<'b>] {
-        &mut self.rx_pdo_mappings
+    pub fn output_process_data_mappings_mut(&mut self) -> &mut [PdoMapping<'b>] {
+        &mut self.output_pdo_mappings
     }
 }
 

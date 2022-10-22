@@ -5,7 +5,7 @@ use crate::interface::*;
 use crate::register::{
     DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay,
 };
-use crate::slave::NetworkDescription;
+use crate::slave::Network;
 use crate::util::const_max;
 
 //TODO:Dcスレーブについて、0x092C(システムタイムの差)を見る。
@@ -34,7 +34,7 @@ pub struct DcInitTask<'a, 'b, 'c, 'd> {
     //buffer: [u8; buffer_size()],
     first_dc_slave: Option<u16>,
     dc_slave_count: usize,
-    network: &'d NetworkDescription<'a, 'b, 'c>,
+    network: &'d Network<'a, 'b, 'c>,
 }
 
 impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
@@ -42,7 +42,7 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
         buffer_size()
     }
 
-    pub fn new(network: &'d NetworkDescription<'a, 'b, 'c>) -> Self {
+    pub fn new(network: &'d Network<'a, 'b, 'c>) -> Self {
         Self {
             //sys_time: EtherCatSystemTime(0),
             state: State::Idle,
@@ -67,7 +67,7 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
         let mut last_recv_port = 0;
         let mut first_slave = None;
         for recv_port in self.network.recieved_ports() {
-            let slave_pos = recv_port.position;
+            let slave_pos = recv_port.slave_position;
             dbg!(slave_pos);
             let port_number = recv_port.port;
             let (slave, _) = self
@@ -127,7 +127,7 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         dbg!(&self.state);
         match &self.state {
             State::Idle => None,
@@ -195,10 +195,10 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         dbg!(&self.state);
         let (data, wkc) = {
-            let CommandData { command, data, wkc } = recv_data;
+            let Pdu { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(TaskError::UnexpectedCommand);

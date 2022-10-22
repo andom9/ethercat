@@ -57,7 +57,7 @@ impl CyclicTask for ProcessTask {
         true
     }
 
-    fn next_command(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {
         if self.expected_wkc == 0 {
             None
         } else {
@@ -65,8 +65,8 @@ impl CyclicTask for ProcessTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, _systime: EtherCatSystemTime) {
-        let CommandData { wkc, .. } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &Pdu, _systime: EtherCatSystemTime) {
+        let Pdu { wkc, .. } = recv_data;
         let wkc = *wkc;
         if wkc != self.expected_wkc {
             self.invalid_wkc_count = self.invalid_wkc_count.saturating_add(1);

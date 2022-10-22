@@ -1,17 +1,18 @@
-use super::hal::{RawEthernetDevice, RxToken, TxToken};
+use super::hal::RawEthernetDevice;
 use super::Command;
 use super::PduInterface;
 use super::PhyError;
 use crate::frame::*;
+use crate::util::*;
 
 #[derive(Debug, Clone)]
-pub struct CommandData<'a> {
+pub struct Pdu<'a> {
     pub command: Command,
     pub data: &'a [u8],
     pub wkc: u16,
 }
 
-impl<'a> CommandData<'a> {
+impl<'a> Pdu<'a> {
     pub fn new(command: Command, data: &'a [u8]) -> Self {
         Self {
             command,
@@ -57,10 +58,7 @@ impl<'a> PduSocket<'a> {
         self.recv_flag = false;
     }
 
-    pub fn set_command<F: FnOnce(&mut [u8]) -> Option<(Command, usize)>>(
-        &mut self,
-        command_data: F,
-    ) {
+    pub fn set_pdu<F: FnOnce(&mut [u8]) -> Option<(Command, usize)>>(&mut self, command_data: F) {
         self.recv_flag = false;
         self.wkc = 0;
         if let Some((command, length)) = command_data(self.data_buf) {
@@ -72,9 +70,9 @@ impl<'a> PduSocket<'a> {
         }
     }
 
-    pub fn get_recieved_command(&self) -> Option<CommandData> {
+    pub fn get_recieved_pdu(&self) -> Option<Pdu> {
         if self.recv_flag {
-            self.command.map(|command| CommandData {
+            self.command.map(|command| Pdu {
                 command,
                 data: &self.data_buf[..self.data_length],
                 wkc: self.wkc,
@@ -92,18 +90,15 @@ impl<'a> PduSocket<'a> {
         }
     }
 
-    fn take_command(&mut self) -> Option<CommandData> {
+    fn take_pdu(&mut self) -> Option<Pdu> {
         if self.recv_flag {
             return None;
         }
         let command = core::mem::take(&mut self.command)?;
-        Some(CommandData::new(
-            command,
-            &self.data_buf[..self.data_length],
-        ))
+        Some(Pdu::new(command, &self.data_buf[..self.data_length]))
     }
 
-    fn recieve(&mut self, recv_data: CommandData) {
+    fn recieve(&mut self, recv_data: Pdu) {
         self.recv_flag = true;
         self.command = Some(recv_data.command);
         self.data_buf
@@ -114,7 +109,7 @@ impl<'a> PduSocket<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SocketHandle(usize);
 impl From<SocketHandle> for usize {
     fn from(handle: SocketHandle) -> Self {
@@ -122,17 +117,17 @@ impl From<SocketHandle> for usize {
     }
 }
 
-#[derive(Debug)]
-pub enum SocketOption<S> {
-    NextFreeIndex(SocketHandle),
-    Socket(S),
-}
+// #[derive(Debug)]
+// pub enum SocketOption<S> {
+//     NextFreeIndex(SocketHandle),
+//     Socket(S),
+// }
 
-impl<S> Default for SocketOption<S> {
-    fn default() -> Self {
-        Self::NextFreeIndex(SocketHandle(0))
-    }
-}
+// impl<S> Default for SocketOption<S> {
+//     fn default() -> Self {
+//         Self::NextFreeIndex(SocketHandle(0))
+//     }
+// }
 
 #[derive(Debug)]
 pub struct SocketInterface<'frame, 'buf, D, const N: usize>
@@ -140,114 +135,123 @@ where
     D: for<'d> RawEthernetDevice<'d>,
 {
     iface: PduInterface<'frame, D>,
-    sockets: [SocketOption<PduSocket<'buf>>; N],
-    free_index: SocketHandle,
+    //sockets: [SocketOption<PduSocket<'buf>>; N],
+    //free_index: SocketHandle,
+    socket_set: ArraySet<SocketHandle, PduSocket<'buf>, N>,
     pub lost_frame_count: usize,
 }
 
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
+    [SetOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
     pub fn new(
         iface: PduInterface<'frame, D>,
-        mut sockets: [SocketOption<PduSocket<'buf>>; N],
+        //mut sockets: [SocketOption<PduSocket<'buf>>; N],
     ) -> Self {
-        sockets
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, socket)| *socket = SocketOption::NextFreeIndex(SocketHandle(i + 1)));
+        //sockets
+        //    .iter_mut()
+        //    .enumerate()
+        //    .for_each(|(i, socket)| *socket = SocketOption::NextFreeIndex(SocketHandle(i + 1)));
         Self {
             iface,
-            sockets,
-            free_index: SocketHandle(0),
+            socket_set: ArraySet::new(),
+            //sockets,
+            //free_index: SocketHandle(0),
             lost_frame_count: 0,
         }
     }
 
     pub fn add_socket(&mut self, socket: PduSocket<'buf>) -> Result<SocketHandle, PduSocket> {
-        let index = self.free_index.clone();
-        if let Some(socket_enum) = self.sockets.get_mut(index.0) {
-            if let SocketOption::NextFreeIndex(next) = socket_enum {
-                self.free_index = next.clone();
-                *socket_enum = SocketOption::Socket(socket);
-                Ok(index)
-            } else {
-                unreachable!()
-            }
-        } else {
-            Err(socket)
-        }
+        self.socket_set.add_item(socket)
+        // let index = self.free_index.clone();
+        // if let Some(socket_enum) = self.sockets.get_mut(index.0) {
+        //     if let SocketOption::NextFreeIndex(next) = socket_enum {
+        //         self.free_index = next.clone();
+        //         *socket_enum = SocketOption::Socket(socket);
+        //         Ok(index)
+        //     } else {
+        //         unreachable!()
+        //     }
+        // } else {
+        //     Err(socket)
+        // }
     }
 
     pub fn remove_socket(&mut self, socket_handle: SocketHandle) -> Option<PduSocket> {
-        if let Some(socket_enum) = self.sockets.get_mut(socket_handle.0) {
-            match socket_enum {
-                SocketOption::Socket(_) => {
-                    let mut next = SocketOption::NextFreeIndex(self.free_index.clone());
-                    self.free_index = socket_handle;
-                    core::mem::swap(socket_enum, &mut next);
-                    if let SocketOption::Socket(socket) = next {
-                        Some(socket)
-                    } else {
-                        unreachable!()
-                    }
-                }
-                SocketOption::NextFreeIndex(_) => None,
-            }
-        } else {
-            None
-        }
+        self.socket_set.remove_item(socket_handle)
+        // if let Some(socket_enum) = self.sockets.get_mut(socket_handle.0) {
+        //     match socket_enum {
+        //         SocketOption::Socket(_) => {
+        //             let mut next = SocketOption::NextFreeIndex(self.free_index.clone());
+        //             self.free_index = socket_handle;
+        //             core::mem::swap(socket_enum, &mut next);
+        //             if let SocketOption::Socket(socket) = next {
+        //                 Some(socket)
+        //             } else {
+        //                 unreachable!()
+        //             }
+        //         }
+        //         SocketOption::NextFreeIndex(_) => None,
+        //     }
+        // } else {
+        //     None
+        // }
     }
 
     pub fn get_socket(&self, socket_handle: &SocketHandle) -> Option<&PduSocket<'buf>> {
-        match self.sockets.get(socket_handle.0) {
-            Some(SocketOption::Socket(ref socket)) => Some(socket),
-            _ => None,
-        }
+        self.socket_set.get_item(socket_handle)
+        // match self.sockets.get(socket_handle.0) {
+        //     Some(SocketOption::Socket(ref socket)) => Some(socket),
+        //     _ => None,
+        // }
     }
 
     pub fn get_socket_mut(&mut self, socket_handle: &SocketHandle) -> Option<&mut PduSocket<'buf>> {
-        match self.sockets.get_mut(socket_handle.0) {
-            Some(SocketOption::Socket(ref mut socket)) => Some(socket),
-            _ => None,
-        }
+        self.socket_set.get_item_mut(socket_handle)
+        // match self.sockets.get_mut(socket_handle.0) {
+        //     Some(SocketOption::Socket(ref mut socket)) => Some(socket),
+        //     _ => None,
+        // }
     }
 
     /// If true, all PDUs are transmitted and received,
     pub fn poll_tx_rx(&mut self) -> Result<bool, PhyError> {
-        let is_all_commands_enqueued = self.enqueue_commands()?;
+        let is_all_commands_enqueued = self.enqueue_pdus()?;
 
         let is_all_enqueued_commands_processed = self.transmit_and_receive()?;
         Ok(is_all_commands_enqueued && is_all_enqueued_commands_processed)
     }
 
-    fn enqueue_commands(&mut self) -> Result<bool, PhyError> {
+    fn enqueue_pdus(&mut self) -> Result<bool, PhyError> {
         let mut complete = true;
-        for (i, socket_enum) in self.sockets.iter_mut().enumerate() {
-            if let SocketOption::Socket(socket) = socket_enum {
-                let len = socket.data_length();
-                if self.iface.remainig_pdu_data_capacity() < len {
-                    complete = false;
-                    break;
-                }
-                if let Some(command_data) = socket.take_command() {
-                    self.iface
-                        .add_pdu(i as u8, command_data.command, len, |buf| {
-                            for (b, d) in buf.iter_mut().zip(command_data.data) {
-                                *b = *d;
-                            }
-                        })
-                        .expect("always success");
-                }
+        for (i, socket) in self.socket_set.items_mut().enumerate() {
+            //if let SocketOption::Socket(socket) = socket_enum {
+            let len = socket.data_length();
+            if self.iface.remainig_pdu_data_capacity() < len {
+                complete = false;
+                break;
             }
+            if let Some(command_data) = socket.take_pdu() {
+                self.iface
+                    .add_pdu(i as u8, command_data.command, len, |buf| {
+                        for (b, d) in buf.iter_mut().zip(command_data.data) {
+                            *b = *d;
+                        }
+                    })
+                    .expect("always success");
+            }
+            //}
         }
         Ok(complete)
     }
 
     /// If true, all PDUs are transmitted and received
     fn transmit_and_receive(&mut self) -> Result<bool, PhyError> {
-        let Self { iface, sockets, .. } = self;
+        let Self {
+            iface, socket_set, ..
+        } = self;
         let is_tx_ok = iface.transmit_one_frame()?;
         let is_rx_ok = iface.receive_one_frame()?;
         if !(is_tx_ok && is_rx_ok) {
@@ -255,12 +259,12 @@ where
         }
         let pdus = iface.consume_pdus();
         for pdu in pdus {
-            let index = pdu.index() as usize;
-            if let Some(SocketOption::Socket(ref mut socket)) = sockets.get_mut(index) {
+            let index = SocketHandle(pdu.index() as usize);
+            if let Some(ref mut socket) = socket_set.get_item_mut(&index) {
                 let wkc = pdu.wkc().unwrap_or_default();
                 let command =
                     Command::new(CommandType::from(pdu.command_type()), pdu.adp(), pdu.ado());
-                let recv_data = CommandData {
+                let recv_data = Pdu {
                     command,
                     data: pdu.data(),
                     wkc,

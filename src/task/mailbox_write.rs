@@ -49,11 +49,15 @@ impl MailboxWriteTask {
         }
     }
 
-    pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
+    pub fn set_mailbox_data(
+        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
+        mb_data: &[u8],
+        buf: &mut [u8],
+    ) {
         buf[..MailboxHeader::SIZE]
             .iter_mut()
-            .zip(mb_header)
-            .for_each(|(b, d)| *b = *d);
+            .zip(mb_header.0)
+            .for_each(|(b, d)| *b = d);
         buf[MailboxHeader::SIZE..]
             .iter_mut()
             .zip(mb_data)
@@ -88,7 +92,7 @@ impl CyclicTask for MailboxWriteTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -122,8 +126,8 @@ impl CyclicTask for MailboxWriteTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
-        let CommandData { command, data, wkc } = recv_data;
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
+        let Pdu { command, data, wkc } = recv_data;
         if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
             self.state = State::Error(TaskError::UnexpectedCommand);
         }
@@ -137,7 +141,7 @@ impl CyclicTask for MailboxWriteTask {
                     self.timer_start = sys_time;
                 }
                 if wkc != 1 {
-                    self.state = State::Error(MailboxTaskError::MailboxNotAvailable.into());
+                    self.state = State::Error(MailboxTaskError::NoSlaveReaction.into());
                 } else {
                     let status = SyncManagerStatus(data);
                     if !status.is_mailbox_full() {

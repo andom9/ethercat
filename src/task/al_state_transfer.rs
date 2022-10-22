@@ -107,7 +107,7 @@ impl CyclicTask for AlStateTransferTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -172,9 +172,9 @@ impl CyclicTask for AlStateTransferTask {
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         let data = {
-            let CommandData { command, data, wkc } = recv_data;
+            let Pdu { command, data, wkc } = recv_data;
             let wkc = *wkc;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(TaskError::UnexpectedCommand);

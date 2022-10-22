@@ -4,11 +4,11 @@ use super::{
     AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, TaskError,
 };
 use crate::{
-    interface::{Command, CommandData, SlaveAddress},
+    interface::{Command, Pdu, SlaveAddress},
     register::{
         sii::{
             MailboxProtocol, ProductCode, RevisionNumber, StandardRxMailboxOffset,
-            StandardRxMailboxSize, StandardTxMailboxOffset, StandardTxMailboxSize, VenderID,
+            StandardRxMailboxSize, StandardTxMailboxOffset, StandardTxMailboxSize, VenderId,
         },
         CyclicOperationStartTime, DcActivation, DlControl, DlInformation, DlStatus, DlUserWatchDog,
         FixedStationAddress, FmmuRegister, Latch0NegativeEdgeValue, Latch0PositiveEdgeValue,
@@ -150,7 +150,7 @@ impl CyclicTask for SlaveInitTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         let command_and_data = match self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -174,7 +174,7 @@ impl CyclicTask for SlaveInitTask {
                 if is_first {
                     al_transfer.start(self.slave_address.into(), AlState::Init);
                 }
-                al_transfer.next_command(buf)
+                al_transfer.next_pdu(buf)
             }
             State::ResetErrorCount => {
                 let command =
@@ -241,58 +241,58 @@ impl CyclicTask for SlaveInitTask {
                 self.inner.into_sii();
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
-                    sii_reader.start(self.slave_address, VenderID::ADDRESS);
+                    sii_reader.start(self.slave_address, VenderId::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetProductCode(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, ProductCode::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetRevision(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, RevisionNumber::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetProtocol(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, MailboxProtocol::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetRxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, StandardRxMailboxSize::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetRxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, StandardRxMailboxOffset::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetTxMailboxSize(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, StandardTxMailboxSize::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::GetTxMailboxOffset(is_first) => {
                 let sii_reader = self.inner.sii().unwrap();
                 if is_first {
                     sii_reader.start(self.slave_address, StandardTxMailboxOffset::ADDRESS);
                 }
-                sii_reader.next_command(buf)
+                sii_reader.next_pdu(buf)
             }
             State::SetSmControl(num) => {
                 let command = Command::new_write(
@@ -389,9 +389,9 @@ impl CyclicTask for SlaveInitTask {
         command_and_data
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         let data = {
-            let CommandData { command, data, wkc } = recv_data;
+            let Pdu { command, data, wkc } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(TaskError::UnexpectedCommand);
             }

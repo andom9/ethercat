@@ -5,29 +5,30 @@ use crate::{
     frame::{MailboxHeader, MAX_PDU_DATAGRAM},
     interface::{
         PduInterface, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
-        SocketInterface, SocketOption, TargetSlave,
+        SocketInterface, TargetSlave,
     },
     register::{
         od::OdPdoEntry, AlStatusCode, CyclicOperationStartTime, DcActivation, FmmuRegister,
         RxErrorCounter, SiiData, Sync0CycleTime, Sync1CycleTime, SyncManagerActivation,
         SyncManagerControl,
     },
-    slave::{AlState, FmmuConfig, NetworkDescription, PdoMapping, Slave, SlaveConfig, SyncMode},
+    slave::{AlState, FmmuConfig, Network, PdoMapping, Slave, SlaveConfig, SyncMode},
     task::{
         loop_task::*, AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, MailboxTaskError,
         NetworkInitTaskError, SdoTaskError, SiiTaskError, TaskError, MAX_SM_SIZE,
     },
 };
 
-const START_LOGICAL_ADDRESS: u32 = 0x1000;
+const LOGICAL_START_ADDRESS: u32 = 0x1000;
+const NUM_SOCKETS: usize = 5;
 
 #[derive(Debug)]
 pub struct EtherCatMaster<'frame, 'socket, 'slave, 'pdo_mapping, 'pdo_entry, D>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
-    sif: SocketInterface<'frame, 'socket, D, 5>,
-    network: NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry>,
+    sif: SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
+    network: Network<'slave, 'pdo_mapping, 'pdo_entry>,
     gp_socket_handle: SocketHandle,
     cycle_count: usize,
     //process data
@@ -67,27 +68,27 @@ where
         let (pdu_buffer3, rest) = rest.split_at_mut(DcSyncTask::required_buffer_size());
         let (pdu_buffer4, _) = rest.split_at_mut(256);
 
-        let sockets = [
-            SocketOption::default(), // al state
-            SocketOption::default(), // rx error
-            SocketOption::default(), // dc comp
-            SocketOption::default(), // general purpose
-            SocketOption::default(), // pdo
-        ];
-        let mut sif = SocketInterface::new(iface, sockets);
+        // let sockets = [
+        //     SocketOption::default(), // al state
+        //     SocketOption::default(), // rx error
+        //     SocketOption::default(), // dc comp
+        //     SocketOption::default(), // general purpose
+        //     SocketOption::default(), // pdo
+        // ];
+        let mut sif = SocketInterface::new(iface);
         let al_state_handle = sif.add_socket(PduSocket::new(pdu_buffer1)).unwrap();
         let rx_error_handle = sif.add_socket(PduSocket::new(pdu_buffer2)).unwrap();
         let dc_handle = sif.add_socket(PduSocket::new(pdu_buffer3)).unwrap();
         let gp_socket_handle = sif.add_socket(PduSocket::new(pdu_buffer4)).unwrap();
 
-        let network = NetworkDescription::new(slave_buf);
+        let network = Network::new(slave_buf);
         Self {
             sif,
             network,
             gp_socket_handle,
             cycle_count: 0,
             process_data_handle: None,
-            process_data_task: ProcessTask::new(START_LOGICAL_ADDRESS, 0, 0),
+            process_data_task: ProcessTask::new(LOGICAL_START_ADDRESS, 0, 0),
             dc_handle,
             dc_task: None,
             al_state_task: AlStateReadTask::new(),
@@ -99,7 +100,10 @@ where
 
     pub fn init(&mut self) -> Result<(), TaskError<NetworkInitTaskError>> {
         let Self { network, sif, .. } = self;
-        sif.init(&self.gp_socket_handle, network)
+        sif.init(&self.gp_socket_handle, network)?;
+        self.al_state_task
+            .set_target(TargetSlave::All(network.num_slaves()));
+        Ok(())
     }
 
     pub fn init_dc(&mut self) -> Result<(), TaskError<()>> {
@@ -129,7 +133,7 @@ where
         Ok(())
     }
 
-    pub fn network<'a>(&'a self) -> &'a NetworkDescription<'slave, 'pdo_mapping, 'pdo_entry> {
+    pub fn network<'a>(&'a self) -> &'a Network<'slave, 'pdo_mapping, 'pdo_entry> {
         &self.network
     }
 
@@ -167,48 +171,29 @@ where
             ..
         } = self;
 
-        let num_slaves = self.network.num_slaves();
-
         // process data + mb polling
         if let (Some(ref handle), ref mut task) = (process_data_handle, process_data_task) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
-            let recv_data = socket.get_recieved_command();
-            if let Some(recv_data) = recv_data {
-                task.recieve_and_process(&recv_data, sys_time);
-            }
-            socket.set_command(|buf| task.next_command(buf));
+            task.process_one_step(socket, sys_time);
             //TODO: mailbox polling
         }
 
         // dc drift comp
         if let (ref handle, Some(ref mut task)) = (dc_handle, dc_task) {
             let socket = self.sif.get_socket_mut(handle).unwrap();
-            let recv_data = socket.get_recieved_command();
-            if let Some(recv_data) = recv_data {
-                task.recieve_and_process(&recv_data, sys_time);
-            }
-            socket.set_command(|buf| task.next_command(buf));
+            task.process_one_step(socket, sys_time);
         }
 
         // rx error check
         {
             let socket = self.sif.get_socket_mut(rx_error_handle).unwrap();
-            let recv_data = socket.get_recieved_command();
-            if let Some(recv_data) = recv_data {
-                rx_error_task.recieve_and_process(&recv_data, sys_time);
-            }
-            rx_error_task.set_target(TargetSlave::All(num_slaves));
-            socket.set_command(|buf| rx_error_task.next_command(buf));
+            rx_error_task.process_one_step(socket, sys_time);
         }
 
         // al state + al status code
         {
             let socket = self.sif.get_socket_mut(al_state_handle).unwrap();
-            let recv_data = socket.get_recieved_command();
-            if let Some(recv_data) = recv_data {
-                al_state_task.recieve_and_process(&recv_data, sys_time);
-            }
-            socket.set_command(|buf| al_state_task.next_command(buf));
+            al_state_task.process_one_step(socket, sys_time);
         }
 
         self.cycle_count = self.cycle_count.overflowing_add(1).0;
@@ -229,6 +214,10 @@ where
 
     pub fn lost_frame_count(&self) -> usize {
         self.sif.lost_frame_count
+    }
+
+    pub fn detected_slave_count(&self) -> usize {
+        todo!()
     }
 
     pub fn read_al_state(
@@ -270,7 +259,7 @@ where
     pub fn write_mailbox(
         &mut self,
         slave_address: SlaveAddress,
-        mb_header: &[u8; MailboxHeader::SIZE],
+        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
         mb_data: &[u8],
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {
@@ -319,11 +308,11 @@ where
         let pdo_image = self.sif.get_socket(handle)?;
         let (_, config) = self.network().slave(slave_address)?;
         config
-            .tx_process_data_mappings()
+            .input_process_data_mappings()
             .get(pdo_map_index)
             .map(|pdo_map| pdo_map.entries.get(pdo_entry_index))
             .flatten()
-            .map(|pdo_entry| pdo_entry.read(START_LOGICAL_ADDRESS, pdo_image.data_buf(), buf))
+            .map(|pdo_entry| pdo_entry.read(LOGICAL_START_ADDRESS, pdo_image.data_buf(), buf))
             .flatten()
     }
 
@@ -446,11 +435,11 @@ where
         let (_, config) = self.network.slave(slave_address)?;
 
         config
-            .rx_process_data_mappings()
+            .output_process_data_mappings()
             .get(pdo_map_index)
             .map(|pdo_map| pdo_map.entries.get(pdo_entry_index))
             .flatten()
-            .map(|pdo_entry| pdo_entry.write(START_LOGICAL_ADDRESS, pdo_image.data_buf_mut(), data))
+            .map(|pdo_entry| pdo_entry.write(LOGICAL_START_ADDRESS, pdo_image.data_buf_mut(), data))
             .flatten()
     }
 
@@ -602,7 +591,7 @@ where
     /// Return image size and expected wkc.
     fn set_logical_address_to_fmmu_config(&mut self) -> (usize, u16) {
         let mut expected_wkc = 0;
-        let mut bit_address = (START_LOGICAL_ADDRESS * 8) as u64;
+        let mut bit_address = (LOGICAL_START_ADDRESS * 8) as u64;
         for (slave, _) in self.network.slaves_mut() {
             let mut has_tx_data = false;
             let mut has_rx_data = false;
@@ -611,11 +600,11 @@ where
                 .fmmu_config_mut()
                 .iter_mut()
                 .filter_map(|f| f.as_mut())
-                .filter(|f| f.bit_length != 0)
+                .filter(|f| f.bit_length() != 0)
             {
-                fmmu_config.logical_start_address = Some((bit_address >> 3) as u32);
-                fmmu_config.start_bit = (bit_address % 8) as u8;
-                bit_address += fmmu_config.bit_length as u64;
+                fmmu_config.set_logical_address(Some((bit_address >> 3) as u32));
+                fmmu_config.set_start_bit((bit_address % 8) as u8);
+                bit_address += fmmu_config.bit_length() as u64;
 
                 if fmmu_config.is_output() {
                     has_rx_data = true;
@@ -632,9 +621,9 @@ where
             }
         }
         let size = if bit_address % 8 == 0 {
-            (bit_address >> 3) - START_LOGICAL_ADDRESS as u64
+            (bit_address >> 3) - LOGICAL_START_ADDRESS as u64
         } else {
-            (bit_address >> 3) + 1 - START_LOGICAL_ADDRESS as u64
+            (bit_address >> 3) + 1 - LOGICAL_START_ADDRESS as u64
         };
         assert!(
             size <= MAX_PDU_DATAGRAM as u64,
@@ -652,19 +641,19 @@ where
                     || slave.fmmu_config()[i]
                         .as_ref()
                         .unwrap()
-                        .logical_start_address
+                        .logical_address()
                         .is_none()
                 {
                     continue;
                 }
                 let fmmu_config = slave.fmmu_config()[i].as_ref().unwrap();
-                let start_address = fmmu_config.logical_start_address.unwrap();
-                let start_bit = fmmu_config.start_bit as u64;
+                let start_address = fmmu_config.logical_address().unwrap();
+                let start_bit = fmmu_config.start_bit() as u64;
                 let mut total_bits = (start_address * 8) as u64 + start_bit;
                 let pdo_maps = if i == 0 {
-                    config.rx_process_data_mappings_mut()
+                    config.output_process_data_mappings_mut()
                 } else {
-                    config.tx_process_data_mappings_mut()
+                    config.input_process_data_mappings_mut()
                 };
                 if pdo_maps.is_empty() {
                     continue;
@@ -683,7 +672,7 @@ where
                     }
                 }
                 assert_eq!(
-                    fmmu_config.bit_length as u64,
+                    fmmu_config.bit_length() as u64,
                     total_bits - ((start_address * 8) as u64 + start_bit)
                 );
             }
@@ -691,8 +680,8 @@ where
     }
 
     /// Set the logical address, physical address, and size for each slave FMMU.
-    /// Return image size and expected wkc.
-    fn configure_fmmu(&mut self) -> Result<(usize, u16), ConfigError> {
+    /// Return process data_image size and expected wkc.
+    pub fn configure_fmmu(&mut self) -> Result<(usize, u16), ConfigError> {
         let (image_size, expected_wkc) = self.set_logical_address_to_fmmu_config();
         let Self {
             network,
@@ -708,15 +697,16 @@ where
                 .filter(|(_, f)| f.is_some())
             {
                 let fmmu = fmmu.as_ref().unwrap();
-                if fmmu.logical_start_address.is_none() || fmmu.byte_length() == 0 {
+                if fmmu.logical_address().is_none() || fmmu.byte_length() == 0 {
                     continue;
                 }
                 let mut fmmu_reg = FmmuRegister::new();
-                fmmu_reg.set_logical_start_address(fmmu.logical_start_address.unwrap());
-                let (byte_length, end_bit) = fmmu.byte_length_and_end_bit();
+                fmmu_reg.set_logical_start_address(fmmu.logical_address().unwrap());
+                let byte_length = fmmu.byte_length();
+                let end_bit = fmmu.end_bit();
                 fmmu_reg.set_length(byte_length);
                 fmmu_reg.set_logical_end_bit(end_bit);
-                fmmu_reg.set_physical_start_address(fmmu.physical_address);
+                fmmu_reg.set_physical_start_address(fmmu.physical_address());
                 fmmu_reg.set_physical_start_bit(0);
                 if fmmu.is_output() {
                     fmmu_reg.set_read_enable(false);
@@ -744,17 +734,6 @@ where
                         error: err,
                     }),
                 })?;
-                dbg!(slave.info().slave_address());
-                dbg!(FmmuRegister::ADDRESS + (i as u16) * FmmuRegister::SIZE as u16);
-                dbg!(&fmmu_reg.logical_start_address());
-                dbg!(&fmmu_reg.length());
-                dbg!(&fmmu_reg.logical_start_bit());
-                dbg!(&fmmu_reg.logical_end_bit());
-                dbg!(&fmmu_reg.physical_start_address());
-                dbg!(&fmmu_reg.physical_start_bit());
-                dbg!(&fmmu_reg.read_enable());
-                dbg!(&fmmu_reg.write_enable());
-                dbg!(&fmmu_reg.enable());
             }
         }
         Ok((image_size, expected_wkc))
@@ -767,6 +746,8 @@ where
             gp_socket_handle,
             ..
         } = self;
+        //TODO：そもそも同期パラメタを持たないスレーブがあるので、どうにかする。
+        //TODO：同期パラメタ数は1~3で、オプションなので、どうにかする。
         for (slave, config) in network.slaves().filter(|(s, _)| s.info().support_coe()) {
             // Set Operation Mode
             let index = 0x1C00;
@@ -793,7 +774,7 @@ where
                     slave,
                     addr,
                     1,
-                    &[config.operation_mode as u8, 0],
+                    &[config.sync_mode as u8, 0],
                 )
                 .map_err(|err| ConfigError {
                     slave_address: slave.info().slave_address(),
@@ -844,7 +825,7 @@ where
                     slave,
                     addr,
                     1,
-                    &[config.operation_mode as u8, 0],
+                    &[config.sync_mode as u8, 0],
                 )
                 .map_err(|err| ConfigError {
                     slave_address: slave.info().slave_address(),
@@ -916,7 +897,7 @@ where
 
             // cycle permission
             let mut dc_actiation = DcActivation::new();
-            if let SyncMode::Sync0Event | SyncMode::Sync1Event = config.operation_mode {
+            if let SyncMode::Sync0Event | SyncMode::Sync1Event = config.sync_mode {
                 dc_actiation.set_cyclic_operation_enable(true);
                 dc_actiation.set_sync0_activate(true);
                 dc_actiation.set_sync1_activate(true);
@@ -950,22 +931,21 @@ fn set_pdo_config_to_od_utility<
     'pdo_mapping,
     'pdo_entry,
     D: for<'d> RawEthernetDevice<'d>,
-    const S: usize,
 >(
     slave: &mut Slave,
     slave_config: &mut SlaveConfig<'pdo_mapping, 'pdo_entry>,
-    sif: &mut SocketInterface<'frame, 'socket, D, S>,
+    sif: &mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
     handle: &SocketHandle,
     is_output: bool,
 ) -> Result<(), ConfigError> {
     let (pdo_mappings, sm_number) = if is_output {
         (
-            slave_config.rx_process_data_mappings(),
+            slave_config.output_process_data_mappings(),
             slave.info().process_data_rx_sm_number(),
         )
     } else {
         (
-            slave_config.tx_process_data_mappings(),
+            slave_config.input_process_data_mappings(),
             slave.info().process_data_tx_sm_number(),
         )
     };
@@ -1076,10 +1056,9 @@ fn set_pdo_to_sm_utility<
     'pdo_mapping,
     'pdo_entry,
     D: for<'d> RawEthernetDevice<'d>,
-    const S: usize,
 >(
     slave: &mut Slave,
-    sif: &mut SocketInterface<'frame, 'socket, D, S>,
+    sif: &mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
     handle: &SocketHandle,
     is_output: bool,
     start_ram_address: u16,

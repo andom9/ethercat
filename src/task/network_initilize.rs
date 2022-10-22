@@ -7,7 +7,7 @@ use crate::interface::*;
 use crate::register::DlControl;
 use crate::register::SyncManagerStatus;
 use crate::slave::FmmuConfig;
-use crate::slave::NetworkDescription;
+use crate::slave::Network;
 use crate::slave::Slave;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +49,7 @@ enum State {
 #[derive(Debug)]
 pub struct NetworkInitTask<'a, 'b, 'c, 'd> {
     initilizer: SlaveInitTask,
-    network: &'d mut NetworkDescription<'a, 'b, 'c>,
+    network: &'d mut Network<'a, 'b, 'c>,
     state: State,
     command: Command,
     buffer: [u8; buffer_size()],
@@ -62,7 +62,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitTask<'a, 'b, 'c, 'd> {
         buffer_size()
     }
 
-    pub fn new(network: &'d mut NetworkDescription<'a, 'b, 'c>) -> Self {
+    pub fn new(network: &'d mut Network<'a, 'b, 'c>) -> Self {
         Self {
             initilizer: SlaveInitTask::new(),
             state: State::Idle,
@@ -74,7 +74,7 @@ impl<'a, 'b, 'c, 'd> NetworkInitTask<'a, 'b, 'c, 'd> {
         }
     }
 
-    pub fn take(self) -> &'d mut NetworkDescription<'a, 'b, 'c> {
+    pub fn take(self) -> &'d mut Network<'a, 'b, 'c> {
         self.network
     }
 
@@ -103,7 +103,7 @@ impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         let command_and_data = match &self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -121,9 +121,9 @@ impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
             }
             State::StartInitSlaves(count) => {
                 self.initilizer.start(*count);
-                self.initilizer.next_command(buf)
+                self.initilizer.next_pdu(buf)
             }
-            State::WaitInitSlaves(_) => self.initilizer.next_command(buf),
+            State::WaitInitSlaves(_) => self.initilizer.next_pdu(buf),
             State::Complete => None,
         };
         if let Some((command, _)) = command_and_data {
@@ -132,9 +132,9 @@ impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
         command_and_data
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         let wkc = {
-            let CommandData { command, wkc, .. } = recv_data;
+            let Pdu { command, wkc, .. } = recv_data;
             if !(command.c_type == self.command.c_type && command.ado == self.command.ado) {
                 self.state = State::Error(TaskError::UnexpectedCommand);
             }

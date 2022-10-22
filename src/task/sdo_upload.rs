@@ -2,7 +2,7 @@ use super::mailbox::MailboxTask;
 use super::sdo::SdoTaskError;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use super::{MailboxReadTask, MailboxWriteTask};
+//use super::{MailboxReadTask, MailboxWriteTask};
 use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoHeader};
 use crate::frame::{MailboxHeader, MailboxType};
 use crate::interface::*;
@@ -24,7 +24,7 @@ impl Default for State {
 }
 
 #[derive(Debug)]
-pub struct SdoUploader {
+pub struct SdoReadTask {
     slave_address: SlaveAddress,
     state: State,
     mailbox: MailboxTask,
@@ -33,7 +33,7 @@ pub struct SdoUploader {
     rx_sm: SyncManager,
 }
 
-impl SdoUploader {
+impl SdoReadTask {
     pub fn new() -> Self {
         let mailbox = MailboxTask::new();
 
@@ -66,6 +66,7 @@ impl SdoUploader {
 
             &mb_data[MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE
                 ..MailboxHeader::SIZE + CoeHeader::SIZE + SdoHeader::SIZE + size]
+
         // normal
         } else {
             let mut complete_size = [0; 4];
@@ -105,7 +106,7 @@ impl SdoUploader {
         mb_header.set_length(mb_length);
         mb_header.set_prioriry(0);
 
-        MailboxWriteTask::set_mailbox_data(&mb_header.0, &sdo_header, buf);
+        MailboxTask::set_mailbox_data(&mb_header, &sdo_header, buf);
         self.mailbox
             .start_to_write(self.slave_address, self.rx_sm, true);
 
@@ -121,7 +122,7 @@ impl SdoUploader {
     }
 }
 
-impl CyclicTask for SdoUploader {
+impl CyclicTask for SdoReadTask {
     fn is_finished(&self) -> bool {
         match self.state {
             State::Complete | State::Error(_) => true,
@@ -129,23 +130,23 @@ impl CyclicTask for SdoUploader {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
-            State::WriteUploadRequest => self.mailbox.next_command(buf),
+            State::WriteUploadRequest => self.mailbox.next_pdu(buf),
             State::ReadUploadResponse(is_first) => {
                 if is_first {
                     self.mailbox
                         .start_to_read(self.slave_address, self.tx_sm, true);
                 }
-                self.mailbox.next_command(buf)
+                self.mailbox.next_pdu(buf)
             }
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
@@ -164,7 +165,7 @@ impl CyclicTask for SdoUploader {
                 self.mailbox.recieve_and_process(recv_data, sys_time);
                 match self.mailbox.wait() {
                     Some(Ok(_)) => {
-                        let (_mb_header, mb_data) = MailboxReadTask::mailbox_data(recv_data.data);
+                        let (_mb_header, mb_data) = MailboxTask::mailbox_data(recv_data.data);
                         let sdo_header = SdoHeader(&mb_data[CoeHeader::SIZE..]);
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];

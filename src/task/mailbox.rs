@@ -8,7 +8,7 @@ use crate::slave::SyncManager;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailboxTaskError {
-    MailboxNotAvailable,
+    NoSlaveReaction,
     MailboxEmpty,
     MailboxFull,
     BufferSmall,
@@ -55,7 +55,11 @@ impl MailboxTask {
         }
     }
 
-    pub fn set_mailbox_data(mb_header: &[u8; MailboxHeader::SIZE], mb_data: &[u8], buf: &mut [u8]) {
+    pub fn set_mailbox_data(
+        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
+        mb_data: &[u8],
+        buf: &mut [u8],
+    ) {
         MailboxWriteTask::set_mailbox_data(mb_header, mb_data, buf);
     }
 
@@ -104,19 +108,19 @@ impl CyclicTask for MailboxTask {
         }
     }
 
-    fn next_command(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
+    fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         match self.state {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
             State::Processing => match &mut self.inner {
-                Inner::Reader(reader) => reader.next_command(buf),
-                Inner::Writer(writer) => writer.next_command(buf),
+                Inner::Reader(reader) => reader.next_pdu(buf),
+                Inner::Writer(writer) => writer.next_pdu(buf),
             },
         }
     }
 
-    fn recieve_and_process(&mut self, recv_data: &CommandData, sys_time: EtherCatSystemTime) {
+    fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
         match self.state {
             State::Idle => {}
             State::Error(_) => {}
