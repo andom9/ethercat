@@ -83,12 +83,35 @@ impl MailboxTask {
         &mut self,
         slave_address: SlaveAddress,
         rx_sm: SyncManager,
-        wait_full: bool,
+        wait_empty: bool,
     ) {
         let mut writer = MailboxWriteTask::new();
-        writer.start(slave_address, rx_sm, wait_full);
+        writer.start(slave_address, rx_sm, wait_empty);
         self.inner = Inner::Writer(writer);
         self.state = State::Processing;
+    }
+
+    pub fn is_write_mode(&self) -> bool {
+        if let Inner::Writer(_) = self.inner {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_read_mode(&self) -> bool {
+        if let Inner::Reader(_) = self.inner {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn slave_address(&self) -> SlaveAddress {
+        match &self.inner {
+            Inner::Reader(reader) => reader.slave_address(),
+            Inner::Writer(writer) => writer.slave_address(),
+        }
     }
 
     pub fn wait<'b>(&'b self) -> Option<Result<(), TaskError<MailboxTaskError>>> {
@@ -103,7 +126,7 @@ impl MailboxTask {
 impl CyclicTask for MailboxTask {
     fn is_finished(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
+            State::Idle | State::Complete | State::Error(_) => true,
             _ => false,
         }
     }

@@ -1,4 +1,4 @@
-use super::SlaveId;
+use super::{LogicalBits, SlaveId};
 
 #[derive(Debug)]
 pub struct SlaveConfig<'a, 'b> {
@@ -62,22 +62,36 @@ pub struct PdoMapping<'a> {
 
 #[derive(Debug, Clone)]
 pub struct PdoEntry {
-    pub logical_start_address: Option<u32>,
-    pub start_bit: u8,
-    pub bit_length: u8,
-    pub index: u16,
-    pub sub_index: u8,
+    logical_bits: LogicalBits,
+    index: u16,
+    sub_index: u8,
 }
 
 impl PdoEntry {
     pub fn new(index: u16, sub_index: u8, bit_length: u8) -> Self {
+        let mut logical_bits = LogicalBits::new();
+        logical_bits.set_bit_length(bit_length as u16);
         PdoEntry {
-            logical_start_address: None,
-            start_bit: 0,
+            logical_bits,
             index,
             sub_index,
-            bit_length,
         }
+    }
+
+    pub fn logical_address(&self) -> Option<u32> {
+        self.logical_bits.logical_address()
+    }
+
+    pub fn set_logical_address(&mut self, logical_address: Option<u32>) {
+        self.logical_bits.set_logical_address(logical_address);
+    }
+
+    pub fn start_bit(&self) -> u8 {
+        self.logical_bits.start_bit()
+    }
+
+    pub fn set_start_bit(&mut self, start_bit: u8) {
+        self.logical_bits.set_start_bit(start_bit);
     }
 
     pub fn index(&self) -> u16 {
@@ -89,59 +103,30 @@ impl PdoEntry {
     }
 
     pub fn bit_length(&self) -> u8 {
-        self.bit_length
+        self.logical_bits.bit_length() as u8
     }
 
     pub(crate) fn byte_length(&self) -> u8 {
-        let length = self.bit_length + self.start_bit;
-        if length % 8 == 0 {
-            length >> 3
-        } else {
-            (length >> 3) + 1
-        }
+        self.logical_bits.byte_length() as u8
     }
 
-    pub fn read(
+    pub fn read_to_buffer(
         &self,
         logical_address_offset: u32,
-        pdo_image: &[u8],
+        process_data_image: &[u8],
         buf: &mut [u8],
     ) -> Option<()> {
-        let size = self.byte_length() as usize;
-        let logical_start_address = self.logical_start_address?;
-        let start_bit = self.start_bit;
-        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
-        pdo_image.get(pdo_offset + size - 1)?;
-        buf.get(size - 1)?;
-        (0..size - 1).for_each(|i| {
-            let v = pdo_image[pdo_offset + i] >> start_bit;
-            let next_v = pdo_image[pdo_offset + i + 1] << (7 - start_bit);
-            buf[i] = v | next_v;
-        });
-        buf[size - 1] = pdo_image[pdo_offset + size - 1] >> start_bit;
-        Some(())
+        self.logical_bits
+            .read_to_buffer(logical_address_offset, process_data_image, buf)
     }
 
-    pub fn write(
+    pub fn write_from_buffer(
         &self,
         logical_address_offset: u32,
-        pdo_image: &mut [u8],
-        data: &[u8],
+        process_data_image: &mut [u8],
+        buf: &[u8],
     ) -> Option<()> {
-        let size = self.byte_length() as usize;
-        let logical_start_address = self.logical_start_address?;
-        let start_bit = self.start_bit;
-        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
-        pdo_image.get(pdo_offset + size - 1)?;
-        (0..size - 1).for_each(|i| {
-            pdo_image[pdo_offset + i] &= 0xFF >> (7 - start_bit);
-            pdo_image[pdo_offset + i] |= data[i] << start_bit;
-        });
-        pdo_image[pdo_offset + size - 1] &= 0xFF << ((self.bit_length + start_bit) % 8) as u8;
-        pdo_image[pdo_offset + size - 1] |= data[size - 1] << start_bit;
-        if size - 2 != 0 {
-            pdo_image[pdo_offset + size - 1] |= data[size - 2] >> (7 - start_bit);
-        }
-        Some(())
+        self.logical_bits
+            .write_from_buffer(logical_address_offset, process_data_image, buf)
     }
 }

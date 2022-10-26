@@ -413,23 +413,19 @@ impl SyncManagerBuilder {
     }
 }
 
-#[derive(Debug)]
-pub struct FmmuConfig {
+#[derive(Debug, Clone)]
+pub(crate) struct LogicalBits {
     logical_address: Option<u32>,
     start_bit: u8,
-    physical_address: u16,
     bit_length: u16,
-    is_output: bool,
 }
 
-impl FmmuConfig {
-    pub fn new(physical_address: u16, bit_length: u16, is_output: bool) -> Self {
+impl LogicalBits {
+    pub fn new() -> Self {
         Self {
             logical_address: None,
             start_bit: 0,
-            physical_address,
-            bit_length,
-            is_output,
+            bit_length: 0,
         }
     }
 
@@ -441,28 +437,12 @@ impl FmmuConfig {
         self.logical_address = logical_address;
     }
 
-    pub fn physical_address(&self) -> u16 {
-        self.physical_address
-    }
-
-    pub fn set_physical_address(&mut self, physical_address: u16) {
-        self.physical_address = physical_address;
-    }
-
     pub fn start_bit(&self) -> u8 {
         self.start_bit
     }
 
     pub fn set_start_bit(&mut self, start_bit: u8) {
         self.start_bit = start_bit;
-    }
-
-    pub fn is_output(&self) -> bool {
-        self.is_output
-    }
-
-    pub fn set_direction(&mut self, is_output: bool) {
-        self.is_output = is_output;
     }
 
     pub fn bit_length(&self) -> u16 {
@@ -474,11 +454,11 @@ impl FmmuConfig {
     }
 
     pub fn byte_length(&self) -> u16 {
-        let len = self.bit_length + self.start_bit as u16;
-        if len % 8 == 0 {
-            len >> 3
+        let length = self.bit_length + self.start_bit as u16;
+        if length % 8 == 0 {
+            length >> 3
         } else {
-            (len >> 3) + 1
+            (length >> 3) + 1
         }
     }
 
@@ -488,6 +468,153 @@ impl FmmuConfig {
             7
         } else {
             mod8 as u8 - 1
+        }
+    }
+
+    pub fn read_to_buffer(
+        &self,
+        logical_address_offset: u32,
+        process_data_image: &[u8],
+        buf: &mut [u8],
+    ) -> Option<()> {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_address?;
+        let start_bit = self.start_bit;
+        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
+        process_data_image.get(pdo_offset + size - 1)?;
+        buf.get(size - 1)?;
+        (0..size - 1).for_each(|i| {
+            let v = process_data_image[pdo_offset + i] >> start_bit;
+            let next_v = process_data_image[pdo_offset + i + 1] << (7 - start_bit);
+            buf[i] = v | next_v;
+        });
+        buf[size - 1] = process_data_image[pdo_offset + size - 1] >> start_bit;
+        Some(())
+    }
+
+    pub fn write_from_buffer(
+        &self,
+        logical_address_offset: u32,
+        process_data_image: &mut [u8],
+        buf: &[u8],
+    ) -> Option<()> {
+        let size = self.byte_length() as usize;
+        let logical_start_address = self.logical_address?;
+        let start_bit = self.start_bit;
+        let pdo_offset = (logical_start_address - logical_address_offset) as usize;
+        process_data_image.get(pdo_offset + size - 1)?;
+        (0..size - 1).for_each(|i| {
+            process_data_image[pdo_offset + i] &= 0xFF >> (7 - start_bit);
+            process_data_image[pdo_offset + i] |= buf[i] << start_bit;
+        });
+        process_data_image[pdo_offset + size - 1] &=
+            0xFF << ((self.bit_length + start_bit as u16) % 8) as u8;
+        process_data_image[pdo_offset + size - 1] |= buf[size - 1] << start_bit;
+        if size - 2 != 0 {
+            process_data_image[pdo_offset + size - 1] |= buf[size - 2] >> (7 - start_bit);
+        }
+        Some(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FmmuConfig {
+    logical_bits: LogicalBits,
+    physical_address: u16,
+    direction: Direction,
+}
+
+impl FmmuConfig {
+    pub fn new(physical_address: u16, bit_length: u16, direction: Direction) -> Self {
+        let mut logical_bits = LogicalBits::new();
+        logical_bits.set_bit_length(bit_length);
+        Self {
+            logical_bits,
+            physical_address,
+            direction,
+        }
+    }
+
+    pub fn logical_address(&self) -> Option<u32> {
+        self.logical_bits.logical_address()
+    }
+
+    pub fn set_logical_address(&mut self, logical_address: Option<u32>) {
+        self.logical_bits.set_logical_address(logical_address);
+    }
+
+    pub fn start_bit(&self) -> u8 {
+        self.logical_bits.start_bit()
+    }
+
+    pub fn set_start_bit(&mut self, start_bit: u8) {
+        self.logical_bits.set_start_bit(start_bit);
+    }
+
+    pub fn bit_length(&self) -> u16 {
+        self.logical_bits.bit_length()
+    }
+
+    pub fn set_bit_length(&mut self, bit_length: u16) {
+        self.logical_bits.set_bit_length(bit_length);
+    }
+
+    pub fn physical_address(&self) -> u16 {
+        self.physical_address
+    }
+
+    pub fn set_physical_address(&mut self, physical_address: u16) {
+        self.physical_address = physical_address;
+    }
+
+    pub fn direction(&self) -> Direction {
+        self.direction
+    }
+
+    pub fn set_direction(&mut self, direction: Direction) {
+        self.direction = direction;
+    }
+
+    pub fn byte_length(&self) -> u16 {
+        self.logical_bits.byte_length()
+    }
+
+    pub fn end_bit(&self) -> u8 {
+        self.logical_bits.end_bit()
+    }
+
+    pub fn read_to_buffer(
+        &self,
+        logical_address_offset: u32,
+        process_data_image: &[u8],
+        buf: &mut [u8],
+    ) -> Option<()> {
+        self.logical_bits
+            .read_to_buffer(logical_address_offset, process_data_image, buf)
+    }
+
+    pub fn write_from_buffer(
+        &self,
+        logical_address_offset: u32,
+        process_data_image: &mut [u8],
+        buf: &[u8],
+    ) -> Option<()> {
+        self.logical_bits
+            .write_from_buffer(logical_address_offset, process_data_image, buf)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Direction {
+    Input,
+    Output,
+}
+
+impl Direction {
+    pub fn is_output(&self) -> bool {
+        match self {
+            Direction::Output => true,
+            Direction::Input => false,
         }
     }
 }

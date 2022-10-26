@@ -116,6 +116,11 @@ impl From<SocketHandle> for usize {
         handle.0
     }
 }
+impl From<usize> for SocketHandle {
+    fn from(index: usize) -> Self {
+        SocketHandle(index)
+    }
+}
 
 // #[derive(Debug)]
 // pub enum SocketOption<S> {
@@ -137,14 +142,14 @@ where
     iface: PduInterface<'frame, D>,
     //sockets: [SocketOption<PduSocket<'buf>>; N],
     //free_index: SocketHandle,
-    socket_set: ArraySet<SocketHandle, PduSocket<'buf>, N>,
+    socket_set: IndexSet<SocketHandle, PduSocket<'buf>, N>,
     pub lost_frame_count: usize,
 }
 
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
-    [SetOption<SocketHandle, PduSocket<'buf>>; N]: Default,
+    //[IndexOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
     pub fn new(
         iface: PduInterface<'frame, D>,
@@ -156,7 +161,7 @@ where
         //    .for_each(|(i, socket)| *socket = SocketOption::NextFreeIndex(SocketHandle(i + 1)));
         Self {
             iface,
-            socket_set: ArraySet::new(),
+            socket_set: IndexSet::new(),
             //sockets,
             //free_index: SocketHandle(0),
             lost_frame_count: 0,

@@ -3,12 +3,9 @@ use super::SlaveInitTask;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::CommandType;
-use crate::interface::*;
-use crate::register::DlControl;
-use crate::register::SyncManagerStatus;
-use crate::slave::FmmuConfig;
-use crate::slave::Network;
-use crate::slave::Slave;
+use crate::interface::{Command, Pdu};
+use crate::register::{DlControl, SyncManagerStatus};
+use crate::slave::{Direction, FmmuConfig, Network, Slave};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetworkInitTaskError {
@@ -172,8 +169,11 @@ impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
                             let mb_tx_sm_status =
                                 SyncManagerStatus::ADDRESS + 0x08 * tx_sm_number as u16;
                             let bit_length = SyncManagerStatus::SIZE * 8;
-                            slave.fmmu_config_mut()[2] =
-                                Some(FmmuConfig::new(mb_tx_sm_status, bit_length as u16, false));
+                            slave.fmmu_config_mut()[2] = Some(FmmuConfig::new(
+                                mb_tx_sm_status,
+                                bit_length as u16,
+                                Direction::Input,
+                            ));
                         }
                         if self.network.push_slave(slave).is_err() {
                             self.state = State::Error(NetworkInitTaskError::TooManySlaves.into());

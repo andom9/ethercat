@@ -51,6 +51,10 @@ impl MailboxReadTask {
         }
     }
 
+    pub fn slave_address(&self) -> SlaveAddress {
+        self.slave_address
+    }
+
     pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
         (
             MailboxHeader(&buf[..MailboxHeader::SIZE]),
@@ -81,7 +85,7 @@ impl MailboxReadTask {
 impl CyclicTask for MailboxReadTask {
     fn is_finished(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
+            State::Idle | State::Complete | State::Error(_) => true,
             _ => false,
         }
     }

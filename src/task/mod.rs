@@ -3,7 +3,6 @@ mod al_state_transfer;
 mod dc_initilize;
 mod error;
 mod mailbox;
-mod mailbox_app;
 mod mailbox_read;
 mod mailbox_write;
 mod network_initilize;
@@ -36,7 +35,7 @@ use crate::{
     },
     register::{AlStatusCode, SiiData},
     slave::{AlState, Network, Slave, SlaveInfo},
-    util::SetOption,
+    util::IndexOption,
 };
 
 use core::time::Duration;
@@ -70,7 +69,7 @@ pub trait CyclicTask {
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
-    [SetOption<SocketHandle, PduSocket<'buf>>; N]: Default,
+    //[IndexOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
     fn block<C: CyclicTask, E>(
         &mut self,

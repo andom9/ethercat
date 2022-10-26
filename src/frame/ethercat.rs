@@ -78,15 +78,21 @@ impl EtherCatPduHeader<[u8; 10]> {
 }
 
 impl<T: AsRef<[u8]>> EtherCatPduHeader<T> {
-    pub fn data(&self) -> &[u8] {
-        &self.0.as_ref()[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + self.length() as usize]
-    }
+    //pub fn data(&self) -> &[u8] {
+    //    &self.0.as_ref()[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + self.length() as usize]
+    //}
 
     pub fn wkc(&self) -> Option<u16> {
         let len = self.length() as usize;
         let low = self.0.as_ref().get(EtherCatPduHeader::SIZE + len)?;
         let high = self.0.as_ref().get(EtherCatPduHeader::SIZE + len + 1)?;
         Some(((*high as u16) << 8) | (*low as u16))
+    }
+}
+
+impl<'a> EtherCatPduHeader<&'a [u8]> {
+    pub fn data(&self) -> &'a [u8] {
+        &self.0[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + self.length() as usize]
     }
 }
 
@@ -109,10 +115,29 @@ impl MailboxHeader<[u8; 6]> {
     }
 }
 
+impl<B: AsRef<[u8]>> MailboxHeader<B> {
+    //pub fn data(&self) -> Option<&[u8]> {
+    //    let len = self.length() as usize;
+    //    self.0.as_ref().get(MailboxHeader::SIZE + len - 1)?;
+    //    Some(&self.0.as_ref()[MailboxHeader::SIZE..MailboxHeader::SIZE + len - 1])
+    //}
+
+    pub fn mb_type(&self) -> MailboxType {
+        self.mailbox_type().into()
+    }
+}
+
+impl<'a> MailboxHeader<&'a [u8]> {
+    pub fn data(&self) -> Option<&'a [u8]> {
+        let len = self.length() as usize;
+        self.0.get(MailboxHeader::SIZE + len - 1)?;
+        Some(&self.0[MailboxHeader::SIZE..MailboxHeader::SIZE + len - 1])
+    }
+}
+
 #[derive(Debug, Clone, Copy, FromPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MailboxType {
-    #[num_enum(default)]
     Error = 0,
     AoE = 1,
     EoE = 2,
@@ -120,6 +145,8 @@ pub enum MailboxType {
     FoE = 4,
     SoE = 5,
     VoE = 0xf,
+    #[num_enum(default)]
+    Other,
 }
 
 //pub const MAILBOX_ERROR_LENGTH: usize = 4;

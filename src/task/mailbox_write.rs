@@ -49,6 +49,10 @@ impl MailboxWriteTask {
         }
     }
 
+    pub fn slave_address(&self) -> SlaveAddress {
+        self.slave_address
+    }
+
     pub fn set_mailbox_data(
         mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
         mb_data: &[u8],
@@ -87,7 +91,7 @@ impl MailboxWriteTask {
 impl CyclicTask for MailboxWriteTask {
     fn is_finished(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
+            State::Idle | State::Complete | State::Error(_) => true,
             _ => false,
         }
     }
