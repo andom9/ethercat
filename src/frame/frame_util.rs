@@ -3,20 +3,20 @@
 use crate::frame::ethercat::*;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct EtherCatFrame<B> {
+pub struct EtherCatFrameUtil<B> {
     buffer: B,
     free_offset: usize,
     index: u8,
 }
 
-impl<B: AsRef<[u8]>> EtherCatFrame<B> {
+impl<B: AsRef<[u8]>> EtherCatFrameUtil<B> {
     pub fn new(buffer: B) -> Option<Self> {
-        let header_length = EtherCatHeader::SIZE + EthernetHeader::SIZE;
+        let header_length = EtherCatFrame::HEADER_SIZE + EthernetFrame::HEADER_SIZE;
 
         if buffer.as_ref().len() < header_length {
             return None;
         }
-        let ec_packet = EtherCatHeader(&buffer.as_ref()[EthernetHeader::SIZE..]);
+        let ec_packet = EtherCatFrame(&buffer.as_ref()[EthernetFrame::HEADER_SIZE..]);
         let length = ec_packet.length();
         Some(Self {
             buffer,
@@ -26,8 +26,8 @@ impl<B: AsRef<[u8]>> EtherCatFrame<B> {
     }
 
     pub fn new_unchecked(buffer: B) -> Self {
-        let header_length = EtherCatHeader::SIZE + EthernetHeader::SIZE;
-        let ec_packet = EtherCatHeader(&buffer.as_ref()[EthernetHeader::SIZE..]);
+        let header_length = EtherCatFrame::HEADER_SIZE + EthernetFrame::HEADER_SIZE;
+        let ec_packet = EtherCatFrame(&buffer.as_ref()[EthernetFrame::HEADER_SIZE..]);
         let length = ec_packet.length();
         Self {
             buffer,
@@ -52,21 +52,21 @@ impl<B: AsRef<[u8]>> EtherCatFrame<B> {
     }
 }
 
-impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrame<B> {
+impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrameUtil<B> {
     pub fn init(&mut self) {
         self.buffer.as_mut().iter_mut().for_each(|d| *d = 0);
 
         {
-            let mut ethernet_frame = EthernetHeader(&mut self.buffer);
+            let mut ethernet_frame = EthernetFrame(&mut self.buffer);
             ethernet_frame.set_ethercat_default();
         }
         {
             let mut ethercat_frame =
-                EtherCatHeader(&mut self.buffer.as_mut()[EthernetHeader::SIZE..]);
+                EtherCatFrame(&mut self.buffer.as_mut()[EthernetFrame::HEADER_SIZE..]);
             ethercat_frame.set_length(0);
             ethercat_frame.set_ethercat_type(1);
         }
-        self.free_offset = EthernetHeader::SIZE + EtherCatHeader::SIZE;
+        self.free_offset = EthernetFrame::HEADER_SIZE + EtherCatFrame::HEADER_SIZE;
         self.index = 0;
     }
 
@@ -84,7 +84,7 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrame<B> {
         index: Option<u8>,
     ) -> bool {
         let data_len = data.len();
-        let dlpdu_len = data_len + EtherCatPduHeader::SIZE + WKC_LENGTH;
+        let dlpdu_len = data_len + EtherCatPdu::HEADER_SIZE + WKC_LENGTH;
         if dlpdu_len > self.buffer.as_ref().len() - self.free_offset {
             return false;
         }
@@ -92,14 +92,14 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrame<B> {
         //最後のEtherCatPduを変更
         if let Some(pre_dlpdu_offset) = self.dlpdu_offsets().last() {
             if self.buffer.as_ref()[pre_dlpdu_offset..]
-                .get(EtherCatPduHeader::SIZE - 1)
+                .get(EtherCatPdu::HEADER_SIZE - 1)
                 .is_some()
             {
-                EtherCatPduHeader(&mut self.buffer.as_mut()[pre_dlpdu_offset..]).set_has_next(true)
+                EtherCatPdu(&mut self.buffer.as_mut()[pre_dlpdu_offset..]).set_has_next(true)
             }
         }
 
-        let mut dlpdu_frame = EtherCatPduHeader(&mut self.buffer.as_mut()[self.free_offset..]);
+        let mut dlpdu_frame = EtherCatPdu(&mut self.buffer.as_mut()[self.free_offset..]);
 
         dlpdu_frame.set_command_type(command as u8);
         dlpdu_frame.set_adp(adp);
@@ -111,15 +111,16 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrame<B> {
         dlpdu_frame.set_length(data_len as u16);
 
         for (i, d) in data.iter().enumerate() {
-            self.buffer.as_mut()[self.free_offset + EtherCatPduHeader::SIZE + i] = *d;
+            self.buffer.as_mut()[self.free_offset + EtherCatPdu::HEADER_SIZE + i] = *d;
         }
 
         //wkcを0にする
-        self.buffer.as_mut()[self.free_offset + EtherCatPduHeader::SIZE + data_len] = 0;
-        self.buffer.as_mut()[self.free_offset + EtherCatPduHeader::SIZE + data_len + 1] = 0;
+        self.buffer.as_mut()[self.free_offset + EtherCatPdu::HEADER_SIZE + data_len] = 0;
+        self.buffer.as_mut()[self.free_offset + EtherCatPdu::HEADER_SIZE + data_len + 1] = 0;
 
         //EtherCatヘッダーのlengthフィールドを更新する。
-        let mut ethercat_frame = EtherCatHeader(&mut self.buffer.as_mut()[EthernetHeader::SIZE..]);
+        let mut ethercat_frame =
+            EtherCatFrame(&mut self.buffer.as_mut()[EthernetFrame::HEADER_SIZE..]);
         let ec_frame_len = ethercat_frame.length();
         let datagrams_length = ec_frame_len as usize + dlpdu_len;
         ethercat_frame.set_length(datagrams_length as u16);
@@ -138,7 +139,7 @@ pub struct EtherCatPduOffsets<B> {
 
 impl<B: AsRef<[u8]>> EtherCatPduOffsets<B> {
     fn new_for_ethercat_frame(buffer: B, length: usize) -> Self {
-        let offset = EtherCatHeader::SIZE + EthernetHeader::SIZE;
+        let offset = EtherCatFrame::HEADER_SIZE + EthernetFrame::HEADER_SIZE;
         Self::new(buffer, length, offset)
     }
 
@@ -155,15 +156,15 @@ impl<B: AsRef<[u8]>> Iterator for EtherCatPduOffsets<B> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        self.buffer.as_ref()[self.offset..].get(EtherCatPduHeader::SIZE - 1)?;
-        let dlpdu = EtherCatPduHeader(&self.buffer.as_ref()[self.offset..]);
+        self.buffer.as_ref()[self.offset..].get(EtherCatPdu::HEADER_SIZE - 1)?;
+        let dlpdu = EtherCatPdu(&self.buffer.as_ref()[self.offset..]);
         let len = dlpdu.length();
         if len == 0 {
             return None;
         }
         if self.offset < self.length {
             let b = self.offset;
-            self.offset += EtherCatPduHeader::SIZE + len as usize + WKC_LENGTH;
+            self.offset += EtherCatPdu::HEADER_SIZE + len as usize + WKC_LENGTH;
             Some(b)
         } else {
             None
@@ -180,7 +181,7 @@ pub struct EtherCatPdus<'a> {
 
 impl<'a> EtherCatPdus<'a> {
     fn new_for_ethercat_frame(buffer: &'a [u8], length: usize) -> Self {
-        let offset = EtherCatHeader::SIZE + EthernetHeader::SIZE;
+        let offset = EtherCatFrame::HEADER_SIZE + EthernetFrame::HEADER_SIZE;
         Self::new(buffer, length, offset)
     }
 
@@ -194,19 +195,19 @@ impl<'a> EtherCatPdus<'a> {
 }
 
 impl<'a> Iterator for EtherCatPdus<'a> {
-    type Item = EtherCatPduHeader<&'a [u8]>;
+    type Item = EtherCatPdu<&'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;
-        self.buffer[self.offset..].get(EtherCatPduHeader::SIZE - 1)?;
-        let dlpdu = EtherCatPduHeader(&self.buffer[self.offset..]);
+        self.buffer[self.offset..].get(EtherCatPdu::HEADER_SIZE - 1)?;
+        let dlpdu = EtherCatPdu(&self.buffer[self.offset..]);
         let len = dlpdu.length();
         if len == 0 {
             return None;
         }
         let start = self.offset;
         if self.offset < self.length {
-            self.offset += EtherCatPduHeader::SIZE + len as usize + WKC_LENGTH;
-            Some(EtherCatPduHeader(&self.buffer[start..self.offset]))
+            self.offset += EtherCatPdu::HEADER_SIZE + len as usize + WKC_LENGTH;
+            Some(EtherCatPdu(&self.buffer[start..self.offset]))
         } else {
             None
         }

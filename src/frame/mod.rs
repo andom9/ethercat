@@ -1,6 +1,6 @@
 mod coe;
 mod ethercat;
-mod ethercat_frame;
+mod frame_util;
 pub use coe::*;
 pub use ethercat::*;
-pub use ethercat_frame::*;
+pub use frame_util::*;

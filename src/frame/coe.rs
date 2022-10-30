@@ -3,35 +3,35 @@ use num_enum::FromPrimitive;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct CoeHeader([u8]);
+    pub struct CoeFrame([u8]);
     u16;
     pub number, set_number: 8, 0;
     u8;
     pub service_type, set_service_type: 15, 12;
 }
 
-impl CoeHeader<[u8; 2]> {
-    pub const SIZE: usize = 2;
+impl CoeFrame<[u8; 2]> {
+    pub const HEADER_SIZE: usize = 2;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
-impl<B: AsRef<[u8]>> CoeHeader<B> {
-    // pub fn data(&self) -> Option<&[u8]> {
-    //     self.0.as_ref().get(CoeHeader::SIZE - 1)?;
-    //     Some(&self.0.as_ref()[CoeHeader::SIZE..])
-    // }
-
+impl<B: AsRef<[u8]>> CoeFrame<B> {
     pub fn coe_service_type(&self) -> CoeServiceType {
         self.service_type().into()
     }
 }
 
-impl<'a> CoeHeader<&'a [u8]> {
-    pub fn data(&self) -> Option<&'a [u8]> {
-        self.0.get(CoeHeader::SIZE - 1)?;
-        Some(&self.0[CoeHeader::SIZE..])
+impl<B: AsMut<[u8]>> CoeFrame<B> {
+    pub fn set_coe_service_type(&mut self, coe_type: CoeServiceType) {
+        self.set_service_type(coe_type as u8)
+    }
+}
+
+impl<'a> CoeFrame<&'a [u8]> {
+    pub fn without_header(&self) -> &'a [u8] {
+        &self.0.as_ref()[CoeFrame::HEADER_SIZE..]
     }
 }
 
@@ -52,7 +52,7 @@ pub enum CoeServiceType {
 
 bitfield! {
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct SdoHeader([u8]);
+    pub struct SdoFrame([u8]);
     pub size_indicator, set_size_indicator: 0;
     pub transfer_type, set_transfer_type: 1;
     pub u8, data_set_size, set_data_set_size: 3, 2;
@@ -62,30 +62,29 @@ bitfield! {
     pub u8, sub_index, set_sub_index: 31, 24;
 }
 
-impl SdoHeader<[u8; 4]> {
-    pub const SIZE: usize = 4;
+impl SdoFrame<[u8; 4]> {
+    pub const HEADER_SIZE: usize = 4;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
-impl<'a> SdoHeader<&'a [u8]> {
-    pub fn data(&self) -> Option<&'a [u8]> {
-        self.0.get(SdoHeader::SIZE - 1)?;
-        Some(&self.0[SdoHeader::SIZE..])
+impl<'a> SdoFrame<&'a [u8]> {
+    pub fn without_header(&self) -> &'a [u8] {
+        &self.0[CoeFrame::HEADER_SIZE..]
     }
 }
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct SdoDownloadNormalHeader([u8]);
+    pub struct SdoDownloadNormalRequestFrame([u8]);
     pub u32, complete_size, set_complete_size: 31, 0;
 }
 
-impl SdoDownloadNormalHeader<[u8; 4]> {
-    pub const SIZE: usize = 4;
+impl SdoDownloadNormalRequestFrame<[u8; 4]> {
+    pub const HEADER_SIZE: usize = 4;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
@@ -129,20 +128,20 @@ pub enum AbortCode {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct Emmergency([u8]);
+    pub struct EmmergencyFrame([u8]);
     u16, error_code, _: 15, 0;
     u8, error_register, _: 23, 16;
     u64, data, _: 63, 24;
 }
 
-impl Emmergency<[u8; 8]> {
+impl EmmergencyFrame<[u8; 8]> {
     pub const SIZE: usize = 8;
     pub fn new() -> Self {
         Self([0; Self::SIZE])
     }
 }
 
-impl<B: AsRef<[u8]>> Emmergency<B> {
+impl<B: AsRef<[u8]>> EmmergencyFrame<B> {
     pub fn emmergency_error_code(&self) -> EmmergencyErrorCode {
         let code = self.error_code();
         let bytes = code.to_be_bytes();

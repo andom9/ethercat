@@ -1,9 +1,10 @@
 mod error;
-mod mailbox;
+pub mod mailbox;
+pub mod sdo;
 pub use error::*;
 
 use crate::{
-    frame::{MailboxHeader, MAX_PDU_DATAGRAM},
+    frame::{MailboxFrame, MAX_PDU_DATAGRAM},
     interface::{
         PduInterface, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
         SocketInterface, TargetSlave,
@@ -187,7 +188,11 @@ where
             let mb_socket = self.sif.get_socket_mut(mailbox_handle).unwrap();
             mailbox_task.process_one_step(&network, mb_socket, sys_time);
             let socket = self.sif.get_socket(handle).unwrap();
-            mailbox_task.find_slave_with_mailbox(network, LOGICAL_START_ADDRESS, socket.data_buf());
+            mailbox_task.find_slave_with_mailbox_from_process_data(
+                network,
+                LOGICAL_START_ADDRESS,
+                socket.data_buf(),
+            );
         }
 
         // comp dc drift
@@ -265,7 +270,7 @@ where
         &mut self,
         slave_address: SlaveAddress,
         wait_full: bool,
-    ) -> Result<(MailboxHeader<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
+    ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
         let (slave, _) = self.network.slave(slave_address).expect("slave not found");
         let slave_info = slave.info();
         self.sif
@@ -275,7 +280,7 @@ where
     pub fn write_mailbox(
         &mut self,
         slave_address: SlaveAddress,
-        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
+        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
         mb_data: &[u8],
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {

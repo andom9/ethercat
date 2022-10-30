@@ -91,7 +91,7 @@ where
     }
 
     pub fn remainig_pdu_data_capacity(&self) -> usize {
-        self.capacity - self.pdus_total_size - EtherCatPduHeader::SIZE - WKC_LENGTH
+        self.capacity - self.pdus_total_size - EtherCatPdu::HEADER_SIZE - WKC_LENGTH
     }
 
     pub fn add_pdu<F: FnOnce(&mut [u8])>(
@@ -101,7 +101,8 @@ where
         data_size: usize,
         data_writer: F,
     ) -> Result<(), Command> {
-        if self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + WKC_LENGTH > self.capacity {
+        if self.pdus_total_size + EtherCatPdu::HEADER_SIZE + data_size + WKC_LENGTH > self.capacity
+        {
             return Err(command);
         }
 
@@ -109,26 +110,26 @@ where
             return Err(command);
         }
 
-        let mut header = [0; EtherCatPduHeader::SIZE];
-        let mut pdu = EtherCatPduHeader(&mut header);
+        let mut header = [0; EtherCatPdu::HEADER_SIZE];
+        let mut pdu = EtherCatPdu(&mut header);
         pdu.set_index(pdu_index);
         pdu.set_command_type(command.c_type as u8);
         pdu.set_adp(command.adp);
         pdu.set_ado(command.ado);
         pdu.set_length(data_size as u16);
 
-        self.buffer[self.pdus_total_size..self.pdus_total_size + EtherCatPduHeader::SIZE]
+        self.buffer[self.pdus_total_size..self.pdus_total_size + EtherCatPdu::HEADER_SIZE]
             .copy_from_slice(&header);
         data_writer(
-            &mut self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE
-                ..self.pdus_total_size + EtherCatPduHeader::SIZE + data_size],
+            &mut self.buffer[self.pdus_total_size + EtherCatPdu::HEADER_SIZE
+                ..self.pdus_total_size + EtherCatPdu::HEADER_SIZE + data_size],
         );
 
         // Wkc field
-        self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + 1] = 0;
-        self.buffer[self.pdus_total_size + EtherCatPduHeader::SIZE + data_size + 2] = 0;
+        self.buffer[self.pdus_total_size + EtherCatPdu::HEADER_SIZE + data_size + 1] = 0;
+        self.buffer[self.pdus_total_size + EtherCatPdu::HEADER_SIZE + data_size + 2] = 0;
 
-        self.pdus_total_size += EtherCatPduHeader::SIZE + data_size + WKC_LENGTH;
+        self.pdus_total_size += EtherCatPdu::HEADER_SIZE + data_size + WKC_LENGTH;
         self.pdu_count += 1;
         Ok(())
     }
@@ -156,9 +157,9 @@ where
         }
         let buffer = &buffer[0..*pdus_total_size];
         if let Some(tx_token) = ethdev.transmit() {
-            let len = EthernetHeader::SIZE + EtherCatHeader::SIZE + *pdus_total_size;
+            let len = EthernetFrame::HEADER_SIZE + EtherCatFrame::HEADER_SIZE + *pdus_total_size;
             let tx_result = tx_token.consume(len, |tx_buffer| {
-                let mut ec_frame = EtherCatFrame::new_unchecked(tx_buffer);
+                let mut ec_frame = EtherCatFrameUtil::new_unchecked(tx_buffer);
                 ec_frame.init();
                 let pdus = EtherCatPdus::new(buffer, *pdus_total_size, 0);
                 for pdu in pdus {
@@ -166,7 +167,7 @@ where
                     let command = CommandType::from(pdu.command_type());
                     let adp = pdu.adp();
                     let ado = pdu.ado();
-                    let data = pdu.data();
+                    let data = &pdu.without_header()[..pdu.length() as usize];
                     if !ec_frame.add_command(command, adp, ado, data, Some(index)) {
                         panic!();
                     }
@@ -205,13 +206,14 @@ where
         loop {
             if let Some(rx_token) = ethdev.receive() {
                 let rx_result = rx_token.consume(|frame| {
-                    let eth = EthernetHeader(&frame);
+                    let eth = EthernetFrame(&frame);
                     if eth.source() == SRC_MAC || eth.ether_type() != ETHERCAT_TYPE {
                         return Ok(()); //continue
                     }
-                    let ec_frame = EtherCatFrame::new_unchecked(frame);
+                    let ec_frame = EtherCatFrameUtil::new_unchecked(frame);
                     for pdu in ec_frame.dlpdus() {
-                        let pdu_size = EtherCatPduHeader::SIZE + pdu.length() as usize + WKC_LENGTH;
+                        let pdu_size =
+                            EtherCatPdu::HEADER_SIZE + pdu.length() as usize + WKC_LENGTH;
                         buffer[*recv_data_size..*recv_data_size + pdu_size].copy_from_slice(pdu.0);
 
                         *recv_data_size += pdu_size;

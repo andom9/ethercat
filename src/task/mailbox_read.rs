@@ -1,7 +1,7 @@
 use super::mailbox::MailboxTaskError;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use crate::frame::{MailboxErrorResponse, MailboxHeader, MailboxType};
+use crate::frame::{MailboxErrorFrame, MailboxFrame, MailboxType};
 use crate::interface::*;
 use crate::register::{SyncManagerActivation, SyncManagerPdiControl, SyncManagerStatus};
 use crate::slave::SyncManager;
@@ -55,10 +55,10 @@ impl MailboxReadTask {
         self.slave_address
     }
 
-    pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
+    pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxFrame<&'a [u8]>, &'a [u8]) {
         (
-            MailboxHeader(&buf[..MailboxHeader::SIZE]),
-            &buf[MailboxHeader::SIZE..],
+            MailboxFrame(&buf[..MailboxFrame::HEADER_SIZE]),
+            &buf[MailboxFrame::HEADER_SIZE..],
         )
     }
 
@@ -170,9 +170,9 @@ impl CyclicTask for MailboxReadTask {
                 if wkc != 1 {
                     self.state = State::RequestRepeat;
                 } else {
-                    let header = MailboxHeader(&data);
+                    let header = MailboxFrame(&data);
                     if header.mailbox_type() == MailboxType::Error as u8 {
-                        let mut err = MailboxErrorResponse::new();
+                        let mut err = MailboxErrorFrame::new();
                         err.0.copy_from_slice(&data[..4]);
                         self.state = State::Error(MailboxTaskError::ErrorResponse(err).into());
                     } else {

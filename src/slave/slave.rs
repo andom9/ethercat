@@ -618,3 +618,27 @@ impl Direction {
         }
     }
 }
+
+// #[derive(Debug)]
+// pub struct ProcessDataImage<'a>{
+//     logical_address_offset: u32,
+//     buffer: &'a mut [u8],
+// }
+
+// impl<'a> ProcessDataImage<'a>{
+//     pub fn new(logical_address_offset: u32, buffer: &'a mut [u8])->Self{
+//         Self { logical_address_offset, buffer }
+//     }
+
+//     pub fn logical_address_offset(&self) -> u32{
+//         self.logical_address_offset
+//     }
+
+//     pub fn buffer(&self) -> &[u8]{
+//         &self.buffer
+//     }
+
+//     pub fn buffer_mut(&mut self) -> &mut [u8]{
+//         &mut self.buffer
+//     }
+// }

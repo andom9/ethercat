@@ -28,7 +28,7 @@ pub mod loop_task;
 use loop_task::AlStateReadTask;
 
 use crate::{
-    frame::MailboxHeader,
+    frame::MailboxFrame,
     interface::{
         Command, Pdu, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
         SocketInterface, TargetSlave,
@@ -228,7 +228,7 @@ where
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
         wait_full: bool,
-    ) -> Result<(MailboxHeader<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
+    ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
         let mut unit = MailboxTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
@@ -250,7 +250,7 @@ where
         &mut self,
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
-        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
+        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
         mb_data: &[u8],
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {

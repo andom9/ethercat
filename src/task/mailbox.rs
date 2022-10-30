@@ -2,7 +2,7 @@ use super::mailbox_read::MailboxReadTask;
 use super::mailbox_write::MailboxWriteTask;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use crate::frame::{MailboxErrorResponse, MailboxHeader};
+use crate::frame::{MailboxErrorFrame, MailboxFrame};
 use crate::interface::*;
 use crate::slave::SyncManager;
 
@@ -12,7 +12,7 @@ pub enum MailboxTaskError {
     MailboxEmpty,
     MailboxFull,
     BufferSmall,
-    ErrorResponse(MailboxErrorResponse<[u8; MailboxErrorResponse::SIZE]>),
+    ErrorResponse(MailboxErrorFrame<[u8; MailboxErrorFrame::SIZE]>),
 }
 
 impl From<MailboxTaskError> for TaskError<MailboxTaskError> {
@@ -56,14 +56,14 @@ impl MailboxTask {
     }
 
     pub fn set_mailbox_data(
-        mb_header: &MailboxHeader<[u8; MailboxHeader::SIZE]>,
+        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
         mb_data: &[u8],
         buf: &mut [u8],
     ) {
         MailboxWriteTask::set_mailbox_data(mb_header, mb_data, buf);
     }
 
-    pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxHeader<&'a [u8]>, &'a [u8]) {
+    pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxFrame<&'a [u8]>, &'a [u8]) {
         MailboxReadTask::mailbox_data(buf)
     }
 

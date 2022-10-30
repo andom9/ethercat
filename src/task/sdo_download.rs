@@ -4,8 +4,8 @@ use super::mailbox_write::MailboxWriteTask;
 use super::sdo::SdoTaskError;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use crate::frame::{AbortCode, CoeHeader, CoeServiceType, SdoDownloadNormalHeader, SdoHeader};
-use crate::frame::{MailboxHeader, MailboxType};
+use crate::frame::{AbortCode, CoeFrame, CoeServiceType, SdoDownloadNormalRequestFrame, SdoFrame};
+use crate::frame::{MailboxFrame, MailboxType};
 use crate::interface::*;
 use crate::slave::{Slave, SyncManager};
 
@@ -58,10 +58,12 @@ impl SdoWriteTask {
         self.rx_sm = slave.info().mailbox_rx_sm().unwrap_or_default();
         self.mailbox_count = slave.increment_mb_count();
 
-        let mut sdo_header = [0; CoeHeader::SIZE + SdoHeader::SIZE + SdoDownloadNormalHeader::SIZE];
-        CoeHeader(&mut sdo_header).set_service_type(CoeServiceType::SdoReq as u8);
+        let mut sdo_header = [0; CoeFrame::HEADER_SIZE
+            + SdoFrame::HEADER_SIZE
+            + SdoDownloadNormalRequestFrame::HEADER_SIZE];
+        CoeFrame(&mut sdo_header).set_service_type(CoeServiceType::SdoReq as u8);
 
-        let mut sdo = SdoHeader(&mut sdo_header[CoeHeader::SIZE..]);
+        let mut sdo = SdoFrame(&mut sdo_header[CoeFrame::HEADER_SIZE..]);
         sdo.set_complete_access(false);
         sdo.set_data_set_size(0);
         sdo.set_command_specifier(1); // download request
@@ -70,10 +72,12 @@ impl SdoWriteTask {
         sdo.set_index(index);
         sdo.set_sub_index(sub_index);
         let data_len = data.len() as u16;
-        SdoDownloadNormalHeader(&mut sdo_header[CoeHeader::SIZE + SdoHeader::SIZE..])
-            .set_complete_size(data_len as u32);
+        SdoDownloadNormalRequestFrame(
+            &mut sdo_header[CoeFrame::HEADER_SIZE + SdoFrame::HEADER_SIZE..],
+        )
+        .set_complete_size(data_len as u32);
 
-        let mut mb_header = MailboxHeader::new();
+        let mut mb_header = MailboxFrame::new();
         mb_header.set_address(0);
         mb_header.set_count(self.mailbox_count);
         mb_header.set_mailbox_type(MailboxType::CoE as u8);
@@ -82,7 +86,7 @@ impl SdoWriteTask {
 
         MailboxWriteTask::set_mailbox_data(&mb_header, &sdo_header, buf);
         buf.iter_mut()
-            .skip(MailboxHeader::SIZE + sdo_header.len())
+            .skip(MailboxFrame::HEADER_SIZE + sdo_header.len())
             .zip(data)
             .for_each(|(b, d)| *b = *d);
 
@@ -145,12 +149,12 @@ impl CyclicTask for SdoWriteTask {
                 match self.mailbox.wait() {
                     Some(Ok(_)) => {
                         let (_mb_header, mb_data) = MailboxReadTask::mailbox_data(recv_data.data);
-                        let sdo_header = SdoHeader(&mb_data[CoeHeader::SIZE..]);
+                        let sdo_header = SdoFrame(&mb_data[CoeFrame::HEADER_SIZE..]);
                         if sdo_header.command_specifier() == 4 {
                             let mut abort_code = [0; 4];
                             for (code, data) in abort_code
                                 .iter_mut()
-                                .zip(sdo_header.0.iter().skip(SdoHeader::SIZE))
+                                .zip(sdo_header.0.iter().skip(SdoFrame::HEADER_SIZE))
                             {
                                 *code = *data;
                             }

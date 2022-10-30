@@ -43,11 +43,11 @@ impl<'a> PduSocket<'a> {
     }
 
     pub fn data_buf(&self) -> &[u8] {
-        self.data_buf
+        &self.data_buf
     }
 
     pub fn data_buf_mut(&mut self) -> &mut [u8] {
-        self.data_buf
+        &mut self.data_buf
     }
 
     pub fn clear(&mut self) {
@@ -271,7 +271,7 @@ where
                     Command::new(CommandType::from(pdu.command_type()), pdu.adp(), pdu.ado());
                 let recv_data = Pdu {
                     command,
-                    data: pdu.data(),
+                    data: &pdu.without_header()[..pdu.length() as usize],
                     wkc,
                 };
                 socket.recieve(recv_data);

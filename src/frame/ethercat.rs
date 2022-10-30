@@ -1,6 +1,12 @@
 use bitfield::*;
 use num_enum::FromPrimitive;
 
+use crate::interface::PduSocket;
+
+use super::{
+    AbortCode, CoeFrame, CoeServiceType, EmmergencyFrame, SdoDownloadNormalRequestFrame, SdoFrame,
+};
+
 const DST_MAC: u64 = 0xFF_FF_FF_FF_FF_FF;
 pub(crate) const SRC_MAC: u64 = 0x05_05_05_05_05_05;
 pub(crate) const WKC_LENGTH: usize = 2;
@@ -8,13 +14,13 @@ pub(crate) const ETHERCAT_TYPE: u16 = 0x88A4;
 
 pub(crate) const ETHERNET_FRAME_SIZE_WITHOUT_FCS: usize = 1514;
 pub(crate) const MAX_ETHERCAT_DATAGRAM: usize =
-    ETHERNET_FRAME_SIZE_WITHOUT_FCS - EthernetHeader::SIZE - EtherCatHeader::SIZE;
+    ETHERNET_FRAME_SIZE_WITHOUT_FCS - EthernetFrame::HEADER_SIZE - EtherCatFrame::HEADER_SIZE;
 pub(crate) const MAX_PDU_DATAGRAM: usize =
-    MAX_ETHERCAT_DATAGRAM - EtherCatPduHeader::SIZE - WKC_LENGTH;
+    MAX_ETHERCAT_DATAGRAM - EtherCatPdu::HEADER_SIZE - WKC_LENGTH;
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct EthernetHeader(MSB0 [u8]);
+    pub struct EthernetFrame(MSB0 [u8]);
     u64;
     pub destination, set_destination: 47, 0;
     pub source, set_source: 48+47, 48;
@@ -22,14 +28,14 @@ bitfield! {
     pub ether_type, set_ether_type: 48+47+1+15, 48+47+1;
 }
 
-impl EthernetHeader<[u8; 14]> {
-    pub const SIZE: usize = 14;
+impl EthernetFrame<[u8; 14]> {
+    pub const HEADER_SIZE: usize = 14;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> EthernetHeader<T> {
+impl<T: AsRef<[u8]> + AsMut<[u8]>> EthernetFrame<T> {
     pub fn set_ethercat_default(&mut self) {
         self.set_destination(DST_MAC);
         self.set_source(SRC_MAC);
@@ -39,23 +45,23 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> EthernetHeader<T> {
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct EtherCatHeader([u8]);
+    pub struct EtherCatFrame([u8]);
     u16;
     pub length, set_length: 10, 0;
     u8;
     pub ethercat_type, set_ethercat_type: 15, 12;
 }
 
-impl EtherCatHeader<[u8; 2]> {
-    pub const SIZE: usize = 2;
+impl EtherCatFrame<[u8; 2]> {
+    pub const HEADER_SIZE: usize = 2;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct EtherCatPduHeader([u8]);
+    pub struct EtherCatPdu([u8]);
     u8;
     pub command_type, set_command_type: 7, 0;
     pub index, set_index: 15, 8;
@@ -70,35 +76,31 @@ bitfield! {
     pub irq, set_irq: 64+15, 64;
 }
 
-impl EtherCatPduHeader<[u8; 10]> {
-    pub const SIZE: usize = 10;
+impl EtherCatPdu<[u8; 10]> {
+    pub const HEADER_SIZE: usize = 10;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
-impl<T: AsRef<[u8]>> EtherCatPduHeader<T> {
-    //pub fn data(&self) -> &[u8] {
-    //    &self.0.as_ref()[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + self.length() as usize]
-    //}
-
+impl<T: AsRef<[u8]>> EtherCatPdu<T> {
     pub fn wkc(&self) -> Option<u16> {
         let len = self.length() as usize;
-        let low = self.0.as_ref().get(EtherCatPduHeader::SIZE + len)?;
-        let high = self.0.as_ref().get(EtherCatPduHeader::SIZE + len + 1)?;
+        let low = self.0.as_ref().get(EtherCatPdu::HEADER_SIZE + len)?;
+        let high = self.0.as_ref().get(EtherCatPdu::HEADER_SIZE + len + 1)?;
         Some(((*high as u16) << 8) | (*low as u16))
     }
 }
 
-impl<'a> EtherCatPduHeader<&'a [u8]> {
-    pub fn data(&self) -> &'a [u8] {
-        &self.0[EtherCatPduHeader::SIZE..EtherCatPduHeader::SIZE + self.length() as usize]
+impl<'a> EtherCatPdu<&'a [u8]> {
+    pub fn without_header(&self) -> &'a [u8] {
+        &self.0[EtherCatPdu::HEADER_SIZE..]
     }
 }
 
 bitfield! {
     #[derive(Debug, Clone)]
-    pub struct MailboxHeader([u8]);
+    pub struct MailboxFrame([u8]);
     u16;
     pub length, set_length: 15, 0;
     pub address, set_address: 31, 16;
@@ -108,30 +110,28 @@ bitfield! {
     pub count, set_count: 46, 44;
 }
 
-impl MailboxHeader<[u8; 6]> {
-    pub const SIZE: usize = 6;
+impl MailboxFrame<[u8; 6]> {
+    pub const HEADER_SIZE: usize = 6;
     pub fn new() -> Self {
-        Self([0; Self::SIZE])
+        Self([0; Self::HEADER_SIZE])
     }
 }
 
-impl<B: AsRef<[u8]>> MailboxHeader<B> {
-    //pub fn data(&self) -> Option<&[u8]> {
-    //    let len = self.length() as usize;
-    //    self.0.as_ref().get(MailboxHeader::SIZE + len - 1)?;
-    //    Some(&self.0.as_ref()[MailboxHeader::SIZE..MailboxHeader::SIZE + len - 1])
-    //}
-
+impl<B: AsRef<[u8]>> MailboxFrame<B> {
     pub fn mb_type(&self) -> MailboxType {
         self.mailbox_type().into()
     }
 }
 
-impl<'a> MailboxHeader<&'a [u8]> {
-    pub fn data(&self) -> Option<&'a [u8]> {
-        let len = self.length() as usize;
-        self.0.get(MailboxHeader::SIZE + len - 1)?;
-        Some(&self.0[MailboxHeader::SIZE..MailboxHeader::SIZE + len - 1])
+impl<B: AsMut<[u8]>> MailboxFrame<B> {
+    pub fn set_mb_type(&mut self, mb_type: MailboxType) {
+        self.set_mailbox_type(mb_type as u8)
+    }
+}
+
+impl<'a> MailboxFrame<&'a [u8]> {
+    pub fn without_header(&self) -> &'a [u8] {
+        &self.0[MailboxFrame::HEADER_SIZE..]
     }
 }
 
@@ -149,24 +149,22 @@ pub enum MailboxType {
     Other,
 }
 
-//pub const MAILBOX_ERROR_LENGTH: usize = 4;
-
 bitfield! {
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct MailboxErrorResponse([u8]);
+    pub struct MailboxErrorFrame([u8]);
     u16;
     pub service_type, _: 15, 0;
     pub detail, _: 31, 16;
 }
 
-impl MailboxErrorResponse<[u8; 4]> {
+impl MailboxErrorFrame<[u8; 4]> {
     pub const SIZE: usize = 4;
     pub fn new() -> Self {
         Self([0; Self::SIZE])
     }
 }
 
-impl<T: AsRef<[u8]>> MailboxErrorResponse<T> {
+impl<T: AsRef<[u8]>> MailboxErrorFrame<T> {
     pub fn error_detail(&self) -> MailboxErrorDetail {
         MailboxErrorDetail::from(self.detail())
     }
@@ -236,3 +234,440 @@ pub enum MailboxErrorDetail {
     NoMoreMemory = 0x07,
     InvalidSize = 0x08,
 }
+
+impl<'a> MailboxFrame<&'a [u8]> {
+    pub fn mailbox(&self) -> Result<Mailbox<'a>, LengthError> {
+        let len = self.0.len();
+        if len < MailboxFrame::HEADER_SIZE {
+            return Err(LengthError);
+        }
+        let coe_frame = self.without_header();
+        let address = self.address();
+        let mb_count = self.count();
+        match self.mb_type() {
+            MailboxType::Error => {
+                let detail = MailboxErrorFrame(&coe_frame);
+                detail
+                    .0
+                    .get(MailboxErrorFrame::SIZE - 1)
+                    .ok_or(LengthError)?;
+                Ok(Mailbox::new(
+                    address,
+                    mb_count,
+                    Message::Error(detail.error_detail()),
+                ))
+            }
+            MailboxType::AoE => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::AoE),
+            )),
+            MailboxType::EoE => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::EoE),
+            )),
+            MailboxType::CoE => {
+                if len < MailboxFrame::HEADER_SIZE + CoeFrame::HEADER_SIZE + SdoFrame::HEADER_SIZE {
+                    return Err(LengthError);
+                }
+                let sdo_frame = CoeFrame(coe_frame).without_header();
+                let sdo_payload = SdoFrame(sdo_frame).without_header();
+                let coe = match CoeFrame(coe_frame).coe_service_type() {
+                    CoeServiceType::Emmergency => {
+                        sdo_payload
+                            .get(EmmergencyFrame::SIZE - 1)
+                            .ok_or(LengthError)?;
+                        CoE::Emmergency(EmmergencyFrame(&sdo_payload))
+                    }
+                    CoeServiceType::SdoReq => {
+                        let sdo_header = SdoFrame(sdo_frame);
+                        let index = sdo_header.index();
+                        let sub_index = sdo_header.sub_index();
+                        match sdo_header.command_specifier() {
+                            // Download Request
+                            1 => {
+                                // expedited
+                                if sdo_header.transfer_type() {
+                                    let size = match sdo_header.data_set_size() {
+                                        0 => 4,
+                                        1 => 3,
+                                        2 => 2,
+                                        3 => 1,
+                                        _ => 0,
+                                    };
+                                    sdo_payload.get(size - 1).ok_or(LengthError)?;
+
+                                    CoE::SdoReq(SdoReq::new(
+                                        index,
+                                        sub_index,
+                                        SdoReqType::DownLoad(&sdo_payload[..size]),
+                                    ))
+                                // normal
+                                } else {
+                                    sdo_payload.get(4 - 1).ok_or(LengthError)?;
+
+                                    let mut complete_size = [0; 4];
+                                    let buf = &sdo_payload[..4];
+                                    complete_size.iter_mut().zip(buf).for_each(|(s, b)| *s = *b);
+                                    let size = u32::from_le_bytes(complete_size) as usize;
+
+                                    sdo_payload.get(size + 4 - 1).ok_or(LengthError)?;
+
+                                    CoE::SdoReq(SdoReq::new(
+                                        index,
+                                        sub_index,
+                                        SdoReqType::DownLoad(&sdo_payload[4..size + 4]),
+                                    ))
+                                }
+                            }
+                            // Upload Request
+                            2 => CoE::SdoReq(SdoReq::new(index, sub_index, SdoReqType::Upload)),
+                            // Abort
+                            4 => {
+                                let mut abort_code = [0; 4];
+                                sdo_header
+                                    .0
+                                    .get(SdoFrame::HEADER_SIZE + 4 - 1)
+                                    .ok_or(LengthError)?;
+                                abort_code
+                                    .iter_mut()
+                                    .zip(sdo_header.0.iter().skip(SdoFrame::HEADER_SIZE))
+                                    .for_each(|(a_code, data)| *a_code = *data);
+                                let abort_code = AbortCode::from(u32::from_le_bytes(abort_code));
+                                CoE::SdoReq(SdoReq::new(
+                                    index,
+                                    sub_index,
+                                    SdoReqType::Abort(abort_code),
+                                ))
+                            }
+                            _ => CoE::SdoReq(SdoReq::new(
+                                index,
+                                sub_index,
+                                SdoReqType::Other(CommandSpecifier(sdo_header.command_specifier())),
+                            )),
+                        }
+                    }
+                    CoeServiceType::SdoRes => {
+                        let sdo_header = SdoFrame(sdo_frame);
+                        let index = sdo_header.index();
+                        let sub_index = sdo_header.sub_index();
+                        match sdo_header.command_specifier() {
+                            // Upload Response
+                            2 => {
+                                // expedited
+                                if sdo_header.transfer_type() {
+                                    let size = match sdo_header.data_set_size() {
+                                        0 => 4,
+                                        1 => 3,
+                                        2 => 2,
+                                        3 => 1,
+                                        _ => 0,
+                                    };
+                                    sdo_payload.get(size - 1).ok_or(LengthError)?;
+
+                                    CoE::SdoRes(SdoRes::new(
+                                        index,
+                                        sub_index,
+                                        SdoResType::Upload(&sdo_payload[..size]),
+                                    ))
+
+                                // normal
+                                } else {
+                                    sdo_payload.get(4 - 1).ok_or(LengthError)?;
+
+                                    let mut complete_size = [0; 4];
+                                    let buf = &sdo_payload[..4];
+                                    complete_size.iter_mut().zip(buf).for_each(|(s, b)| *s = *b);
+                                    let size = u32::from_le_bytes(complete_size) as usize;
+
+                                    sdo_payload.get(size + 4 - 1).ok_or(LengthError)?;
+
+                                    CoE::SdoRes(SdoRes::new(
+                                        index,
+                                        sub_index,
+                                        SdoResType::Upload(&sdo_payload[4..size + 4]),
+                                    ))
+                                }
+                            }
+                            // Download Response
+                            3 => CoE::SdoRes(SdoRes::new(index, sub_index, SdoResType::DownLoad)),
+                            _ => CoE::SdoRes(SdoRes::new(
+                                index,
+                                sub_index,
+                                SdoResType::Other(CommandSpecifier(sdo_header.command_specifier())),
+                            )),
+                        }
+                    }
+                    CoeServiceType::TxPdo => CoE::UnsupportedType(CoeServiceType::TxPdo),
+                    CoeServiceType::RxPdo => CoE::UnsupportedType(CoeServiceType::RxPdo),
+                    CoeServiceType::TxPdoRemoteReq => {
+                        CoE::UnsupportedType(CoeServiceType::TxPdoRemoteReq)
+                    }
+                    CoeServiceType::RxPdoRemoteReq => {
+                        CoE::UnsupportedType(CoeServiceType::RxPdoRemoteReq)
+                    }
+                    CoeServiceType::SdoInfo => CoE::UnsupportedType(CoeServiceType::SdoInfo),
+                    CoeServiceType::Other => CoE::UnsupportedType(CoeServiceType::Other),
+                };
+                Ok(Mailbox::new(address, mb_count, Message::CoE(coe)))
+            }
+            MailboxType::FoE => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::FoE),
+            )),
+            MailboxType::SoE => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::SoE),
+            )),
+            MailboxType::VoE => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::VoE),
+            )),
+            MailboxType::Other => Ok(Mailbox::new(
+                address,
+                mb_count,
+                Message::UnsupportedProtocol(MailboxType::Other),
+            )),
+        }
+    }
+}
+
+impl<'a> MailboxFrame<&'a mut [u8]> {
+    pub fn set_mailbox(&mut self, mailbox: &Mailbox<'a>) -> Result<(), LengthError> {
+        self.set_address(mailbox.address());
+        self.set_count(mailbox.mailbox_count());
+        self.set_prioriry(0);
+        match mailbox.message() {
+            Message::Error(_) => {
+                unimplemented!()
+            }
+            Message::CoE(coe) => {
+                self.set_mb_type(MailboxType::CoE);
+                match coe {
+                    CoE::Emmergency(_) => unimplemented!(),
+                    CoE::SdoReq(sdo_req) => {
+                        let mut coe_frame = CoeFrame(&mut self.0[MailboxFrame::HEADER_SIZE..]);
+                        coe_frame.set_number(0);
+                        coe_frame.set_coe_service_type(CoeServiceType::SdoReq);
+                        let mut sdo_frame = SdoFrame(&mut coe_frame.0[CoeFrame::HEADER_SIZE..]);
+                        let mailbox_payload_length = match sdo_req.req_type() {
+                            SdoReqType::DownLoad(data) => {
+                                // Download normal request
+                                sdo_frame.set_complete_access(false);
+                                sdo_frame.set_data_set_size(0);
+                                sdo_frame.set_command_specifier(1); // download request
+                                sdo_frame.set_transfer_type(false); // normal transfer
+                                sdo_frame.set_size_indicator(true);
+                                sdo_frame.set_index(sdo_req.index());
+                                sdo_frame.set_sub_index(sdo_req.sub_index());
+                                let mut download_frame = SdoDownloadNormalRequestFrame(
+                                    &mut sdo_frame.0[SdoFrame::HEADER_SIZE..],
+                                );
+                                download_frame.set_complete_size(data.len() as u32);
+                                let payload_length = CoeFrame::HEADER_SIZE
+                                    + SdoFrame::HEADER_SIZE
+                                    + SdoDownloadNormalRequestFrame::HEADER_SIZE
+                                    + data.len();
+                                assert!(payload_length <= u16::MAX as usize);
+                                payload_length as u16
+                            }
+                            SdoReqType::Upload => {
+                                // Upload request
+                                sdo_frame.set_complete_access(false);
+                                sdo_frame.set_data_set_size(0);
+                                sdo_frame.set_command_specifier(2); // upload request
+                                sdo_frame.set_transfer_type(false);
+                                sdo_frame.set_size_indicator(false);
+                                sdo_frame.set_index(sdo_req.index());
+                                sdo_frame.set_sub_index(sdo_req.sub_index());
+                                let payload_length =
+                                    CoeFrame::HEADER_SIZE + SdoFrame::HEADER_SIZE + 4;
+                                payload_length as u16
+                            }
+                            SdoReqType::Abort(_) => unimplemented!(),
+                            SdoReqType::Other(_) => unimplemented!(),
+                        };
+                        self.set_length(mailbox_payload_length);
+                    }
+                    CoE::SdoRes(_) => unimplemented!(),
+                    CoE::UnsupportedType(_) => unimplemented!("Unsupported CoE service type"),
+                }
+            }
+            Message::UnsupportedProtocol(_) => unimplemented!("Unsupported mailbox protocol"),
+        }
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct Mailbox<'a> {
+    address: u16,
+    mb_count: u8,
+    message: Message<'a>,
+}
+
+impl<'a> Mailbox<'a> {
+    pub fn new(address: u16, mb_count: u8, message: Message<'a>) -> Self {
+        Self {
+            address,
+            mb_count,
+            message,
+        }
+    }
+
+    pub fn address(&self) -> u16 {
+        self.address
+    }
+
+    pub fn set_address(&mut self, address: u16) {
+        self.address = address;
+    }
+
+    pub fn mailbox_count(&self) -> u8 {
+        self.mb_count
+    }
+
+    pub fn set_mailbox_count(&mut self, mb_count: u8) {
+        self.mb_count = mb_count;
+    }
+
+    pub fn message(&self) -> &Message<'a> {
+        &self.message
+    }
+}
+
+#[derive(Debug)]
+pub enum Message<'a> {
+    Error(MailboxErrorDetail),
+    CoE(CoE<'a>),
+    UnsupportedProtocol(MailboxType),
+}
+
+impl<'a> Message<'a> {
+    pub fn new_sdo_download_request(index: u16, sub_index: u8, data: &'a [u8]) -> Self {
+        let sdo_req = SdoReq::new(index, sub_index, SdoReqType::DownLoad(data));
+        Self::CoE(CoE::SdoReq(sdo_req))
+    }
+
+    pub fn new_sdo_upload_request(index: u16, sub_index: u8) -> Self {
+        let sdo_req = SdoReq::new(index, sub_index, SdoReqType::Upload);
+        Self::CoE(CoE::SdoReq(sdo_req))
+    }
+
+    pub fn sdo_upload_response(&self) -> Option<&[u8]> {
+        match self {
+            Message::CoE(coe) => match coe {
+                CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
+                    SdoResType::Upload(data) => Some(data),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub fn is_sdo_download_response(&self) -> bool {
+        match self {
+            Message::CoE(coe) => match coe {
+                CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
+                    SdoResType::DownLoad => true,
+                    _ => false,
+                },
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CoE<'a> {
+    Emmergency(EmmergencyFrame<&'a [u8]>),
+    SdoReq(SdoReq<'a>),
+    SdoRes(SdoRes<'a>),
+    UnsupportedType(CoeServiceType),
+}
+
+#[derive(Debug)]
+pub struct SdoRes<'a> {
+    index: u16,
+    sub_index: u8,
+    res_type: SdoResType<'a>,
+}
+
+impl<'a> SdoRes<'a> {
+    pub fn new(index: u16, sub_index: u8, res_type: SdoResType<'a>) -> Self {
+        Self {
+            index,
+            sub_index,
+            res_type,
+        }
+    }
+
+    pub fn index(&self) -> u16 {
+        self.index
+    }
+
+    pub fn sub_index(&self) -> u8 {
+        self.sub_index
+    }
+
+    pub fn res_type(&self) -> &SdoResType {
+        &self.res_type
+    }
+}
+
+#[derive(Debug)]
+pub enum SdoResType<'a> {
+    DownLoad,
+    Upload(&'a [u8]),
+    Other(CommandSpecifier),
+}
+
+#[derive(Debug)]
+pub struct SdoReq<'a> {
+    index: u16,
+    sub_index: u8,
+    req_type: SdoReqType<'a>,
+}
+
+impl<'a> SdoReq<'a> {
+    pub fn new(index: u16, sub_index: u8, req_type: SdoReqType<'a>) -> Self {
+        Self {
+            index,
+            sub_index,
+            req_type,
+        }
+    }
+
+    pub fn index(&self) -> u16 {
+        self.index
+    }
+
+    pub fn sub_index(&self) -> u8 {
+        self.sub_index
+    }
+
+    pub fn req_type(&self) -> &SdoReqType {
+        &self.req_type
+    }
+}
+
+#[derive(Debug)]
+pub enum SdoReqType<'a> {
+    DownLoad(&'a [u8]),
+    Upload,
+    Abort(AbortCode),
+    Other(CommandSpecifier),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LengthError;
+
+#[derive(Debug, Clone, Copy)]
+pub struct CommandSpecifier(u8);
