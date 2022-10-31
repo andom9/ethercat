@@ -1,6 +1,5 @@
 mod error;
 pub mod mailbox;
-pub mod sdo;
 pub use error::*;
 
 use crate::{
@@ -17,7 +16,7 @@ use crate::{
     slave::{AlState, Direction, FmmuConfig, Network, PdoMapping, Slave, SlaveConfig, SyncMode},
     task::{
         loop_task::*, AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, MailboxTask,
-        MailboxTaskError, NetworkInitTaskError, SdoTaskError, SiiTaskError, TaskError, MAX_SM_SIZE,
+        MailboxTaskError, NetworkInitTaskError, SiiTaskError, TaskError, MAX_SM_SIZE,
     },
 };
 

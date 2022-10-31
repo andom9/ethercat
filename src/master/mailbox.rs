@@ -1,6 +1,6 @@
-use crate::frame::{Mailbox, MailboxFrame};
-use crate::interface::PduSocket;
+use crate::frame::{Mailbox, MailboxFrame, Message};
 use crate::interface::SlaveAddress;
+use crate::interface::{PduSocket, RawEthernetDevice, SocketInterface};
 use crate::register::SyncManagerStatus;
 use crate::slave::{Network, Slave};
 use crate::task::{CyclicTask, EtherCatSystemTime, MailboxTask, MailboxTaskError, TaskError};
@@ -86,23 +86,18 @@ impl MailboxManager {
         })
     }
 
-    //pub fn try_get_mailbox_response_interface<'a, 'b, 'c>(
-    //    &'a mut self,
-    //    mb_socket: &'b mut PduSocket<'c>,
-    //    session_id: &MailboxSessionId,
-    //) -> Option<MailboxResponseInterface<'a, 'b, 'c>> {
-    //    if !self.task.is_finished() {
-    //        return None;
-    //    }
-    //
-    //    let Self { ref mut task, .. } = self;
-    //
-    //    Some(MailboxResponseInterface {
-    //        task,
-    //        socket: mb_socket,
-    //        session_id: session_id.clone(),
-    //    })
-    //}
+    pub fn write_sdo<D, const N: usize>(
+        &mut self,
+        sif: &mut SocketInterface<D, N>,
+        mb_socket: &mut PduSocket,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+    ) where
+        D: for<'d> RawEthernetDevice<'d>,
+    {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -125,31 +120,20 @@ impl<'a, 'b, 'c> MailboxRequestInterface<'a, 'b, 'c> {
             .start_to_write(session_id.slave_address, rx_sm, false);
         session_id
     }
+
+    pub fn write_sdo_request(
+        &mut self,
+        writer: &mut MailboxRequestInterface,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+        data: &[u8],
+    ) -> MailboxSessionId {
+        let message = Message::new_sdo_download_request(index, sub_index, data);
+        let mut mailbox = Mailbox::new(0, 0, message);
+        writer.request(slave, &mut mailbox)
+    }
 }
-
-// pub struct MailboxResponseInterface<'a, 'b, 'c> {
-//     task: &'a mut MailboxTask,
-//     socket: &'b mut PduSocket<'c>,
-//     session_id: MailboxSessionId,
-// }
-
-// impl<'a, 'b, 'c> MailboxResponseInterface<'a, 'b, 'c> {
-//     pub fn response(&mut self) -> Option<Result<MailboxFrame<&[u8]>, TaskError<MailboxTaskError>>> {
-//         if self.task.is_write_mode() {
-//             return None;
-//         }
-
-//         let _ = self.task.wait()?;
-//         let mb = MailboxFrame(self.socket.data_buf());
-//         if mb.count() == self.session_id.mailbox_count
-//             && self.task.slave_address() == self.session_id.slave_address
-//         {
-//             Some(Ok(mb))
-//         } else {
-//             None
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MailboxSessionId {

@@ -1,8 +1,6 @@
 use bitfield::*;
 use num_enum::FromPrimitive;
 
-use crate::interface::PduSocket;
-
 use super::{
     AbortCode, CoeFrame, CoeServiceType, EmmergencyFrame, SdoDownloadNormalRequestFrame, SdoFrame,
 };

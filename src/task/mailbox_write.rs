@@ -1,7 +1,6 @@
 use super::mailbox::MailboxTaskError;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use crate::frame::MailboxFrame;
 use crate::interface::*;
 use crate::register::{SyncManagerActivation, SyncManagerStatus};
 use crate::slave::SyncManager;
@@ -53,21 +52,6 @@ impl MailboxWriteTask {
         self.slave_address
     }
 
-    pub fn set_mailbox_data(
-        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
-        mb_data: &[u8],
-        buf: &mut [u8],
-    ) {
-        buf[..MailboxFrame::HEADER_SIZE]
-            .iter_mut()
-            .zip(mb_header.0)
-            .for_each(|(b, d)| *b = d);
-        buf[MailboxFrame::HEADER_SIZE..]
-            .iter_mut()
-            .zip(mb_data)
-            .for_each(|(b, d)| *b = *d);
-    }
-
     pub fn start(&mut self, slave_address: SlaveAddress, rx_sm: SyncManager, wait_empty: bool) {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
@@ -116,7 +100,6 @@ impl CyclicTask for MailboxWriteTask {
             }
             State::Write => {
                 self.command = Command::new_write(self.slave_address.into(), self.sm_start_address);
-                //buf[..self.sm_size as usize].fill(0);
                 buf.iter_mut()
                     .zip(self.empty_check_buffer.iter())
                     .for_each(|(sb, b)| *sb = *b);

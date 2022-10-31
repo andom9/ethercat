@@ -6,9 +6,6 @@ mod mailbox;
 mod mailbox_read;
 mod mailbox_write;
 mod network_initilize;
-mod sdo;
-mod sdo_download;
-mod sdo_upload;
 mod sii_read;
 mod slave_initialize;
 
@@ -18,9 +15,6 @@ pub use dc_initilize::DcInitTask;
 pub use error::TaskError;
 pub use mailbox::{MailboxTask, MailboxTaskError};
 pub use network_initilize::{NetworkInitTask, NetworkInitTaskError};
-pub use sdo::SdoTaskError;
-pub use sdo_download::SdoWriteTask;
-pub use sdo_upload::SdoReadTask;
 pub use sii_read::{SiiReader, SiiTaskError};
 pub use slave_initialize::*;
 
@@ -34,8 +28,7 @@ use crate::{
         SocketInterface, TargetSlave,
     },
     register::{AlStatusCode, SiiData},
-    slave::{AlState, Network, Slave, SlaveInfo},
-    util::IndexOption,
+    slave::{AlState, Network, SlaveInfo},
 };
 
 use core::time::Duration;
@@ -228,7 +221,7 @@ where
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
         wait_full: bool,
-    ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
+    ) -> Result<MailboxFrame<&[u8]>, TaskError<MailboxTaskError>> {
         let mut unit = MailboxTask::new();
         {
             let socket = self.get_socket_mut(handle).expect("socket not found");
@@ -243,15 +236,14 @@ where
         self.block(handle, &mut unit)?;
         unit.wait().unwrap()?;
         let socket = self.get_socket_mut(handle).expect("socket not found");
-        Ok(MailboxTask::mailbox_data(socket.data_buf()))
+        Ok(MailboxFrame(socket.data_buf()))
     }
 
     pub fn write_mailbox(
         &mut self,
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
-        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
-        mb_data: &[u8],
+        mb_frame: &MailboxFrame<&[u8]>,
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {
         let mut unit = MailboxTask::new();
@@ -263,53 +255,14 @@ where
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-            MailboxTask::set_mailbox_data(mb_header, mb_data, socket.data_buf_mut());
+            socket
+                .data_buf_mut()
+                .iter_mut()
+                .zip(mb_frame.0)
+                .for_each(|(b, d)| *b = *d);
             unit.start_to_write(slave_address, tx_sm, wait_empty);
         }
         self.block(handle, &mut unit)?;
-        unit.wait().unwrap()
-    }
-
-    pub fn read_sdo(
-        &mut self,
-        handle: &SocketHandle,
-        slave: &Slave,
-        index: u16,
-        sub_index: u8,
-    ) -> Result<&[u8], TaskError<SdoTaskError>> {
-        let mut unit = SdoReadTask::new();
-        {
-            let socket = self.get_socket_mut(handle).expect("socket not found");
-            assert!(
-                (slave.info().mailbox_tx_sm().unwrap_or_default().size() as usize)
-                    <= socket.data_buf().len()
-            );
-            unit.start(slave, index, sub_index, socket.data_buf_mut());
-        }
-        self.block::<_, SdoTaskError>(handle, &mut unit)?;
-        unit.wait().unwrap()?;
-        let socket = self.get_socket_mut(handle).expect("socket not found");
-        Ok(unit.sdo_data(socket.data_buf()))
-    }
-
-    pub fn write_sdo(
-        &mut self,
-        handle: &SocketHandle,
-        slave: &Slave,
-        index: u16,
-        sub_index: u8,
-        data: &[u8],
-    ) -> Result<(), TaskError<SdoTaskError>> {
-        let mut unit = SdoWriteTask::new();
-        {
-            let socket = self.get_socket_mut(handle).expect("socket not found");
-            assert!(
-                (slave.info().mailbox_rx_sm().unwrap_or_default().size() as usize)
-                    <= socket.data_buf().len()
-            );
-            unit.start(slave, index, sub_index, data, socket.data_buf_mut());
-        }
-        self.block::<_, SdoTaskError>(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 }
