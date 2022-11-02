@@ -13,7 +13,7 @@ enum State {
     Error(TaskError<MailboxTaskError>),
     Idle,
     Complete,
-    CheckMailboxFull((bool, bool)),
+    CheckMailboxAlreadyExisted((bool, bool)),
     Read,
     RequestRepeat,
     WaitRepeatAck,
@@ -66,7 +66,7 @@ impl MailboxReadTask {
         self.timer_start = EtherCatSystemTime(0);
         self.command = Command::default();
         self.slave_address = slave_address;
-        self.state = State::CheckMailboxFull((true, wait_full));
+        self.state = State::CheckMailboxAlreadyExisted((true, wait_full));
 
         self.sm_ado_offset = tx_sm.number() as u16 * 0x08;
         self.sm_size = tx_sm.size();
@@ -95,7 +95,7 @@ impl CyclicTask for MailboxReadTask {
             State::Idle => None,
             State::Error(_) => None,
             State::Complete => None,
-            State::CheckMailboxFull(_) => {
+            State::CheckMailboxAlreadyExisted(_) => {
                 self.command = Command::new_read(
                     self.slave_address.into(),
                     SyncManagerStatus::ADDRESS + self.sm_ado_offset,
@@ -145,7 +145,7 @@ impl CyclicTask for MailboxReadTask {
             State::Idle => {}
             State::Error(_) => {}
             State::Complete => {}
-            State::CheckMailboxFull((is_first, wait_full)) => {
+            State::CheckMailboxAlreadyExisted((is_first, wait_full)) => {
                 if is_first {
                     self.timer_start = sys_time;
                 }
@@ -159,7 +159,7 @@ impl CyclicTask for MailboxReadTask {
                     if status.is_mailbox_full() {
                         self.state = State::Read;
                     } else if wait_full {
-                        self.state = State::CheckMailboxFull((false, wait_full));
+                        self.state = State::CheckMailboxAlreadyExisted((false, wait_full));
                     } else {
                         self.state = State::Error(MailboxTaskError::MailboxEmpty.into());
                     }
@@ -181,7 +181,7 @@ impl CyclicTask for MailboxReadTask {
                 if wkc != 1 {
                     self.state = State::Error(TaskError::UnexpectedWkc((1, wkc).into()));
                 } else if SyncManagerPdiControl(data).repeat_ack() == self.activation_buf.repeat() {
-                    self.state = State::CheckMailboxFull((false, true));
+                    self.state = State::CheckMailboxAlreadyExisted((false, true));
                 } else {
                     self.state = State::WaitRepeatAck;
                 }

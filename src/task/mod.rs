@@ -22,13 +22,16 @@ pub mod loop_task;
 use loop_task::AlStateReadTask;
 
 use crate::{
-    frame::MailboxFrame,
+    frame::{
+        AbortCode, EmmergencyErrorCode, EmmergencyFrame, LengthError, Mailbox, MailboxErrorDetail,
+        MailboxFrame, Message,
+    },
     interface::{
         Command, Pdu, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
         SocketInterface, TargetSlave,
     },
-    register::{AlStatusCode, SiiData},
-    slave::{AlState, Network, SlaveInfo},
+    register::{AlStatusCode, SiiData, SyncManagerStatus},
+    slave::{AlState, Network, SlaveInfo, Slave},
 };
 
 use core::time::Duration;
@@ -62,9 +65,8 @@ pub trait CyclicTask {
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
-    //[IndexOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
-    fn block<C: CyclicTask, E>(
+    fn block_on<C: CyclicTask, E>(
         &mut self,
         handle: &SocketHandle,
         unit: &mut C,
@@ -109,7 +111,7 @@ where
             unit.start_to_read(target_slave, register_address, data_size);
         }
 
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()?;
         let socket = self.get_socket_mut(handle).expect("socket not found");
         Ok(&socket.data_buf()[..data_size])
@@ -128,7 +130,7 @@ where
         assert!(data.len() <= socket.data_buf().len());
 
         unit.start_to_write(target_slave, register_address, data, socket.data_buf_mut());
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 
@@ -143,7 +145,7 @@ where
         assert!(NetworkInitTask::required_buffer_size() <= socket.data_buf().len());
 
         unit.start();
-        self.block::<_, NetworkInitTaskError>(handle, &mut unit)?;
+        self.block_on::<_, NetworkInitTaskError>(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 
@@ -158,7 +160,7 @@ where
         assert!(DcInitTask::required_buffer_size() <= socket.data_buf().len());
 
         unit.start();
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 
@@ -173,7 +175,7 @@ where
             assert!(AlStateReadTask::required_buffer_size() <= socket.data_buf().len());
             unit.set_target(target_slave);
         }
-        self.block::<_, _>(handle, &mut unit)?;
+        self.block_on::<_, _>(handle, &mut unit)?;
         if unit.invalid_wkc_count != 0 {
             Err(TaskError::UnexpectedWkc(
                 (unit.expected_wkc(), unit.last_wkc()).into(),
@@ -196,7 +198,7 @@ where
             assert!(AlStateTransferTask::required_buffer_size() <= socket.data_buf().len());
             unit.start(target_slave, al_state);
         }
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 
@@ -212,7 +214,7 @@ where
             assert!(SiiReader::required_buffer_size() <= socket.data_buf().len());
             unit.start(slave_address, sii_address);
         }
-        self.block::<_, _>(handle, &mut unit)?;
+        self.block_on::<_, _>(handle, &mut unit)?;
         unit.wait().unwrap()
     }
 
@@ -233,17 +235,17 @@ where
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
             unit.start_to_read(slave_address, tx_sm, wait_full);
         }
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()?;
         let socket = self.get_socket_mut(handle).expect("socket not found");
         Ok(MailboxFrame(socket.data_buf()))
     }
 
-    pub fn write_mailbox(
+    pub fn write_mailbox<F: FnOnce(&mut MailboxFrame<&mut [u8]>) -> Result<(), LengthError>>(
         &mut self,
         handle: &SocketHandle,
         slave_info: &SlaveInfo,
-        mb_frame: &MailboxFrame<&[u8]>,
+        mb_frame_writer: F,
         wait_empty: bool,
     ) -> Result<(), TaskError<MailboxTaskError>> {
         let mut unit = MailboxTask::new();
@@ -255,14 +257,138 @@ where
             );
             let slave_address = slave_info.slave_address();
             let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
-            socket
-                .data_buf_mut()
-                .iter_mut()
-                .zip(mb_frame.0)
-                .for_each(|(b, d)| *b = *d);
+            mb_frame_writer(&mut MailboxFrame(socket.data_buf_mut()))
+                .map_err(|_| TaskError::TaskSpecific(MailboxTaskError::BufferSmall))?;
             unit.start_to_write(slave_address, tx_sm, wait_empty);
         }
-        self.block(handle, &mut unit)?;
+        self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()
+    }
+
+    pub fn write_sdo(
+        &mut self,
+        handle: &SocketHandle,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+        data: &[u8],
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let count = slave.increment_mb_count();
+        let slave_info = slave.info();
+        
+        self.write_mailbox(
+            handle,
+            slave_info,
+            |mb_frame| {
+                let message = Message::new_sdo_download_request(index, sub_index, data);
+                let mailbox = Mailbox::new(0, count, message);
+                mb_frame.set_mailbox(&mailbox)
+            },
+            false,
+        );
+        let mb = self.read_mailbox(handle, slave_info, true).unwrap();
+        let mb = mb
+            .mailbox()
+            .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
+
+        match mb.message() {
+            Message::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
+            Message::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Message::CoE(coe) => match coe {
+                crate::frame::CoE::Emmergency(emm_f) => {
+                    Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
+                }
+                crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
+                    crate::frame::SdoResType::DownLoad => {
+                        if mb.mailbox_count() != count{
+                            Err(SdoErrorKind::UnexpectedMailbox.into())
+                        }else{
+                            Ok(())
+                        }
+                    },
+                    crate::frame::SdoResType::Upload(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoResType::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                },
+                crate::frame::CoE::UnsupportedType(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            },
+        }
+    }
+
+    pub fn read_sdo(
+        &mut self,
+        handle: &SocketHandle,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<&[u8], TaskError<SdoErrorKind>> {
+        let count = slave.increment_mb_count();
+        let slave_info = slave.info();
+
+        self.write_mailbox(
+            handle,
+            slave_info,
+            |mb_frame| 
+            {
+                let message = Message::new_sdo_upload_request(index, sub_index);
+                let mailbox = Mailbox::new(0, count, message);
+                mb_frame.set_mailbox(&mailbox)
+            },
+            false,
+        );
+        let mb = self.read_mailbox(handle, slave_info, true).unwrap();
+        let mb = mb
+            .mailbox()
+            .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
+
+        match mb.message() {
+            Message::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
+            Message::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Message::CoE(coe) => match coe {
+                crate::frame::CoE::Emmergency(emm_f) => {
+                    Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
+                }
+                crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
+                    crate::frame::SdoResType::DownLoad => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoResType::Upload(res) => {
+                        if mb.mailbox_count() != count{
+                            Err(SdoErrorKind::UnexpectedMailbox.into())
+                        }else{
+                            Ok(res)
+                        }
+                    }
+                    crate::frame::SdoResType::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                },
+                crate::frame::CoE::UnsupportedType(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SdoErrorKind {
+    Mailbox(MailboxTaskError),
+    AbortCode(AbortCode),
+    ErrorMailbox(MailboxErrorDetail),
+    Emmergency(EmmergencyErrorCode),
+    UnexpectedMailbox,
+}
+
+impl From<TaskError<()>> for TaskError<SdoErrorKind> {
+    fn from(err: TaskError<()>) -> Self {
+        match err {
+            TaskError::Interface(e) => TaskError::Interface(e),
+            TaskError::UnexpectedCommand => TaskError::UnexpectedCommand,
+            TaskError::UnexpectedWkc(e) => TaskError::UnexpectedWkc(e),
+            TaskError::TaskSpecific(_) => unreachable!(),
+            TaskError::Timeout => TaskError::Timeout,
+        }
+    }
+}
+
+impl From<SdoErrorKind> for TaskError<SdoErrorKind> {
+    fn from(err: SdoErrorKind) -> Self {
+        Self::TaskSpecific(err)
     }
 }

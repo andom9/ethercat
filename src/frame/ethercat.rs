@@ -435,7 +435,7 @@ impl<'a> MailboxFrame<&'a [u8]> {
 }
 
 impl<'a> MailboxFrame<&'a mut [u8]> {
-    pub fn set_mailbox(&mut self, mailbox: &Mailbox<'a>) -> Result<(), LengthError> {
+    pub fn set_mailbox(&mut self, mailbox: &Mailbox) -> Result<(), LengthError> {
         self.set_address(mailbox.address());
         self.set_count(mailbox.mailbox_count());
         self.set_prioriry(0);
@@ -497,7 +497,7 @@ impl<'a> MailboxFrame<&'a mut [u8]> {
             }
             Message::UnsupportedProtocol(_) => unimplemented!("Unsupported mailbox protocol"),
         }
-        todo!()
+        Ok(())
     }
 }
 

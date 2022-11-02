@@ -1,8 +1,8 @@
 use crate::frame::{Mailbox, MailboxFrame, Message};
-use crate::interface::SlaveAddress;
 use crate::interface::{PduSocket, RawEthernetDevice, SocketInterface};
+use crate::interface::{SlaveAddress, SocketHandle};
 use crate::register::SyncManagerStatus;
-use crate::slave::{Network, Slave};
+use crate::slave::{Network, Slave, SlaveInfo};
 use crate::task::{CyclicTask, EtherCatSystemTime, MailboxTask, MailboxTaskError, TaskError};
 
 #[derive(Debug)]
@@ -84,19 +84,6 @@ impl MailboxManager {
             task,
             socket: mb_socket,
         })
-    }
-
-    pub fn write_sdo<D, const N: usize>(
-        &mut self,
-        sif: &mut SocketInterface<D, N>,
-        mb_socket: &mut PduSocket,
-        slave: &Slave,
-        index: u16,
-        sub_index: u8,
-    ) where
-        D: for<'d> RawEthernetDevice<'d>,
-    {
-        todo!()
     }
 }
 

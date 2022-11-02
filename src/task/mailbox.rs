@@ -9,7 +9,7 @@ use crate::slave::SyncManager;
 pub enum MailboxTaskError {
     NoSlaveReaction,
     MailboxEmpty,
-    MailboxFull,
+    MailboxAlreadyExisted,
     BufferSmall,
 }
 

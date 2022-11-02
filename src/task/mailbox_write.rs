@@ -136,7 +136,7 @@ impl CyclicTask for MailboxWriteTask {
                     } else if wait_empty {
                         self.state = State::CheckMailboxEmpty((false, wait_empty));
                     } else {
-                        self.state = State::Error(MailboxTaskError::MailboxFull.into());
+                        self.state = State::Error(MailboxTaskError::MailboxAlreadyExisted.into());
                     }
                 }
             }

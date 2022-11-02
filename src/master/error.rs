@@ -1,12 +1,12 @@
 use crate::{interface::SlaveAddress, task::*};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ConfigError {
     pub slave_address: SlaveAddress,
     pub kind: ConfigErrorKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ConfigErrorKind {
     SetFmmuRegister(RegisterError),
     SetSyncManagerSyncType(SdoError),
@@ -29,14 +29,14 @@ pub enum ConfigErrorKind {
     GetSyncManagerCommunicationType(SdoError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SdoError {
     pub index: u16,
     pub sub_index: u8,
-    pub error: TaskError<SdoTaskError>,
+    pub error: TaskError<SdoErrorKind>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct RegisterError {
     pub address: u16,
     pub error: TaskError<()>,

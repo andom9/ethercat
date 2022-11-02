@@ -16,7 +16,7 @@ use crate::{
     slave::{AlState, Direction, FmmuConfig, Network, PdoMapping, Slave, SlaveConfig, SyncMode},
     task::{
         loop_task::*, AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, MailboxTask,
-        MailboxTaskError, NetworkInitTaskError, SiiTaskError, TaskError, MAX_SM_SIZE,
+        MailboxTaskError, NetworkInitTaskError, SiiTaskError, TaskError, MAX_SM_SIZE, SdoErrorKind,
     },
 };
 
@@ -265,41 +265,41 @@ where
             .read_sii(&self.gp_socket_handle, slave_address, sii_address)
     }
 
-    pub fn read_mailbox(
-        &mut self,
-        slave_address: SlaveAddress,
-        wait_full: bool,
-    ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
-        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
-        let slave_info = slave.info();
-        self.sif
-            .read_mailbox(&self.gp_socket_handle, slave_info, wait_full)
-    }
+    // pub fn read_mailbox(
+    //     &mut self,
+    //     slave_address: SlaveAddress,
+    //     wait_full: bool,
+    // ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
+    //     let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+    //     let slave_info = slave.info();
+    //     self.sif
+    //         .read_mailbox(&self.gp_socket_handle, slave_info, wait_full)
+    // }
 
-    pub fn write_mailbox(
-        &mut self,
-        slave_address: SlaveAddress,
-        mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
-        mb_data: &[u8],
-        wait_empty: bool,
-    ) -> Result<(), TaskError<MailboxTaskError>> {
-        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
-        let slave_info = slave.info();
-        self.sif.write_mailbox(
-            &self.gp_socket_handle,
-            slave_info,
-            mb_header,
-            mb_data,
-            wait_empty,
-        )
-    }
+    // pub fn write_mailbox(
+    //     &mut self,
+    //     slave_address: SlaveAddress,
+    //     mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
+    //     mb_data: &[u8],
+    //     wait_empty: bool,
+    // ) -> Result<(), TaskError<MailboxTaskError>> {
+    //     let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+    //     let slave_info = slave.info();
+    //     self.sif.write_mailbox(
+    //         &self.gp_socket_handle,
+    //         slave_info,
+    //         mb_header,
+    //         mb_data,
+    //         wait_empty,
+    //     )
+    // }
 
     pub fn read_sdo(
         &mut self,
         slave_address: SlaveAddress,
         index: u16,
         sub_index: u8,
-    ) -> Result<&[u8], TaskError<SdoTaskError>> {
+    ) -> Result<&[u8], TaskError<SdoErrorKind>> {
         let (slave, _) = self.network.slave(slave_address).expect("slave not found");
         self.sif
             .read_sdo(&self.gp_socket_handle, slave, index, sub_index)
@@ -311,7 +311,7 @@ where
         index: u16,
         sub_index: u8,
         data: &[u8],
-    ) -> Result<(), TaskError<SdoTaskError>> {
+    ) -> Result<(), TaskError<SdoErrorKind>> {
         let (slave, _) = self.network.slave(slave_address).expect("slave not found");
         self.sif
             .write_sdo(&self.gp_socket_handle, slave, index, sub_index, data)
