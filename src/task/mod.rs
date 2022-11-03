@@ -23,15 +23,14 @@ use loop_task::AlStateReadTask;
 
 use crate::{
     frame::{
-        AbortCode, EmmergencyErrorCode, EmmergencyFrame, LengthError, Mailbox, MailboxErrorDetail,
-        MailboxFrame, Message,
+        AbortCode, EmmergencyErrorCode, LengthError, Mailbox, MailboxErrorDetail, MailboxFrame,
     },
     interface::{
         Command, Pdu, PduSocket, PhyError, RawEthernetDevice, SlaveAddress, SocketHandle,
         SocketInterface, TargetSlave,
     },
-    register::{AlStatusCode, SiiData, SyncManagerStatus},
-    slave::{AlState, Network, SlaveInfo, Slave},
+    register::{AlStatusCode, SiiData},
+    slave::{AlState, Network, Slave, SlaveInfo},
 };
 
 use core::time::Duration;
@@ -275,42 +274,46 @@ where
     ) -> Result<(), TaskError<SdoErrorKind>> {
         let count = slave.increment_mb_count();
         let slave_info = slave.info();
-        
+
         self.write_mailbox(
             handle,
             slave_info,
             |mb_frame| {
-                let message = Message::new_sdo_download_request(index, sub_index, data);
-                let mailbox = Mailbox::new(0, count, message);
-                mb_frame.set_mailbox(&mailbox)
+                let message = Mailbox::new_sdo_download_request(index, sub_index, data);
+                //let mailbox = Mailbox::new(0, count, message);
+                mb_frame.set_count(count);
+                mb_frame.set_mailbox(&message)
             },
             false,
-        );
-        let mb = self.read_mailbox(handle, slave_info, true).unwrap();
-        let mb = mb
+        )
+        .unwrap();
+        let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
+        let mb = mb_data
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
 
-        match mb.message() {
-            Message::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
-            Message::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-            Message::CoE(coe) => match coe {
+        match mb {
+            Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
+            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Mailbox::CoE((_, coe)) => match coe {
                 crate::frame::CoE::Emmergency(emm_f) => {
                     Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
                 }
                 crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
-                    crate::frame::SdoResType::DownLoad => {
-                        if mb.mailbox_count() != count{
+                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res {
+                    crate::frame::SdoRes::DownLoad => {
+                        if mb_data.count() != count {
                             Err(SdoErrorKind::UnexpectedMailbox.into())
-                        }else{
+                        } else {
                             Ok(())
                         }
-                    },
-                    crate::frame::SdoResType::Upload(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-                    crate::frame::SdoResType::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    }
+                    crate::frame::SdoRes::Upload(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
                 },
-                crate::frame::CoE::UnsupportedType(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::UnsupportedType(_) => {
+                    Err(SdoErrorKind::UnexpectedMailbox.into())
+                }
             },
         }
     }
@@ -328,39 +331,45 @@ where
         self.write_mailbox(
             handle,
             slave_info,
-            |mb_frame| 
-            {
-                let message = Message::new_sdo_upload_request(index, sub_index);
-                let mailbox = Mailbox::new(0, count, message);
-                mb_frame.set_mailbox(&mailbox)
+            |mb_frame| {
+                let message = Mailbox::new_sdo_upload_request(index, sub_index);
+                mb_frame.set_count(count);
+                mb_frame.set_mailbox(&message)
             },
             false,
-        );
-        let mb = self.read_mailbox(handle, slave_info, true).unwrap();
-        let mb = mb
+        )
+        .unwrap();
+        let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
+        //let socket = self.get_socket_mut(handle).expect("socket not found");
+        //return Ok(socket.data_buf());
+        let mb = mb_data
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
+        //
+        //return Ok(mb.message().sdo_upload_response().unwrap());
 
-        match mb.message() {
-            Message::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
-            Message::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-            Message::CoE(coe) => match coe {
+        match mb {
+            Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
+            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Mailbox::CoE((_, coe)) => match coe {
                 crate::frame::CoE::Emmergency(emm_f) => {
                     Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
                 }
                 crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res.res_type() {
-                    crate::frame::SdoResType::DownLoad => Err(SdoErrorKind::UnexpectedMailbox.into()),
-                    crate::frame::SdoResType::Upload(res) => {
-                        if mb.mailbox_count() != count{
+                crate::frame::CoE::SdoRes(sdo_res) => match sdo_res {
+                    crate::frame::SdoRes::DownLoad => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::Upload(res) => {
+                        if mb_data.count() != count {
                             Err(SdoErrorKind::UnexpectedMailbox.into())
-                        }else{
+                        } else {
                             Ok(res)
                         }
                     }
-                    crate::frame::SdoResType::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
                 },
-                crate::frame::CoE::UnsupportedType(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::UnsupportedType(_) => {
+                    Err(SdoErrorKind::UnexpectedMailbox.into())
+                }
             },
         }
     }

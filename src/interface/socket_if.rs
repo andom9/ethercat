@@ -25,7 +25,7 @@ impl<'a> Pdu<'a> {
 #[derive(Debug)]
 pub struct PduSocket<'a> {
     command: Option<Command>,
-    data_buf: &'a mut [u8],
+    pub(crate) data_buf: &'a mut [u8],
     wkc: u16,
     data_length: usize,
     recv_flag: bool,

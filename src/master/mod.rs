@@ -16,7 +16,7 @@ use crate::{
     slave::{AlState, Direction, FmmuConfig, Network, PdoMapping, Slave, SlaveConfig, SyncMode},
     task::{
         loop_task::*, AlStateTransferTaskError, CyclicTask, EtherCatSystemTime, MailboxTask,
-        MailboxTaskError, NetworkInitTaskError, SiiTaskError, TaskError, MAX_SM_SIZE, SdoErrorKind,
+        MailboxTaskError, NetworkInitTaskError, SdoErrorKind, SiiTaskError, TaskError, MAX_SM_SIZE,
     },
 };
 

@@ -1,4 +1,4 @@
-use crate::frame::{Mailbox, MailboxFrame, Message};
+use crate::frame::{Mailbox, MailboxFrame};
 use crate::interface::{PduSocket, RawEthernetDevice, SocketInterface};
 use crate::interface::{SlaveAddress, SocketHandle};
 use crate::register::SyncManagerStatus;
@@ -95,17 +95,18 @@ pub struct MailboxRequestInterface<'a, 'b, 'c> {
 
 impl<'a, 'b, 'c> MailboxRequestInterface<'a, 'b, 'c> {
     pub fn request(&mut self, slave: &Slave, mailbox: &mut Mailbox) -> MailboxSessionId {
-        let mut mb_frame = MailboxFrame(self.socket.data_buf_mut());
-        mb_frame.set_mailbox(mailbox).unwrap();
-        let rx_sm = slave.info().mailbox_rx_sm().unwrap();
-        let session_id = MailboxSessionId {
-            slave_address: slave.info().slave_address(),
-            mailbox_count: slave.increment_mb_count(),
-        };
-        mailbox.set_mailbox_count(session_id.mailbox_count);
-        self.task
-            .start_to_write(session_id.slave_address, rx_sm, false);
-        session_id
+        todo!()
+        // let mut mb_frame = MailboxFrame(self.socket.data_buf_mut());
+        // mb_frame.set_mailbox(mailbox).unwrap();
+        // let rx_sm = slave.info().mailbox_rx_sm().unwrap();
+        // let session_id = MailboxSessionId {
+        //     slave_address: slave.info().slave_address(),
+        //     mailbox_count: slave.increment_mb_count(),
+        // };
+        // mailbox.set_mailbox_count(session_id.mailbox_count);
+        // self.task
+        //     .start_to_write(session_id.slave_address, rx_sm, false);
+        // session_id
     }
 
     pub fn write_sdo_request(
@@ -116,9 +117,10 @@ impl<'a, 'b, 'c> MailboxRequestInterface<'a, 'b, 'c> {
         sub_index: u8,
         data: &[u8],
     ) -> MailboxSessionId {
-        let message = Message::new_sdo_download_request(index, sub_index, data);
-        let mut mailbox = Mailbox::new(0, 0, message);
-        writer.request(slave, &mut mailbox)
+        todo!()
+        // let message = Message::new_sdo_download_request(index, sub_index, data);
+        // let mut mailbox = Mailbox::new(0, 0, message);
+        // writer.request(slave, &mut mailbox)
     }
 }
 
