@@ -1,12 +1,14 @@
 use crate::frame::{Mailbox, MailboxFrame};
-use crate::interface::{PduSocket, RawEthernetDevice, SocketInterface};
-use crate::interface::{SlaveAddress, SocketHandle};
+use crate::interface::SlaveAddress;
+use crate::interface::{PduSocket, RawEthernetDevice, SocketHandle, SocketInterface};
 use crate::register::SyncManagerStatus;
-use crate::slave::{Network, Slave, SlaveInfo};
+use crate::slave::{Network, Slave};
 use crate::task::{CyclicTask, EtherCatSystemTime, MailboxTask, MailboxTaskError, TaskError};
 
+use super::NUM_SOCKETS;
+
 #[derive(Debug)]
-pub struct MailboxManager {
+pub(super) struct MailboxManager {
     task: MailboxTask,
     slave_with_mailbox: Option<SlaveAddress>,
 }
@@ -24,24 +26,31 @@ impl MailboxManager {
         network: &Network,
         mb_socket: &'a mut PduSocket,
         sys_time: EtherCatSystemTime,
-    ) -> Option<Result<(MailboxSessionId, MailboxFrame<&'a [u8]>), TaskError<MailboxTaskError>>>
-    {
-        let mut session_id = MailboxSessionId::default();
+    ) {
         if self.task.is_finished() {
             if let Some(slave_with_mailbox) = self.slave_with_mailbox {
                 let (slave, _) = network.slave(slave_with_mailbox).unwrap();
                 let tx_sm = slave.info().mailbox_tx_sm().unwrap();
                 self.task.start_to_read(slave_with_mailbox, tx_sm, false);
-                session_id.slave_address = slave.info().slave_address();
             }
         }
         self.task.process_one_step(mb_socket, sys_time);
+    }
+
+    pub fn received_mailbox<'a>(
+        &self,
+        mb_socket: &'a PduSocket,
+    ) -> Option<Result<(MailboxSessionId, MailboxFrame<&'a [u8]>), TaskError<MailboxTaskError>>>
+    {
         if self.task.is_write_mode() {
             return None;
         }
         let _ = self.task.wait()?;
         let mb_frame = MailboxFrame(mb_socket.data_buf());
-        session_id.mailbox_count = mb_frame.count();
+        let session_id = MailboxSessionId {
+            slave_address: self.task.slave_address(),
+            mailbox_count: mb_frame.count(),
+        };
         Some(Ok((session_id, mb_frame)))
     }
 
@@ -70,62 +79,120 @@ impl MailboxManager {
         self.slave_with_mailbox = None;
     }
 
-    pub fn try_get_mailbox_request_interface<'a, 'b, 'c>(
+    pub fn try_get_mailbox_request_interface<'a>(
         &'a mut self,
-        mb_socket: &'b mut PduSocket<'c>,
-    ) -> Option<MailboxRequestInterface<'a, 'b, 'c>> {
+    ) -> Option<MailboxRequestInterface<'a>> {
         if !self.task.is_finished() {
             return None;
         }
 
         let Self { ref mut task, .. } = self;
 
-        Some(MailboxRequestInterface {
-            task,
-            socket: mb_socket,
-        })
+        Some(MailboxRequestInterface { task })
     }
 }
 
 #[derive(Debug)]
-pub struct MailboxRequestInterface<'a, 'b, 'c> {
+pub(super) struct MailboxRequestInterface<'a> {
     task: &'a mut MailboxTask,
-    socket: &'b mut PduSocket<'c>,
 }
 
-impl<'a, 'b, 'c> MailboxRequestInterface<'a, 'b, 'c> {
-    pub fn request(&mut self, slave: &Slave, mailbox: &mut Mailbox) -> MailboxSessionId {
-        todo!()
-        // let mut mb_frame = MailboxFrame(self.socket.data_buf_mut());
-        // mb_frame.set_mailbox(mailbox).unwrap();
-        // let rx_sm = slave.info().mailbox_rx_sm().unwrap();
-        // let session_id = MailboxSessionId {
-        //     slave_address: slave.info().slave_address(),
-        //     mailbox_count: slave.increment_mb_count(),
-        // };
-        // mailbox.set_mailbox_count(session_id.mailbox_count);
-        // self.task
-        //     .start_to_write(session_id.slave_address, rx_sm, false);
-        // session_id
+impl<'a> MailboxRequestInterface<'a> {
+    pub fn request(
+        &mut self,
+        slave: &Slave,
+        mailbox: &mut Mailbox,
+        mb_buf: &mut [u8],
+    ) -> MailboxSessionId {
+        let mut mb_frame = MailboxFrame(mb_buf);
+        mb_frame.set_mailbox(mailbox).unwrap();
+        let rx_sm = slave.info().mailbox_rx_sm().unwrap();
+        let session_id = MailboxSessionId {
+            slave_address: slave.info().slave_address(),
+            mailbox_count: slave.increment_mb_count(),
+        };
+        mb_frame.set_count(session_id.mailbox_count);
+        self.task
+            .start_to_write(session_id.slave_address, rx_sm, false);
+        session_id
     }
 
-    pub fn write_sdo_request(
-        &mut self,
-        writer: &mut MailboxRequestInterface,
-        slave: &Slave,
-        index: u16,
-        sub_index: u8,
-        data: &[u8],
-    ) -> MailboxSessionId {
-        todo!()
-        // let message = Message::new_sdo_download_request(index, sub_index, data);
-        // let mut mailbox = Mailbox::new(0, 0, message);
-        // writer.request(slave, &mut mailbox)
-    }
+    // pub fn write_sdo_request(
+    //     &mut self,
+    //     slave: &Slave,
+    //     index: u16,
+    //     sub_index: u8,
+    //     data: &[u8],
+    //     mb_buf: &mut [u8],
+    // ) -> MailboxSessionId {
+    //     let mut mailbox = Mailbox::new_sdo_download_request(index, sub_index, data);
+    //     self.request(slave, &mut mailbox, mb_buf)
+    // }
+
+    // pub fn read_sdo_request(
+    //     &mut self,
+    //     slave: &Slave,
+    //     index: u16,
+    //     sub_index: u8,
+    //     mb_buf: &mut [u8],
+    // ) -> MailboxSessionId {
+    //     let mut mailbox = Mailbox::new_sdo_upload_request(index, sub_index);
+    //     self.request(slave, &mut mailbox, mb_buf)
+    // }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MailboxSessionId {
     slave_address: SlaveAddress,
     mailbox_count: u8,
+}
+
+#[derive(Debug)]
+pub struct MailboxReqIfWrapper<'a, 'b, 'frame, 'socket, D>
+where
+    D: for<'d> RawEthernetDevice<'d>,
+{
+    mif: MailboxRequestInterface<'a>,
+    sif: &'b mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
+    mb_handle: SocketHandle,
+}
+
+impl<'a, 'b, 'frame, 'socket, D> MailboxReqIfWrapper<'a, 'b, 'frame, 'socket, D>
+where
+    D: for<'d> RawEthernetDevice<'d>,
+{
+    pub(super) fn new(
+        mif: MailboxRequestInterface<'a>,
+        sif: &'b mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
+        mb_handle: SocketHandle,
+    ) -> Self {
+        Self {
+            mif,
+            sif,
+            mb_handle,
+        }
+    }
+
+    pub fn write_sdo_request(
+        &mut self,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+        data: &[u8],
+    ) -> MailboxSessionId {
+        let mut mailbox = Mailbox::new_sdo_download_request(index, sub_index, data);
+        let socket = self.sif.get_socket_mut(&self.mb_handle).unwrap();
+        self.mif.request(slave, &mut mailbox, socket.data_buf_mut())
+    }
+
+    pub fn read_sdo_request(
+        &mut self,
+        slave: &Slave,
+        index: u16,
+        sub_index: u8,
+    ) -> MailboxSessionId {
+        let mut mailbox = Mailbox::new_sdo_upload_request(index, sub_index);
+        let socket = self.sif.get_socket_mut(&self.mb_handle).unwrap();
+        self.mif.request(slave, &mut mailbox, socket.data_buf_mut())
+    }
 }

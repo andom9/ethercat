@@ -68,7 +68,6 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
         let mut first_slave = None;
         for recv_port in self.network.recieved_ports() {
             let slave_pos = recv_port.slave_position;
-            dbg!(slave_pos);
             let port_number = recv_port.port;
             let (slave, _) = self
                 .network
@@ -106,7 +105,6 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
                 self.dc_slave_count += 1;
             }
         }
-        dbg!(self.dc_slave_count);
         self.state = State::RequestToLatch(0);
     }
 
@@ -128,7 +126,6 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
     }
 
     fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
-        dbg!(&self.state);
         match &self.state {
             State::Idle => None,
             State::Error(_) => None,
@@ -196,7 +193,6 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
     }
 
     fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime) {
-        dbg!(&self.state);
         let (data, wkc) = {
             let Pdu { command, data, wkc } = recv_data;
             let wkc = *wkc;

@@ -5,13 +5,21 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "EtherCAT Master"
 
+[features]
+default = ["smoltcp"]
+smoltcp = ["dep:smoltcp"]
+
 [dependencies]
 log = "0.4"
 bitfield = "0.14.0"
 bit_field = "0.10.1"
 num_enum = "0.5.7"
 
+# Required only for smoltcp feature
+smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4", "medium-ethernet","socket-raw"], optional = true}
+
+
 [dev-dependencies]
 env_logger = "0.9.0"
 pnet_datalink = "0.31.0"
-smoltcp = { version = "0.8", default-features = false, features = ["proto-ipv4", "medium-ethernet","socket-raw"] }
+

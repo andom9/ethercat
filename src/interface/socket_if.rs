@@ -42,11 +42,11 @@ impl<'a> PduSocket<'a> {
         }
     }
 
-    pub fn data_buf(&self) -> &[u8] {
+    pub fn data_buf<'b>(&'b self) -> &'b [u8] {
         &self.data_buf
     }
 
-    pub fn data_buf_mut(&mut self) -> &mut [u8] {
+    pub fn data_buf_mut<'b>(&'b mut self) -> &'b mut [u8] {
         &mut self.data_buf
     }
 
@@ -122,26 +122,12 @@ impl From<usize> for SocketHandle {
     }
 }
 
-// #[derive(Debug)]
-// pub enum SocketOption<S> {
-//     NextFreeIndex(SocketHandle),
-//     Socket(S),
-// }
-
-// impl<S> Default for SocketOption<S> {
-//     fn default() -> Self {
-//         Self::NextFreeIndex(SocketHandle(0))
-//     }
-// }
-
 #[derive(Debug)]
 pub struct SocketInterface<'frame, 'buf, D, const N: usize>
 where
     D: for<'d> RawEthernetDevice<'d>,
 {
     iface: PduInterface<'frame, D>,
-    //sockets: [SocketOption<PduSocket<'buf>>; N],
-    //free_index: SocketHandle,
     socket_set: IndexSet<SocketHandle, PduSocket<'buf>, N>,
     pub lost_frame_count: usize,
 }
@@ -149,76 +135,29 @@ where
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
     D: for<'d> RawEthernetDevice<'d>,
-    //[IndexOption<SocketHandle, PduSocket<'buf>>; N]: Default,
 {
-    pub fn new(
-        iface: PduInterface<'frame, D>,
-        //mut sockets: [SocketOption<PduSocket<'buf>>; N],
-    ) -> Self {
-        //sockets
-        //    .iter_mut()
-        //    .enumerate()
-        //    .for_each(|(i, socket)| *socket = SocketOption::NextFreeIndex(SocketHandle(i + 1)));
+    pub fn new(iface: PduInterface<'frame, D>) -> Self {
         Self {
             iface,
             socket_set: IndexSet::new(),
-            //sockets,
-            //free_index: SocketHandle(0),
             lost_frame_count: 0,
         }
     }
 
     pub fn add_socket(&mut self, socket: PduSocket<'buf>) -> Result<SocketHandle, PduSocket> {
         self.socket_set.add_item(socket)
-        // let index = self.free_index.clone();
-        // if let Some(socket_enum) = self.sockets.get_mut(index.0) {
-        //     if let SocketOption::NextFreeIndex(next) = socket_enum {
-        //         self.free_index = next.clone();
-        //         *socket_enum = SocketOption::Socket(socket);
-        //         Ok(index)
-        //     } else {
-        //         unreachable!()
-        //     }
-        // } else {
-        //     Err(socket)
-        // }
     }
 
     pub fn remove_socket(&mut self, socket_handle: SocketHandle) -> Option<PduSocket> {
         self.socket_set.remove_item(socket_handle)
-        // if let Some(socket_enum) = self.sockets.get_mut(socket_handle.0) {
-        //     match socket_enum {
-        //         SocketOption::Socket(_) => {
-        //             let mut next = SocketOption::NextFreeIndex(self.free_index.clone());
-        //             self.free_index = socket_handle;
-        //             core::mem::swap(socket_enum, &mut next);
-        //             if let SocketOption::Socket(socket) = next {
-        //                 Some(socket)
-        //             } else {
-        //                 unreachable!()
-        //             }
-        //         }
-        //         SocketOption::NextFreeIndex(_) => None,
-        //     }
-        // } else {
-        //     None
-        // }
     }
 
     pub fn get_socket(&self, socket_handle: &SocketHandle) -> Option<&PduSocket<'buf>> {
         self.socket_set.get_item(socket_handle)
-        // match self.sockets.get(socket_handle.0) {
-        //     Some(SocketOption::Socket(ref socket)) => Some(socket),
-        //     _ => None,
-        // }
     }
 
     pub fn get_socket_mut(&mut self, socket_handle: &SocketHandle) -> Option<&mut PduSocket<'buf>> {
         self.socket_set.get_item_mut(socket_handle)
-        // match self.sockets.get_mut(socket_handle.0) {
-        //     Some(SocketOption::Socket(ref mut socket)) => Some(socket),
-        //     _ => None,
-        // }
     }
 
     /// If true, all PDUs are transmitted and received,

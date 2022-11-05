@@ -94,6 +94,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub fn items(&self) -> impl Iterator<Item = &T> {
         self.items.iter().filter_map(|option| {
             if let IndexOption::Exist(item) = option {

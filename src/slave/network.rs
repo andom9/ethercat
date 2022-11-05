@@ -115,13 +115,11 @@ impl<'a, 'b, 'c> RecievedPorts<'a, 'b, 'c> {
                 .iter()
                 .position(|p| *p)
                 .unwrap_or(4);
-            dbg!(current_port);
 
             let mut dc = slave.dc_context.borrow_mut();
             dc.current_port = current_port as u8;
             length += 1;
         }
-        dbg!(length);
 
         Self {
             slaves,
@@ -142,7 +140,6 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let posision_tmp = self.position;
-            dbg!(posision_tmp);
             let slave = self.slaves[self.position as usize].0.as_ref().unwrap();
             let mut dc = slave.dc_context.borrow_mut();
 
@@ -165,12 +162,8 @@ impl<'a, 'b, 'c> Iterator for RecievedPorts<'a, 'b, 'c> {
                     self.position -= 1;
                 }
             }
-            dbg!(posision_tmp);
-            dbg!(self.length);
-            dbg!(current_port_tmp);
 
             if (posision_tmp as usize) < self.length && current_port_tmp < 4 {
-                dbg!("some");
                 return Some(RecievedPort {
                     port: current_port_tmp,
                     slave_position: posision_tmp,

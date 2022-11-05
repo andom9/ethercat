@@ -1,7 +1,6 @@
 use super::mailbox::MailboxTaskError;
 use super::TaskError;
 use super::{CyclicTask, EtherCatSystemTime};
-use crate::frame::MailboxFrame;
 use crate::interface::*;
 use crate::register::{SyncManagerActivation, SyncManagerPdiControl, SyncManagerStatus};
 use crate::slave::SyncManager;
@@ -54,13 +53,6 @@ impl MailboxReadTask {
     pub fn slave_address(&self) -> SlaveAddress {
         self.slave_address
     }
-
-    //pub fn mailbox_data<'a>(buf: &'a [u8]) -> (MailboxFrame<&'a [u8]>, &'a [u8]) {
-    //    (
-    //        MailboxFrame(&buf[..MailboxFrame::HEADER_SIZE]),
-    //        &buf[MailboxFrame::HEADER_SIZE..],
-    //    )
-    //}
 
     pub fn start(&mut self, slave_address: SlaveAddress, tx_sm: SyncManager, wait_full: bool) {
         self.timer_start = EtherCatSystemTime(0);
@@ -170,7 +162,6 @@ impl CyclicTask for MailboxReadTask {
                 if wkc != 1 {
                     self.state = State::RequestRepeat;
                 } else {
-                    let header = MailboxFrame(&data);
                     self.state = State::Complete;
                 }
             }

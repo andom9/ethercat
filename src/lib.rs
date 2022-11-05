@@ -1,4 +1,4 @@
-//#![no_std]
+#![no_std]
 pub mod frame;
 pub mod interface;
 pub mod master;

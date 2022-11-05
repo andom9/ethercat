@@ -39,7 +39,7 @@ impl<'a, 'b> SlaveConfig<'a, 'b> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum SyncMode {
     FreeRun = 0x00,
     SyncManagerEvent = 0x01,
@@ -106,9 +106,9 @@ impl PdoEntry {
         self.logical_bits.bit_length() as u8
     }
 
-    pub(crate) fn byte_length(&self) -> u8 {
-        self.logical_bits.byte_length() as u8
-    }
+    //pub(crate) fn byte_length(&self) -> u8 {
+    //    self.logical_bits.byte_length() as u8
+    //}
 
     pub fn read_to_buffer(
         &self,

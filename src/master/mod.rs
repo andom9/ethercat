@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use self::mailbox::MailboxManager;
+use self::mailbox::{MailboxManager, MailboxReqIfWrapper, MailboxSessionId};
 
 const LOGICAL_START_ADDRESS: u32 = 0x1000;
 const NUM_SOCKETS: usize = 5;
@@ -36,7 +36,7 @@ where
     cycle_count: usize,
     //mailbox
     mailbox_handle: SocketHandle,
-    mailbox_task: MailboxManager,
+    mailbox_manager: MailboxManager,
     //process data
     process_data_handle: Option<SocketHandle>,
     process_data_task: ProcessTask,
@@ -90,7 +90,7 @@ where
             gp_socket_handle,
             cycle_count: 0,
             mailbox_handle,
-            mailbox_task: MailboxManager::new(MailboxTask::new()),
+            mailbox_manager: MailboxManager::new(MailboxTask::new()),
             process_data_handle: None,
             process_data_task: ProcessTask::new(LOGICAL_START_ADDRESS, 0, 0),
             dc_handle,
@@ -166,7 +166,7 @@ where
         let Self {
             network,
             mailbox_handle,
-            mailbox_task,
+            mailbox_manager,
             process_data_handle,
             process_data_task,
             dc_handle,
@@ -185,9 +185,9 @@ where
                 task.process_one_step(socket, sys_time);
             }
             let mb_socket = self.sif.get_socket_mut(mailbox_handle).unwrap();
-            mailbox_task.process_one_step(&network, mb_socket, sys_time);
+            mailbox_manager.process_one_step(&network, mb_socket, sys_time);
             let socket = self.sif.get_socket(handle).unwrap();
-            mailbox_task.find_slave_with_mailbox_from_process_data(
+            mailbox_manager.find_slave_with_mailbox_from_process_data(
                 network,
                 LOGICAL_START_ADDRESS,
                 socket.data_buf(),
@@ -216,8 +216,24 @@ where
         Ok(self.cycle_count)
     }
 
-    pub fn try_get_sdo_task(&mut self) {
-        todo!()
+    pub fn received_mailbox<'a>(
+        &'a self,
+    ) -> Option<Result<(MailboxSessionId, MailboxFrame<&'a [u8]>), TaskError<MailboxTaskError>>>
+    {
+        let mb_socket = self.sif.get_socket(&self.mailbox_handle).unwrap();
+        self.mailbox_manager.received_mailbox(mb_socket)
+    }
+
+    pub fn try_get_mailbox_request_interface<'a>(
+        &'a mut self,
+    ) -> Option<MailboxReqIfWrapper<'a, 'a, 'frame, 'socket, D>> {
+        let mif = self.mailbox_manager.try_get_mailbox_request_interface()?;
+
+        Some(MailboxReqIfWrapper::new(
+            mif,
+            &mut self.sif,
+            self.mailbox_handle.clone(),
+        ))
     }
 
     pub fn rx_error_count(&self) -> &RxErrorCounter<[u8; RxErrorCounter::SIZE]> {
@@ -735,14 +751,10 @@ where
                     Direction::Output => {
                         fmmu_reg.set_read_enable(false);
                         fmmu_reg.set_write_enable(true);
-                        dbg!(&fmmu_reg.read_enable());
-                        dbg!(&fmmu_reg.write_enable());
                     }
                     Direction::Input => {
                         fmmu_reg.set_read_enable(true);
                         fmmu_reg.set_write_enable(false);
-                        dbg!(&fmmu_reg.read_enable());
-                        dbg!(&fmmu_reg.write_enable());
                     }
                 }
                 fmmu_reg.set_enable(true);

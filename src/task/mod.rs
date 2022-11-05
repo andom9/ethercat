@@ -12,7 +12,7 @@ mod slave_initialize;
 pub use address_access_task::AddressAccessTask;
 pub use al_state_transfer::{AlStateTransferTask, AlStateTransferTaskError};
 pub use dc_initilize::DcInitTask;
-pub use error::TaskError;
+pub use error::*;
 pub use mailbox::{MailboxTask, MailboxTaskError};
 pub use network_initilize::{NetworkInitTask, NetworkInitTaskError};
 pub use sii_read::{SiiReader, SiiTaskError};
@@ -340,13 +340,9 @@ where
         )
         .unwrap();
         let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
-        //let socket = self.get_socket_mut(handle).expect("socket not found");
-        //return Ok(socket.data_buf());
         let mb = mb_data
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
-        //
-        //return Ok(mb.message().sdo_upload_response().unwrap());
 
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
