@@ -1,13 +1,17 @@
 /// A smoltcp-like raw network interface.
-pub trait RawEthernetDevice<'a> {
-    type TxToken: TxToken + 'a;
-    type RxToken: RxToken + 'a;
+pub trait RawEthernetDevice {
+    type TxToken<'a>: TxToken
+    where
+        Self: 'a;
+    type RxToken<'a>: RxToken
+    where
+        Self: 'a;
 
     /// If phi is not busy, return token.
-    fn transmit(&'a mut self) -> Option<Self::TxToken>;
+    fn transmit<'a>(&'a mut self) -> Option<Self::TxToken<'a>>;
 
     /// If phi is not busy, return token.
-    fn receive(&'a mut self) -> Option<Self::RxToken>;
+    fn receive<'a>(&'a mut self) -> Option<Self::RxToken<'a>>;
 }
 
 pub trait TxToken {
@@ -61,7 +65,7 @@ pub mod smoltcp_wrapper {
     }
 
     pub struct SmolRxTokenWrapper<T: smoltcp::phy::RxToken>(T);
-    
+
     impl<T> RxToken for SmolRxTokenWrapper<T>
     where
         T: smoltcp::phy::RxToken,
@@ -78,17 +82,17 @@ pub mod smoltcp_wrapper {
         }
     }
 
-    impl<'a, D> RawEthernetDevice<'a> for SmolDeviceWrapper<D>
+    impl<D> RawEthernetDevice for SmolDeviceWrapper<D>
     where
         D: for<'d> smoltcp::phy::Device<'d>,
     {
-        type TxToken = SmolTxTokenWrapper<<D as smoltcp::phy::Device<'a>>::TxToken>;
-        type RxToken = SmolRxTokenWrapper<<D as smoltcp::phy::Device<'a>>::RxToken>;
-        fn transmit(&'a mut self) -> Option<Self::TxToken> {
+        type TxToken<'a> = SmolTxTokenWrapper<<D as smoltcp::phy::Device<'a>>::TxToken> where Self: 'a;
+        type RxToken<'a> = SmolRxTokenWrapper<<D as smoltcp::phy::Device<'a>>::RxToken> where Self: 'a;
+        fn transmit<'a>(&'a mut self) -> Option<Self::TxToken<'a>> {
             self.device.transmit().map(SmolTxTokenWrapper)
         }
 
-        fn receive(&'a mut self) -> Option<Self::RxToken> {
+        fn receive<'a>(&'a mut self) -> Option<Self::RxToken<'a>> {
             self.device
                 .receive()
                 .map(|(token, _)| SmolRxTokenWrapper(token))

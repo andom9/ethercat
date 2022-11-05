@@ -28,7 +28,7 @@ const NUM_SOCKETS: usize = 5;
 #[derive(Debug)]
 pub struct EtherCatMaster<'frame, 'socket, 'slave, 'pdo_mapping, 'pdo_entry, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     sif: SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
     network: Network<'slave, 'pdo_mapping, 'pdo_entry>,
@@ -54,7 +54,7 @@ where
 impl<'frame, 'socket, 'slave, 'pdo_mapping, 'pdo_entry, D>
     EtherCatMaster<'frame, 'socket, 'slave, 'pdo_mapping, 'pdo_entry, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     pub fn new(
         slave_buf: &'slave mut [(Option<Slave>, SlaveConfig<'pdo_mapping, 'pdo_entry>)],
@@ -963,13 +963,7 @@ where
 }
 
 /// Set PDO map to obejct dictionary.
-fn set_pdo_config_to_od_utility<
-    'frame,
-    'socket,
-    'pdo_mapping,
-    'pdo_entry,
-    D: for<'d> RawEthernetDevice<'d>,
->(
+fn set_pdo_config_to_od_utility<'frame, 'socket, 'pdo_mapping, 'pdo_entry, D: RawEthernetDevice>(
     slave: &mut Slave,
     slave_config: &mut SlaveConfig<'pdo_mapping, 'pdo_entry>,
     sif: &mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
@@ -1088,13 +1082,7 @@ fn set_pdo_config_to_od_utility<
 /// Assign PDO map to SM.
 /// Return next pdo ram address
 /// NOTE: output = RX of slave.
-fn set_pdo_to_sm_utility<
-    'frame,
-    'socket,
-    'pdo_mapping,
-    'pdo_entry,
-    D: for<'d> RawEthernetDevice<'d>,
->(
+fn set_pdo_to_sm_utility<'frame, 'socket, 'pdo_mapping, 'pdo_entry, D: RawEthernetDevice>(
     slave: &mut Slave,
     sif: &mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
     handle: &SocketHandle,

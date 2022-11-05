@@ -63,7 +63,7 @@ pub trait CyclicTask {
 
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     fn block_on<C: CyclicTask, E>(
         &mut self,

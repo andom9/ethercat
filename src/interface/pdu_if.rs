@@ -62,7 +62,7 @@ impl Command {
 #[derive(Debug)]
 pub struct PduInterface<'a, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     ethdev: D,
     buffer: &'a mut [u8],
@@ -75,7 +75,7 @@ where
 
 impl<'a, D> PduInterface<'a, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     pub fn new(ethdev: D, buffer: &'a mut [u8]) -> Self {
         let capacity = buffer.len().min(MAX_ETHERCAT_DATAGRAM);

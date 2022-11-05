@@ -150,7 +150,7 @@ pub struct MailboxSessionId {
 #[derive(Debug)]
 pub struct MailboxReqIfWrapper<'a, 'b, 'frame, 'socket, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     mif: MailboxRequestInterface<'a>,
     sif: &'b mut SocketInterface<'frame, 'socket, D, NUM_SOCKETS>,
@@ -159,7 +159,7 @@ where
 
 impl<'a, 'b, 'frame, 'socket, D> MailboxReqIfWrapper<'a, 'b, 'frame, 'socket, D>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     pub(super) fn new(
         mif: MailboxRequestInterface<'a>,

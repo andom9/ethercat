@@ -125,7 +125,7 @@ impl From<usize> for SocketHandle {
 #[derive(Debug)]
 pub struct SocketInterface<'frame, 'buf, D, const N: usize>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     iface: PduInterface<'frame, D>,
     socket_set: IndexSet<SocketHandle, PduSocket<'buf>, N>,
@@ -134,7 +134,7 @@ where
 
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
 where
-    D: for<'d> RawEthernetDevice<'d>,
+    D: RawEthernetDevice,
 {
     pub fn new(iface: PduInterface<'frame, D>) -> Self {
         Self {
