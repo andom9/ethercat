@@ -5,7 +5,8 @@ use crate::frame::*;
 pub enum PhyError {
     TxError,
     RxError,
-    Busy,
+    TxNotAvailable,
+    RxNotAvailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,7 +181,7 @@ where
                 return Err(PhyError::TxError);
             }
         } else {
-            return Err(PhyError::Busy);
+            return Err(PhyError::TxNotAvailable);
         }
 
         if *tx_count < self.pdu_count {
@@ -227,7 +228,7 @@ where
                     break;
                 }
             } else {
-                return Err(PhyError::Busy);
+                return Err(PhyError::RxNotAvailable);
             }
         }
         if 0 < *tx_count {

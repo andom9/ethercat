@@ -61,7 +61,6 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
         self.first_dc_slave = None;
         self.dc_slave_count = 0;
 
-        // MEMO:ネットワークイニシャライザーの方にもっていく？
         // specify network topology
         let mut last_recv_slave = 0;
         let mut last_recv_port = 0;
@@ -149,7 +148,6 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
                     DcRecieveTime::ADDRESS,
                 );
                 buf[..DcRecieveTime::SIZE].fill(0);
-                //self.sys_time = sys_time;
                 Some((self.command, DcRecieveTime::SIZE))
             }
             State::SetOffset(pos) => {

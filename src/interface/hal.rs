@@ -31,7 +31,7 @@ pub trait RxToken {
 }
 
 #[cfg(feature = "smoltcp")]
-pub mod smoltcp {
+pub mod smoltcp_device {
     use super::{DeviceError, RawEthernetDevice, RxToken, TxToken};
 
     pub struct SmolDevice<D>
@@ -106,35 +106,34 @@ pub mod smoltcp {
 
 #[cfg(feature = "pcap")]
 #[cfg(windows)]
-pub mod pcap {
+pub mod pcap_device {
     use pcap::{Active, Capture, Device, Packet};
 
     use crate::frame::ETHERNET_FRAME_SIZE_WITHOUT_FCS;
 
     use super::{DeviceError, RawEthernetDevice, RxToken, TxToken};
 
-    pub struct PcapDevice<'a> {
+    pub struct PcapDevice {
         cap: Capture<Active>,
-        buf: &'a mut [u8],
+        buf: Vec<u8>,
     }
 
-    impl<'a> PcapDevice<'a> {
-        pub fn new(timeout_ms: i32, buf: &'a mut [u8]) -> Self {
-            assert!(ETHERNET_FRAME_SIZE_WITHOUT_FCS <= buf.len());
-            let cap = pcap::Capture::from_device(Device::lookup().unwrap().unwrap())
-                .unwrap()
+    impl PcapDevice {
+        pub fn new(device: Device) -> Result<Self, pcap::Error> {
+            let cap = pcap::Capture::from_device(device)?
                 .promisc(true)
                 .immediate_mode(true)
-                .timeout(timeout_ms)
-                .open()
-                .unwrap()
-                .setnonblock()
-                .unwrap();
-            Self { cap, buf }
+                .timeout(10)
+                .open()?
+                .setnonblock()?;
+            Ok(Self {
+                cap,
+                buf: vec![0; ETHERNET_FRAME_SIZE_WITHOUT_FCS],
+            })
         }
     }
 
-    impl<'a> RawEthernetDevice for PcapDevice<'a> {
+    impl RawEthernetDevice for PcapDevice {
         type TxToken<'b> = PcapTxToken<'b>
     where
         Self: 'b;

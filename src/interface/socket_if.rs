@@ -58,7 +58,10 @@ impl<'a> PduSocket<'a> {
         self.recv_flag = false;
     }
 
-    pub fn set_pdu<F: FnOnce(&mut [u8]) -> Option<(Command, usize)>>(&mut self, command_data: F) {
+    pub fn set_pdu<F>(&mut self, command_data: F)
+    where
+        F: FnOnce(&mut [u8]) -> Option<(Command, usize)>,
+    {
         self.recv_flag = false;
         self.wkc = 0;
         if let Some((command, length)) = command_data(self.data_buf) {

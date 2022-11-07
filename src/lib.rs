@@ -1,4 +1,5 @@
-#![no_std]
+//#![no_std]
+#![cfg_attr(not(feature = "pcap"), no_std)]
 pub mod frame;
 pub mod interface;
 pub mod master;

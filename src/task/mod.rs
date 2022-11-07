@@ -78,7 +78,7 @@ where
                         continue;
                     }
                 }
-                Err(PhyError::Busy) => continue,
+                Err(PhyError::TxNotAvailable) | Err(PhyError::RxNotAvailable) => continue,
                 Err(err) => return Err(err.into()),
             }
             let socket = self.get_socket_mut(handle).unwrap();
