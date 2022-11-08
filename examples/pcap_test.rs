@@ -20,8 +20,8 @@ fn main() {
 
     if let Some(name) = args.get(1) {
         pdu_test(&name);
-        //read_eeprom_test(name);
-        //sdo_test(name);
+        read_eeprom_test(name);
+        sdo_test(name);
         //pdo_test(name);
     } else {
         println!("Specify the name of network interface as an argument from the following.");
@@ -43,7 +43,7 @@ fn new_device(name: &str) -> PcapDevice {
 }
 
 fn pdu_test(name: &str) {
-    println!("pdu_test");
+    println!("\npdu_test");
     let dev = new_device(name);
     let mut buf = [0; 1500];
     let iface = PduInterface::new(dev, &mut buf);
@@ -71,46 +71,51 @@ fn pdu_test(name: &str) {
     println!("pdu_test done");
 }
 
-// fn read_eeprom_test(interf_name: &str) {
-//     dbg!("prepare resources");
-//     let device = PnetDevice::open(interf_name);
-//     let mut buf = vec![0; 1500];
-//     let iface = CommandInterface::new(device, &mut buf);
+fn read_eeprom_test(name: &str) {
+    println!("\nread_eeprom_test");
+    let dev = new_device(name);
+    let mut buf = [0; 1500];
+    let iface = PduInterface::new(dev, &mut buf);
+    let mut s_buf = [0; 256];
+    let mut sif: SocketInterface<_, 1> = SocketInterface::new(iface);
+    let handle = sif.add_socket(PduSocket::new(&mut s_buf)).unwrap();
+    let (data, size) = sif
+        .read_sii(
+            &handle,
+            SlaveAddress::SlavePosition(0),
+            ProductCode::ADDRESS,
+        )
+        .unwrap();
+    println!("ProductCode: {}", data.data(size));
+    println!("read_eeprom_test done");
+}
 
-//     let mut socket_buf = vec![0; 256];
-//     let sockets = [
-//         SocketOption::default(), // al state
-//     ];
-//     let mut sif = SocketInterface::new(iface, sockets);
-//     let handle = sif.add_socket(PduSocket::new(&mut socket_buf)).unwrap();
-//     let (data, size) = sif
-//         .read_sii(
-//             &handle,
-//             SlaveAddress::SlavePosition(4),
-//             ProductCode::ADDRESS,
-//         )
-//         .unwrap();
-//     dbg!(data.data(size));
-// }
+fn sdo_test(name: &str) {
+    println!("\nsdo_test");
+    let dev = new_device(name);
+    let mut buf = [0; 1500];
+    let iface = PduInterface::new(dev, &mut buf);
 
-// fn sdo_test(interf_name: &str) {
-//     dbg!("prepare resources");
-//     let device = PnetDevice::open(interf_name);
-//     let mut buf = vec![0; 1500];
-//     let iface = CommandInterface::new(device, &mut buf);
+    let mut slaves: [_; 10] = Default::default();
+    let mut pdu_buffer = vec![0; 1500];
+    let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
+    println!("initializing slaves");
+    master.init().unwrap();
 
-//     let mut slaves: [_; 10] = Default::default();
-//     let mut pdu_buffer = vec![0; 1500];
-//     let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
-//     master.init().unwrap();
-//     let num_slaves = master.network().num_slaves();
-//     let slave_address = SlaveAddress::SlavePosition(0);
-//     master
-//         .change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)
-//         .unwrap();
-//     let data = master.read_sdo(slave_address, 0x1018, 0x01).unwrap();
-//     dbg!(data);
-// }
+    let num_slaves = master.network().num_slaves();
+    println!("number of slaves: {}", num_slaves);
+
+    println!("changing al states");
+    let al_state = master
+        .change_al_state(TargetSlave::All(num_slaves), AlState::PreOperational)
+        .unwrap();
+    println!("al state: {:?}", al_state);
+
+    println!("reading vender id");
+    let vender_id = master.read_sdo(SlaveAddress::SlavePosition(0), 0x1018, 0x01).unwrap();
+    println!("vender id: {:?}", vender_id);
+    println!("sdo_test done");
+}
 
 // fn pdo_test(interf_name: &str) {
 //     dbg!("prepare resources");

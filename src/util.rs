@@ -36,10 +36,12 @@ where
 {
     const INIT: IndexOption<T> = IndexOption::NextFreeIndex(0);
 
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let mut items = [Self::INIT; N];
+        items.iter_mut().enumerate().for_each(|(index, v)| *v = IndexOption::NextFreeIndex(index+1));
         Self {
             free_index: 0,
-            items: [Self::INIT; N],
+            items,
             _phantom: PhantomData,
         }
     }
@@ -113,5 +115,34 @@ where
                 None
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IndexSet;
+
+    #[test]
+    fn index_set_test() {
+        let mut set: IndexSet<usize, _, 3> = IndexSet::new();
+        let h1 = set.add_item(100).unwrap();
+        let item = set.get_item(&h1).unwrap();
+        assert_eq!(*item, 100);
+        let item = set.get_item_mut(&h1).unwrap();
+        *item = 101;
+        let item = set.get_item(&h1).unwrap();
+        assert_eq!(*item, 101);
+
+        let h2 = set.add_item(200).unwrap();
+        let item = set.remove_item(h1).unwrap();
+        assert_eq!(item, 101);
+        let item2 = set.get_item(&h2).unwrap();
+        assert_eq!(*item2, 200);
+        assert!(set.get_item(&h1).is_none());
+
+        let _h3 = set.add_item(item).unwrap();
+        let _h4 = set.add_item(item).unwrap();
+        assert!(set.add_item(item).is_err());
+
     }
 }

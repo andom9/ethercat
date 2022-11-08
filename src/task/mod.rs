@@ -280,7 +280,6 @@ where
             slave_info,
             |mb_frame| {
                 let message = Mailbox::new_sdo_download_request(index, sub_index, data);
-                //let mailbox = Mailbox::new(0, count, message);
                 mb_frame.set_count(count);
                 mb_frame.set_mailbox(&message)
             },
@@ -327,7 +326,7 @@ where
     ) -> Result<&[u8], TaskError<SdoErrorKind>> {
         let count = slave.increment_mb_count();
         let slave_info = slave.info();
-
+        dbg!();
         self.write_mailbox(
             handle,
             slave_info,
@@ -339,6 +338,7 @@ where
             false,
         )
         .unwrap();
+        dbg!();
         let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
         let mb = mb_data
             .mailbox()
