@@ -161,7 +161,7 @@ impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
                     Some(Ok(Some(slave_info))) => {
                         let mut slave = Slave::default();
                         *slave.info_mut() = slave_info;
-                        slave.set_mailbox_count(1).expect("unreachable");
+                        slave.set_mailbox_count(0).expect("unreachable");
                         if 2 <= slave.info().number_of_fmmu()
                             && slave.info().mailbox_tx_sm().is_some()
                         {

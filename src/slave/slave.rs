@@ -98,7 +98,8 @@ impl Slave {
 
     /// Mailbox count is specified in the range of 1~7
     pub(crate) fn set_mailbox_count(&self, count: u8) -> Result<(), ()> {
-        if 1 <= count || count <= 7 {
+        //if 1 <= count || count <= 7 {
+        if count <= 7 {
             self.mailbox_count.set(count);
             Ok(())
         } else {

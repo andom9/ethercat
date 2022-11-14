@@ -522,3 +522,43 @@ pub struct CoeIndex {
     pub index: u16,
     pub sub_index: u8,
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{Mailbox, MailboxFrame};
+    #[test]
+    fn upload_req_test() {
+        let mut buf = [0; 256];
+        let mut mb_frame = MailboxFrame(buf.as_mut());
+        mb_frame.set_count(1);
+        mb_frame
+            .set_mailbox(&Mailbox::new_sdo_upload_request(0x1234, 0x56))
+            .unwrap();
+
+        let frame_to_be = {
+            let mut frame_to_be: [u8; 256] = [0; 256];
+            let mb_head = [0x0A, 0x00, 0x00, 0x00, 0x00, 0x13];
+            let coe_data = [0x00, 0x20, 0x40, 0x34, 0x12, 0x56, 0x00, 0x00, 0x00, 0x00];
+            frame_to_be[..MailboxFrame::HEADER_SIZE]
+                .iter_mut()
+                .zip(mb_head)
+                .for_each(|(f, d)| *f = d);
+            frame_to_be
+                [MailboxFrame::HEADER_SIZE..MailboxFrame::HEADER_SIZE + coe_data.len()]
+                .iter_mut()
+                .zip(coe_data)
+                .for_each(|(f, d)| *f = d);
+            frame_to_be
+        };
+
+        for (a, b) in buf.into_iter().zip(frame_to_be) {
+            println!("{:X}, {:X}", a, b);
+            assert_eq!(a,b);
+        }
+    }
+
+    fn download_req_test() {
+        todo!()
+    }
+}

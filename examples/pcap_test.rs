@@ -114,6 +114,7 @@ fn sdo_test(name: &str) {
     println!("reading vender id");
     let vender_id = master.read_sdo(SlaveAddress::SlavePosition(0), 0x1018, 0x01).unwrap();
     println!("vender id: {:?}", vender_id);
+    
     println!("sdo_test done");
 }
 

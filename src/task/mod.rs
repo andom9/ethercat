@@ -255,10 +255,10 @@ where
                     <= socket.data_buf().len()
             );
             let slave_address = slave_info.slave_address();
-            let tx_sm = slave_info.mailbox_tx_sm().unwrap_or_default();
+            let rx_sm = slave_info.mailbox_rx_sm().unwrap_or_default();
             mb_frame_writer(&mut MailboxFrame(socket.data_buf_mut()))
                 .map_err(|_| TaskError::TaskSpecific(MailboxTaskError::BufferSmall))?;
-            unit.start_to_write(slave_address, tx_sm, wait_empty);
+            unit.start_to_write(slave_address, rx_sm, wait_empty);
         }
         self.block_on(handle, &mut unit)?;
         unit.wait().unwrap()
@@ -326,7 +326,7 @@ where
     ) -> Result<&[u8], TaskError<SdoErrorKind>> {
         let count = slave.increment_mb_count();
         let slave_info = slave.info();
-        dbg!();
+        dbg!(count);
         self.write_mailbox(
             handle,
             slave_info,
@@ -338,12 +338,13 @@ where
             false,
         )
         .unwrap();
-        dbg!();
         let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
+        dbg!(mb_data.count());
         let mb = mb_data
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
 
+        dbg!(&mb);
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
             Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
