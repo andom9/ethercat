@@ -413,6 +413,9 @@ impl<'a> MailboxFrame<&'a mut [u8]> {
                                     + SdoDownloadNormalRequestFrame::HEADER_SIZE
                                     + data.len();
                                 assert!(payload_length <= u16::MAX as usize);
+                                sdo_frame.0[SdoFrame::HEADER_SIZE+SdoDownloadNormalRequestFrame::HEADER_SIZE..]
+                                .iter_mut()
+                                .zip(data.iter()).for_each(|(frame, d)| *frame = *d);
                                 payload_length as u16
                             }
                             SdoReq::Upload => {
@@ -515,14 +518,13 @@ pub enum SdoReq<'a> {
 pub struct LengthError;
 
 #[derive(Debug, Clone, Copy)]
-pub struct CommandSpecifier(u8);
+pub struct CommandSpecifier(pub u8);
 
 #[derive(Debug, Clone, Copy)]
 pub struct CoeIndex {
     pub index: u16,
     pub sub_index: u8,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -544,8 +546,7 @@ mod tests {
                 .iter_mut()
                 .zip(mb_head)
                 .for_each(|(f, d)| *f = d);
-            frame_to_be
-                [MailboxFrame::HEADER_SIZE..MailboxFrame::HEADER_SIZE + coe_data.len()]
+            frame_to_be[MailboxFrame::HEADER_SIZE..MailboxFrame::HEADER_SIZE + coe_data.len()]
                 .iter_mut()
                 .zip(coe_data)
                 .for_each(|(f, d)| *f = d);
@@ -554,11 +555,41 @@ mod tests {
 
         for (a, b) in buf.into_iter().zip(frame_to_be) {
             println!("{:X}, {:X}", a, b);
-            assert_eq!(a,b);
+            assert_eq!(a, b);
         }
     }
 
+    #[test]
     fn download_req_test() {
-        todo!()
+        let mut buf = [0; 256];
+        let mut mb_frame = MailboxFrame(buf.as_mut());
+        mb_frame.set_count(1);
+        mb_frame
+            .set_mailbox(&Mailbox::new_sdo_download_request(
+                0x1234,
+                0x56,
+                &[0x78, 0x9A],
+            ))
+            .unwrap();
+
+        let frame_to_be = {
+            let mut frame_to_be: [u8; 256] = [0; 256];
+            let mb_head = [0x0C, 0x00, 0x00, 0x00, 0x00, 0x13];
+            let coe_data = [0x00, 0x20, 0x21, 0x34, 0x12, 0x56, 0x02, 0x00, 0x00, 0x00, 0x78, 0x9A];
+            frame_to_be[..MailboxFrame::HEADER_SIZE]
+                .iter_mut()
+                .zip(mb_head)
+                .for_each(|(f, d)| *f = d);
+            frame_to_be[MailboxFrame::HEADER_SIZE..MailboxFrame::HEADER_SIZE + coe_data.len()]
+                .iter_mut()
+                .zip(coe_data)
+                .for_each(|(f, d)| *f = d);
+            frame_to_be
+        };
+
+        for (a, b) in buf.into_iter().zip(frame_to_be) {
+            println!("{:X}, {:X}", a, b);
+            assert_eq!(a, b);
+        }
     }
 }

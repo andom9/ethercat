@@ -42,8 +42,8 @@ impl<B: AsRef<[u8]>> EtherCatFrameUtil<B> {
     }
 
     #[inline]
-    pub fn dlpdu_offsets(&self) -> EtherCatPduOffsets<&B> {
-        EtherCatPduOffsets::new_for_ethercat_frame(&self.buffer, self.buffer.as_ref().len())
+    pub fn dlpdu_indexes(&self) -> EtherCatPduIndexes<&B> {
+        EtherCatPduIndexes::new_for_ethercat_frame(&self.buffer, self.buffer.as_ref().len())
     }
 
     #[inline]
@@ -90,12 +90,12 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrameUtil<B> {
         }
 
         //最後のEtherCatPduを変更
-        if let Some(pre_dlpdu_offset) = self.dlpdu_offsets().last() {
-            if self.buffer.as_ref()[pre_dlpdu_offset..]
+        if let Some(pre_dlpdu_index) = self.dlpdu_indexes().last() {
+            if self.buffer.as_ref()[pre_dlpdu_index..]
                 .get(EtherCatPdu::HEADER_SIZE - 1)
                 .is_some()
             {
-                EtherCatPdu(&mut self.buffer.as_mut()[pre_dlpdu_offset..]).set_has_next(true)
+                EtherCatPdu(&mut self.buffer.as_mut()[pre_dlpdu_index..]).set_has_next(true)
             }
         }
 
@@ -131,13 +131,13 @@ impl<B: AsRef<[u8]> + AsMut<[u8]>> EtherCatFrameUtil<B> {
 }
 
 #[derive(Debug)]
-pub struct EtherCatPduOffsets<B> {
+pub struct EtherCatPduIndexes<B> {
     buffer: B,
     offset: usize,
     length: usize,
 }
 
-impl<B: AsRef<[u8]>> EtherCatPduOffsets<B> {
+impl<B: AsRef<[u8]>> EtherCatPduIndexes<B> {
     fn new_for_ethercat_frame(buffer: B, length: usize) -> Self {
         let offset = EtherCatFrame::HEADER_SIZE + EthernetFrame::HEADER_SIZE;
         Self::new(buffer, length, offset)
@@ -152,7 +152,7 @@ impl<B: AsRef<[u8]>> EtherCatPduOffsets<B> {
     }
 }
 
-impl<B: AsRef<[u8]>> Iterator for EtherCatPduOffsets<B> {
+impl<B: AsRef<[u8]>> Iterator for EtherCatPduIndexes<B> {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         self.buffer.as_ref().get(self.offset)?;

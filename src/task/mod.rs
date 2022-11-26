@@ -291,27 +291,37 @@ where
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
 
+        dbg!(&mb);
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
-            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnsupportedMailboxProtocol.into()),
             Mailbox::CoE((_, coe)) => match coe {
                 crate::frame::CoE::Emmergency(emm_f) => {
                     Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
                 }
-                crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::SdoReq(sdo_req) => match sdo_req {
+                    crate::frame::SdoReq::Abort(abort_code) => {
+                        Err(SdoErrorKind::AbortCode(abort_code).into())
+                    }
+                    _ => Err(SdoErrorKind::UnexpectedSdoType(SdoType::Req).into()),
+                },
                 crate::frame::CoE::SdoRes(sdo_res) => match sdo_res {
                     crate::frame::SdoRes::DownLoad => {
                         if mb_data.count() != count {
-                            Err(SdoErrorKind::UnexpectedMailbox.into())
+                            Err(SdoErrorKind::CountUnmatch.into())
                         } else {
                             Ok(())
                         }
                     }
-                    crate::frame::SdoRes::Upload(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
-                    crate::frame::SdoRes::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::Upload(_) => {
+                        Err(SdoErrorKind::UnexpectedSdoType(SdoType::UploadRes).into())
+                    }
+                    crate::frame::SdoRes::Other(_) => {
+                        Err(SdoErrorKind::UnexpectedSdoType(SdoType::OtherRes).into())
+                    }
                 },
                 crate::frame::CoE::UnsupportedType(_) => {
-                    Err(SdoErrorKind::UnexpectedMailbox.into())
+                    Err(SdoErrorKind::UnexpectedSdoType(SdoType::UnsupportedType).into())
                 }
             },
         }
@@ -347,25 +357,34 @@ where
         dbg!(&mb);
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
-            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+            Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnsupportedMailboxProtocol.into()),
             Mailbox::CoE((_, coe)) => match coe {
                 crate::frame::CoE::Emmergency(emm_f) => {
                     Err(SdoErrorKind::Emmergency(emm_f.emmergency_error_code()).into())
                 }
-                crate::frame::CoE::SdoReq(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                crate::frame::CoE::SdoReq(sdo_req) => match sdo_req {
+                    crate::frame::SdoReq::Abort(abort_code) => {
+                        Err(SdoErrorKind::AbortCode(abort_code).into())
+                    }
+                    _ => Err(SdoErrorKind::UnexpectedSdoType(SdoType::Req).into()),
+                },
                 crate::frame::CoE::SdoRes(sdo_res) => match sdo_res {
-                    crate::frame::SdoRes::DownLoad => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::DownLoad => {
+                        Err(SdoErrorKind::UnexpectedSdoType(SdoType::DownLoadRes).into())
+                    }
                     crate::frame::SdoRes::Upload(res) => {
                         if mb_data.count() != count {
-                            Err(SdoErrorKind::UnexpectedMailbox.into())
+                            Err(SdoErrorKind::CountUnmatch.into())
                         } else {
                             Ok(res)
                         }
                     }
-                    crate::frame::SdoRes::Other(_) => Err(SdoErrorKind::UnexpectedMailbox.into()),
+                    crate::frame::SdoRes::Other(_) => {
+                        Err(SdoErrorKind::UnexpectedSdoType(SdoType::OtherRes).into())
+                    }
                 },
                 crate::frame::CoE::UnsupportedType(_) => {
-                    Err(SdoErrorKind::UnexpectedMailbox.into())
+                    Err(SdoErrorKind::UnexpectedSdoType(SdoType::UnsupportedType).into())
                 }
             },
         }
@@ -378,7 +397,18 @@ pub enum SdoErrorKind {
     AbortCode(AbortCode),
     ErrorMailbox(MailboxErrorDetail),
     Emmergency(EmmergencyErrorCode),
-    UnexpectedMailbox,
+    UnexpectedSdoType(SdoType),
+    CountUnmatch,
+    UnsupportedMailboxProtocol,
+}
+
+#[derive(Debug, Clone)]
+pub enum SdoType {
+    Req,
+    UploadRes,
+    DownLoadRes,
+    OtherRes,
+    UnsupportedType,
 }
 
 impl From<TaskError<()>> for TaskError<SdoErrorKind> {

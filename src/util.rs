@@ -38,7 +38,10 @@ where
 
     pub fn new() -> Self {
         let mut items = [Self::INIT; N];
-        items.iter_mut().enumerate().for_each(|(index, v)| *v = IndexOption::NextFreeIndex(index+1));
+        items
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, v)| *v = IndexOption::NextFreeIndex(index + 1));
         Self {
             free_index: 0,
             items,
@@ -143,6 +146,5 @@ mod tests {
         let _h3 = set.add_item(item).unwrap();
         let _h4 = set.add_item(item).unwrap();
         assert!(set.add_item(item).is_err());
-
     }
 }

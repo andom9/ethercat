@@ -71,7 +71,7 @@ impl SdoFrame<[u8; 4]> {
 
 impl<'a> SdoFrame<&'a [u8]> {
     pub fn without_header(&self) -> &'a [u8] {
-        &self.0[CoeFrame::HEADER_SIZE..]
+        &self.0[SdoFrame::HEADER_SIZE..]
     }
 }
 

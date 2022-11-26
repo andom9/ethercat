@@ -112,9 +112,29 @@ fn sdo_test(name: &str) {
     println!("al state: {:?}", al_state);
 
     println!("reading vender id");
-    let vender_id = master.read_sdo(SlaveAddress::SlavePosition(0), 0x1018, 0x01).unwrap();
-    println!("vender id: {:?}", vender_id);
-    
+    let vender_id = master
+        .read_sdo_as_u32(SlaveAddress::SlavePosition(0), 0x1018, 0x01)
+        .unwrap();
+    println!("vender id: {:x}", vender_id);
+
+    println!("reading gain");
+    let gain = master
+        .read_sdo_as_u16(SlaveAddress::SlavePosition(0), 0x2005, 0x01)
+        .unwrap();
+    println!("gain: {:x}", gain);
+
+    println!("writing gain");
+    master
+        .write_sdo_as_u16(SlaveAddress::SlavePosition(0), 0x2005, 0x01, gain + 1)
+        .unwrap();
+    let gain = master
+        .read_sdo_as_u16(SlaveAddress::SlavePosition(0), 0x2005, 0x01)
+        .unwrap();
+    println!("gain: {:x}", gain);
+    master
+        .write_sdo_as_u16(SlaveAddress::SlavePosition(0), 0x2005, 0x01, gain - 1)
+        .unwrap();
+
     println!("sdo_test done");
 }
 

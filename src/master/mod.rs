@@ -321,6 +321,100 @@ where
             .read_sdo(&self.gp_socket_handle, slave, index, sub_index)
     }
 
+    pub fn read_sdo_as_bool(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<bool, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(buf[0] & 1 == 1)
+    }
+
+    pub fn read_sdo_as_u8(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<u8, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(u8::from_le_bytes([buf[0]]))
+    }
+
+    pub fn read_sdo_as_i8(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<i8, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(i8::from_le_bytes([buf[0]]))
+    }
+
+    pub fn read_sdo_as_u16(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<u16, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(u16::from_le_bytes([buf[0], buf[1]]))
+    }
+
+    pub fn read_sdo_as_i16(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<i16, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(i16::from_le_bytes([buf[0], buf[1]]))
+    }
+
+    pub fn read_sdo_as_u32(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<u32, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
+    }
+
+    pub fn read_sdo_as_i32(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<i32, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(i32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
+    }
+
+    pub fn read_sdo_as_u64(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<u64, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(u64::from_le_bytes([
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+        ]))
+    }
+
+    pub fn read_sdo_as_i64(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+    ) -> Result<i64, TaskError<SdoErrorKind>> {
+        let buf = self.read_sdo(slave_address, index, sub_index)?;
+        Ok(i64::from_le_bytes([
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+        ]))
+    }
+
     pub fn write_sdo(
         &mut self,
         slave_address: SlaveAddress,
@@ -331,6 +425,123 @@ where
         let (slave, _) = self.network.slave(slave_address).expect("slave not found");
         self.sif
             .write_sdo(&self.gp_socket_handle, slave, index, sub_index, data)
+    }
+
+    pub fn write_sdo_as_bool(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: bool,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = [data as u8];
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_u8(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: u8,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_i8(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: i8,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_u16(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: u16,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_i16(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: i16,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_u32(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: u32,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_i32(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: i32,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_u64(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: u64,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
+    }
+
+    pub fn write_sdo_as_i64(
+        &mut self,
+        slave_address: SlaveAddress,
+        index: u16,
+        sub_index: u8,
+        data: i64,
+    ) -> Result<(), TaskError<SdoErrorKind>> {
+        let buf = data.to_le_bytes();
+        let (slave, _) = self.network.slave(slave_address).expect("slave not found");
+        self.sif
+            .write_sdo(&self.gp_socket_handle, slave, index, sub_index, &buf)
     }
 
     pub fn read_pdo(
