@@ -494,3 +494,19 @@ impl DcSystemTimeTransmissionDelay<[u8; 4]> {
         Self([0; Self::SIZE])
     }
 }
+
+bitfield! {
+    #[derive(Debug, Clone)]
+    pub struct DcSystemTimeDelta([u8]);
+    pub u32, delta, set_delta: 30, 0;
+    pub grater_than_system_time, _: 31;
+}
+
+impl DcSystemTimeDelta<[u8; 4]> {
+    pub const ADDRESS: u16 = 0x092C;
+    pub const SIZE: usize = 4;
+
+    pub fn new() -> Self {
+        Self([0; Self::SIZE])
+    }
+}

@@ -281,35 +281,6 @@ where
             .read_sii(&self.gp_socket_handle, slave_address, sii_address)
     }
 
-    // pub fn read_mailbox(
-    //     &mut self,
-    //     slave_address: SlaveAddress,
-    //     wait_full: bool,
-    // ) -> Result<(MailboxFrame<&[u8]>, &[u8]), TaskError<MailboxTaskError>> {
-    //     let (slave, _) = self.network.slave(slave_address).expect("slave not found");
-    //     let slave_info = slave.info();
-    //     self.sif
-    //         .read_mailbox(&self.gp_socket_handle, slave_info, wait_full)
-    // }
-
-    // pub fn write_mailbox(
-    //     &mut self,
-    //     slave_address: SlaveAddress,
-    //     mb_header: &MailboxFrame<[u8; MailboxFrame::HEADER_SIZE]>,
-    //     mb_data: &[u8],
-    //     wait_empty: bool,
-    // ) -> Result<(), TaskError<MailboxTaskError>> {
-    //     let (slave, _) = self.network.slave(slave_address).expect("slave not found");
-    //     let slave_info = slave.info();
-    //     self.sif.write_mailbox(
-    //         &self.gp_socket_handle,
-    //         slave_info,
-    //         mb_header,
-    //         mb_data,
-    //         wait_empty,
-    //     )
-    // }
-
     pub fn read_sdo(
         &mut self,
         slave_address: SlaveAddress,
@@ -1170,6 +1141,20 @@ where
             })?;
         }
         Ok(())
+    }
+
+    pub fn read_register(
+        &mut self,
+        target_slave: TargetSlave,
+        register_address: u16,
+        data_size: usize,
+    ) -> Result<&[u8], TaskError<()>> {
+        let Self {
+            sif,
+            gp_socket_handle,
+            ..
+        } = self;
+        sif.read_register(&gp_socket_handle, target_slave, register_address, data_size)
     }
 }
 

@@ -130,6 +130,7 @@ impl Slave {
 pub(crate) struct DcContext {
     pub parent_port: Option<(u16, u8)>,
     pub current_port: u8,
+    pub latched_local_sys_time: u64,
     pub recieved_port_time: [u32; 4],
     pub delay: u32,
     pub offset: u64,

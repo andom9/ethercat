@@ -55,7 +55,7 @@ impl CyclicTask for DcSyncTask {
     fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {
         let command = Command::new(
             CommandType::ARMW,
-            SlaveAddress::SlavePosition(self.first_dc_slave).get_ado(),
+            SlaveAddress::SlavePosition(self.first_dc_slave).get_adp(),
             DcSystemTime::ADDRESS,
         );
         buf[..DcSystemTime::SIZE].fill(0);

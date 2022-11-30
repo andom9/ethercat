@@ -116,29 +116,6 @@ impl<'a> MailboxRequestInterface<'a> {
             .start_to_write(session_id.slave_address, rx_sm, false);
         session_id
     }
-
-    // pub fn write_sdo_request(
-    //     &mut self,
-    //     slave: &Slave,
-    //     index: u16,
-    //     sub_index: u8,
-    //     data: &[u8],
-    //     mb_buf: &mut [u8],
-    // ) -> MailboxSessionId {
-    //     let mut mailbox = Mailbox::new_sdo_download_request(index, sub_index, data);
-    //     self.request(slave, &mut mailbox, mb_buf)
-    // }
-
-    // pub fn read_sdo_request(
-    //     &mut self,
-    //     slave: &Slave,
-    //     index: u16,
-    //     sub_index: u8,
-    //     mb_buf: &mut [u8],
-    // ) -> MailboxSessionId {
-    //     let mut mailbox = Mailbox::new_sdo_upload_request(index, sub_index);
-    //     self.request(slave, &mut mailbox, mb_buf)
-    // }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

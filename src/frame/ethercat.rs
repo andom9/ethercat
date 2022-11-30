@@ -413,9 +413,11 @@ impl<'a> MailboxFrame<&'a mut [u8]> {
                                     + SdoDownloadNormalRequestFrame::HEADER_SIZE
                                     + data.len();
                                 assert!(payload_length <= u16::MAX as usize);
-                                sdo_frame.0[SdoFrame::HEADER_SIZE+SdoDownloadNormalRequestFrame::HEADER_SIZE..]
-                                .iter_mut()
-                                .zip(data.iter()).for_each(|(frame, d)| *frame = *d);
+                                sdo_frame.0[SdoFrame::HEADER_SIZE
+                                    + SdoDownloadNormalRequestFrame::HEADER_SIZE..]
+                                    .iter_mut()
+                                    .zip(data.iter())
+                                    .for_each(|(frame, d)| *frame = *d);
                                 payload_length as u16
                             }
                             SdoReq::Upload => {
@@ -575,7 +577,9 @@ mod tests {
         let frame_to_be = {
             let mut frame_to_be: [u8; 256] = [0; 256];
             let mb_head = [0x0C, 0x00, 0x00, 0x00, 0x00, 0x13];
-            let coe_data = [0x00, 0x20, 0x21, 0x34, 0x12, 0x56, 0x02, 0x00, 0x00, 0x00, 0x78, 0x9A];
+            let coe_data = [
+                0x00, 0x20, 0x21, 0x34, 0x12, 0x56, 0x02, 0x00, 0x00, 0x00, 0x78, 0x9A,
+            ];
             frame_to_be[..MailboxFrame::HEADER_SIZE]
                 .iter_mut()
                 .zip(mb_head)

@@ -11,7 +11,6 @@ use ethercat_master::slave::SyncMode;
 use ethercat_master::EtherCatMaster;
 use pcap::Device;
 use std::env;
-use std::time::Instant;
 
 fn main() {
     env::set_var("RUST_LOG", "warn");
@@ -19,9 +18,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if let Some(name) = args.get(1) {
-        pdu_test(&name);
-        read_eeprom_test(name);
-        sdo_test(name);
+        //pdu_test(name);
+        //read_eeprom_test(name);
+        //sdo_test(name);
+        dc_test(name);
         //pdo_test(name);
     } else {
         println!("Specify the name of network interface as an argument from the following.");
@@ -136,6 +136,58 @@ fn sdo_test(name: &str) {
         .unwrap();
 
     println!("sdo_test done");
+}
+
+fn dc_test(name: &str) {
+    println!("\ndc_test");
+    let dev = new_device(name);
+    let mut buf = [0; 1500];
+    let iface = PduInterface::new(dev, &mut buf);
+
+    let mut slaves: [_; 10] = Default::default();
+    let mut pdu_buffer = vec![0; 1500];
+    let mut master = EtherCatMaster::new(&mut slaves, &mut pdu_buffer, iface);
+    println!("initializing slaves");
+    master.init().unwrap();
+
+    let num_slaves = master.network().num_slaves();
+    println!("number of slaves: {}", num_slaves);
+
+    let data = master
+        .read_register(SlaveAddress::SlavePosition(2).into(), 0x92C, 4)
+        .unwrap();
+    println!(
+        "{:?}",
+        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) & 0x7FFF_FFFF
+    );
+
+    master.init_dc().unwrap();
+
+    let data = master
+        .read_register(SlaveAddress::SlavePosition(0).into(), 0x92C, 4)
+        .unwrap();
+    println!(
+        "{:?}",
+        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) & 0x7FFF_FFFF
+    );
+
+    let data = master
+        .read_register(SlaveAddress::SlavePosition(1).into(), 0x92C, 4)
+        .unwrap();
+    println!(
+        "{:?}",
+        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) & 0x7FFF_FFFF
+    );
+
+    let data = master
+        .read_register(SlaveAddress::SlavePosition(2).into(), 0x92C, 4)
+        .unwrap();
+    println!(
+        "{:?}",
+        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) & 0x7FFF_FFFF
+    );
+
+    println!("dc_test done");
 }
 
 // fn pdo_test(interf_name: &str) {
