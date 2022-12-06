@@ -100,10 +100,10 @@ impl AlStateTransferTask {
 }
 
 impl CyclicTask for AlStateTransferTask {
-    fn is_finished(&self) -> bool {
+    fn is_busy(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
-            _ => false,
+            State::Idle | State::Complete | State::Error(_) => false,
+            _ => true,
         }
     }
 
@@ -235,7 +235,7 @@ impl CyclicTask for AlStateTransferTask {
                         AlStateTransferTaskError::AlStatusCode((al_state, al_status_code)).into(),
                     );
                 } else if self.timer_start.0 < sys_time.0
-                    && self.timeout_ms as u64 * 1000 < sys_time.0 - self.timer_start.0
+                    && self.timeout_ms as u64 * 1000_000_000 < sys_time.0 - self.timer_start.0
                 {
                     self.state = State::Error(TaskError::Timeout);
                 }

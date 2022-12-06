@@ -3,7 +3,8 @@ use super::{CyclicTask, EtherCatSystemTime};
 use crate::frame::CommandType;
 use crate::interface::*;
 use crate::register::{
-    DcRecieveTime, DcSystemTime, DcSystemTimeOffset, DcSystemTimeTransmissionDelay, DcSystemTimeDelta,
+    DcRecieveTime, DcSystemTime, DcSystemTimeDelta, DcSystemTimeOffset,
+    DcSystemTimeTransmissionDelay,
 };
 use crate::slave::Network;
 use crate::util::const_max;
@@ -110,10 +111,10 @@ impl<'a, 'b, 'c, 'd> DcInitTask<'a, 'b, 'c, 'd> {
 }
 
 impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
-    fn is_finished(&self) -> bool {
+    fn is_busy(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
-            _ => false,
+            State::Idle | State::Complete | State::Error(_) => false,
+            _ => true,
         }
     }
 
@@ -184,11 +185,7 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
                 Some((self.command, DcSystemTime::SIZE))
             }
             State::CheckDelta => {
-                self.command = Command::new(
-                    CommandType::BRD,
-                    0,
-                    DcSystemTimeDelta::ADDRESS,
-                );
+                self.command = Command::new(CommandType::BRD, 0, DcSystemTimeDelta::ADDRESS);
                 buf[..DcSystemTimeDelta::SIZE].fill(0);
                 Some((self.command, DcSystemTimeDelta::SIZE))
             }
@@ -252,13 +249,13 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
                         ];
 
                         let first_recieved_port = slave
-                        .info()
-                        .linked_ports()
-                        .iter()
-                        .position(|is_active| *is_active)
-                        .unwrap();
-                        dc.latched_local_sys_time = dc
-                            .recieved_port_time[first_recieved_port] as u64;
+                            .info()
+                            .linked_ports()
+                            .iter()
+                            .position(|is_active| *is_active)
+                            .unwrap();
+                        dc.latched_local_sys_time =
+                            dc.recieved_port_time[first_recieved_port] as u64;
 
                         if self.first_dc_slave.is_some() && self.first_dc_slave.unwrap() < *pos {
                             let last_recieved_port = slave
@@ -399,14 +396,14 @@ impl<'a, 'b, 'c, 'd> CyclicTask for DcInitTask<'a, 'b, 'c, 'd> {
                 let num_dc_slave = self.dc_slave_count as u16;
                 if wkc != num_dc_slave {
                     self.state = State::Error(TaskError::UnexpectedWkc((num_dc_slave, wkc).into()));
-                }else{
+                } else {
                     let delta = DcSystemTimeDelta(data).delta();
-                    if delta <= TARGET_DELTA_NS{
+                    if delta <= TARGET_DELTA_NS {
                         self.state = State::Complete;
-                    }else{
-                        let count = if 100 < DRIFT_COUNT_MIN{
-                            DRIFT_COUNT_MIN -100
-                        }else{
+                    } else {
+                        let count = if 100 < DRIFT_COUNT_MIN {
+                            DRIFT_COUNT_MIN - 100
+                        } else {
                             0
                         };
                         self.state = State::CompensateDrift(count);

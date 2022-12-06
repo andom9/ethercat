@@ -53,8 +53,8 @@ impl ProcessTask {
 }
 
 impl CyclicTask for ProcessTask {
-    fn is_finished(&self) -> bool {
-        true
+    fn is_busy(&self) -> bool {
+        false
     }
 
     fn next_pdu(&mut self, _buf: &mut [u8]) -> Option<(Command, usize)> {

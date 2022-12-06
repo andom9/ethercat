@@ -1,6 +1,9 @@
 use crate::interface::*;
 use crate::register::PortPhysics;
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    f32::consts::E,
+};
 
 #[derive(Debug, Clone)]
 pub enum SlaveError {
@@ -505,16 +508,43 @@ impl LogicalBits {
         let start_bit = self.start_bit;
         let pdo_offset = (logical_start_address - logical_address_offset) as usize;
         process_data_image.get(pdo_offset + size - 1)?;
-        (0..size - 1).for_each(|i| {
-            process_data_image[pdo_offset + i] &= 0xFF >> (7 - start_bit);
+        (0..size).for_each(|i| {
+            //if i==0{
+            //    if start_bit ==0{
+            //        process_data_image[pdo_offset + i] =0;
+            //    }else{
+            //        process_data_image[pdo_offset + i] &= 0xFF >> (8 - start_bit);
+            //    }
+            //}else{
+            //    process_data_image[pdo_offset + i] =0;
+            //}
+            if i == 0 {
+                if start_bit == 0 {
+                    process_data_image[pdo_offset + i] = 0;
+                } else {
+                    process_data_image[pdo_offset + i] &= 0xFF >> (8 - start_bit);
+                }
+            } else if i == size - 1 {
+                let mod8 = ((self.bit_length + start_bit as u16) % 8) as u8;
+                if mod8 == 0 {
+                    process_data_image[pdo_offset + i] = 0;
+                } else {
+                    process_data_image[pdo_offset + i] &= 0xFF << mod8;
+                }
+            } else {
+                process_data_image[pdo_offset + i] = 0;
+            }
+
             process_data_image[pdo_offset + i] |= buf[i] << start_bit;
+            if i >= 1 && start_bit != 0 {
+                process_data_image[pdo_offset + i] |= buf[i - 1] >> (8 - start_bit);
+            }
         });
-        process_data_image[pdo_offset + size - 1] &=
-            0xFF << ((self.bit_length + start_bit as u16) % 8) as u8;
-        process_data_image[pdo_offset + size - 1] |= buf[size - 1] << start_bit;
-        if size - 2 != 0 {
-            process_data_image[pdo_offset + size - 1] |= buf[size - 2] >> (7 - start_bit);
-        }
+
+        // process_data_image[pdo_offset + size - 1] |= buf[size - 1] << start_bit;
+        // if size >= 2 && start_bit != 0 {
+        //     process_data_image[pdo_offset + size - 1] |= buf[size - 2] >> (8 - start_bit);
+        // }
         Some(())
     }
 }
@@ -644,3 +674,64 @@ impl Direction {
 //         &mut self.buffer
 //     }
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::LogicalBits;
+    #[test]
+    fn set_logical_test() {
+        let mut image = [0; 10];
+        let logical_bits = LogicalBits {
+            logical_address: Some(100),
+            start_bit: 0,
+            bit_length: 16,
+        };
+
+        assert_eq!(logical_bits.byte_length(), 2);
+
+        let buf = [0b1111_1111, 0b1111_1111];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(buf[0], image[0]);
+        assert_eq!(buf[1], image[1]);
+
+        let buf = [0b0101_0101, 0b0101_0101];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(buf[0], image[0]);
+        assert_eq!(buf[1], image[1]);
+
+        let buf = [0b1010_1010, 0b1010_1010];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(buf[0], image[0]);
+        assert_eq!(buf[1], image[1]);
+    }
+
+    #[test]
+    fn set_logical_test2() {
+        let mut image = [0; 10];
+        let logical_bits = LogicalBits {
+            logical_address: Some(100),
+            start_bit: 1,
+            bit_length: 22,
+        };
+
+        assert_eq!(logical_bits.byte_length(), 3);
+
+        let buf = [0b1111_1111, 0b1111_1111, 0b0011_1111];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(0b1111_1110, image[0]);
+        assert_eq!(0b1111_1111, image[1]);
+        assert_eq!(0b0111_1111, image[2]);
+
+        let buf = [0b0101_0101, 0b0101_0101, 0b0001_0101];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(0b1010_1010, image[0]);
+        assert_eq!(0b1010_1010, image[1]);
+        assert_eq!(0b0010_1010, image[2]);
+
+        let buf = [0b1010_1010, 0b1010_1010, 0b0010_1010];
+        logical_bits.write_from_buffer(100, &mut image, &buf);
+        assert_eq!(0b0101_0100, image[0]);
+        assert_eq!(0b0101_0101, image[1]);
+        assert_eq!(0b0101_0101, image[2]);
+    }
+}

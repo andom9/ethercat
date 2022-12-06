@@ -58,7 +58,7 @@ pub trait CyclicTask {
 
     fn recieve_and_process(&mut self, recv_data: &Pdu, sys_time: EtherCatSystemTime);
 
-    fn is_finished(&self) -> bool;
+    fn is_busy(&self) -> bool;
 }
 
 impl<'frame, 'buf, D, const N: usize> SocketInterface<'frame, 'buf, D, N>
@@ -83,11 +83,11 @@ where
             }
             let socket = self.get_socket_mut(handle).unwrap();
             unit.process_one_step(socket, EtherCatSystemTime(count));
-            if unit.is_finished() {
+            if !unit.is_busy() {
                 break;
             };
             count += 1;
-            if 10000 < count {
+            if 100000 < count {
                 return Err(TaskError::Timeout);
             }
         }
@@ -291,7 +291,6 @@ where
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
 
-        dbg!(&mb);
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
             Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnsupportedMailboxProtocol.into()),
@@ -336,7 +335,6 @@ where
     ) -> Result<&[u8], TaskError<SdoErrorKind>> {
         let count = slave.increment_mb_count();
         let slave_info = slave.info();
-        dbg!(count);
         self.write_mailbox(
             handle,
             slave_info,
@@ -349,12 +347,9 @@ where
         )
         .unwrap();
         let mb_data = self.read_mailbox(handle, slave_info, true).unwrap();
-        dbg!(mb_data.count());
         let mb = mb_data
             .mailbox()
             .map_err(|_| SdoErrorKind::Mailbox(MailboxTaskError::BufferSmall))?;
-
-        dbg!(&mb);
         match mb {
             Mailbox::Error(err) => Err(SdoErrorKind::ErrorMailbox(err.clone()).into()),
             Mailbox::UnsupportedProtocol(_) => Err(SdoErrorKind::UnsupportedMailboxProtocol.into()),

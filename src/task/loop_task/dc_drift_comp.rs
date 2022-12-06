@@ -48,8 +48,8 @@ impl DcSyncTask {
 }
 
 impl CyclicTask for DcSyncTask {
-    fn is_finished(&self) -> bool {
-        true
+    fn is_busy(&self) -> bool {
+        false
     }
 
     fn next_pdu(&mut self, buf: &mut [u8]) -> Option<(Command, usize)> {

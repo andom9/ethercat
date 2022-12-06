@@ -143,10 +143,10 @@ impl SlaveInitTask {
 }
 
 impl CyclicTask for SlaveInitTask {
-    fn is_finished(&self) -> bool {
+    fn is_busy(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
-            _ => false,
+            State::Idle | State::Complete | State::Error(_) => false,
+            _ => true,
         }
     }
 

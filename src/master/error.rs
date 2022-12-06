@@ -1,4 +1,4 @@
-use crate::{interface::SlaveAddress, task::*};
+use crate::{interface::SlaveAddress, slave::SyncMode, task::*};
 
 #[derive(Debug, Clone)]
 pub struct ConfigError {
@@ -9,8 +9,14 @@ pub struct ConfigError {
 #[derive(Debug, Clone)]
 pub enum ConfigErrorKind {
     SetFmmuRegister(RegisterError),
+    GetSyncManagerCycleTime(SdoError),
     SetSyncManagerSyncType(SdoError),
+    GetSyncManagerSyncType(SdoError),
+    SyncModeNotSupported(SyncMode),
+    GetMinimumCycleTime(SdoError),
+    CycleTimeTooSmall(u32),
     SetSyncManagerCycleTime(SdoError),
+    ResetSyncError(SdoError),
     SetSync0CycleTime(RegisterError),
     SetSync1CycleTime(RegisterError),
     SetSyncSignalStartTime(RegisterError),

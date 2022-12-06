@@ -73,10 +73,10 @@ impl MailboxWriteTask {
 }
 
 impl CyclicTask for MailboxWriteTask {
-    fn is_finished(&self) -> bool {
+    fn is_busy(&self) -> bool {
         match self.state {
-            State::Idle | State::Complete | State::Error(_) => true,
-            _ => false,
+            State::Idle | State::Idle | State::Complete | State::Error(_) => false,
+            _ => true,
         }
     }
 

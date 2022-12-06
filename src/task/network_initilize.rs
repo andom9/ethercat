@@ -93,10 +93,10 @@ impl<'a, 'b, 'c, 'd> NetworkInitTask<'a, 'b, 'c, 'd> {
 }
 
 impl<'a, 'b, 'c, 'd> CyclicTask for NetworkInitTask<'a, 'b, 'c, 'd> {
-    fn is_finished(&self) -> bool {
+    fn is_busy(&self) -> bool {
         match self.state {
-            State::Complete | State::Error(_) => true,
-            _ => false,
+            State::Idle | State::Complete | State::Error(_) => false,
+            _ => true,
         }
     }
 

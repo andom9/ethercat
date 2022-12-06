@@ -6,13 +6,13 @@ pub struct SlaveConfig<'a, 'b> {
     output_pdo_mappings: &'a mut [PdoMapping<'b>],
     expectec_id: Option<SlaveId>,
     pub sync_mode: SyncMode,
-    pub cycle_time_ns: u32,
+    pub cycle_time_ns: CycleTime,
 }
 
 impl<'a, 'b> Default for SlaveConfig<'a, 'b> {
     fn default() -> Self {
         Self {
-            cycle_time_ns: 0x0007A120_u32, //500us
+            cycle_time_ns: CycleTime::DefaultValue, //500us
             sync_mode: SyncMode::FreeRun,
             output_pdo_mappings: &mut [],
             input_pdo_mappings: &mut [],
@@ -30,12 +30,20 @@ impl<'a, 'b> SlaveConfig<'a, 'b> {
         &mut self.input_pdo_mappings
     }
 
+    pub fn set_input_process_data_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+        self.input_pdo_mappings = mappings;
+    }
+
     pub fn output_process_data_mappings(&self) -> &[PdoMapping<'b>] {
         self.output_pdo_mappings
     }
 
     pub fn output_process_data_mappings_mut(&mut self) -> &mut [PdoMapping<'b>] {
         &mut self.output_pdo_mappings
+    }
+
+    pub fn set_output_process_data_mappings(&mut self, mappings: &'a mut [PdoMapping<'b>]) {
+        self.output_pdo_mappings = mappings;
     }
 }
 
@@ -50,6 +58,24 @@ pub enum SyncMode {
 impl Default for SyncMode {
     fn default() -> Self {
         SyncMode::FreeRun
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CycleTime {
+    DefaultValue,
+    SpecifiedValue(u32),
+}
+
+impl Default for CycleTime {
+    fn default() -> Self {
+        CycleTime::DefaultValue
+    }
+}
+
+impl From<u32> for CycleTime {
+    fn from(time_ns: u32) -> Self {
+        Self::SpecifiedValue(time_ns)
     }
 }
 

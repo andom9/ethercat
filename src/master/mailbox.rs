@@ -27,7 +27,7 @@ impl MailboxManager {
         mb_socket: &'a mut PduSocket,
         sys_time: EtherCatSystemTime,
     ) {
-        if self.task.is_finished() {
+        if !self.task.is_busy() {
             if let Some(slave_with_mailbox) = self.slave_with_mailbox {
                 let (slave, _) = network.slave(slave_with_mailbox).unwrap();
                 let tx_sm = slave.info().mailbox_tx_sm().unwrap();
@@ -82,7 +82,7 @@ impl MailboxManager {
     pub fn try_get_mailbox_request_interface<'a>(
         &'a mut self,
     ) -> Option<MailboxRequestInterface<'a>> {
-        if !self.task.is_finished() {
+        if self.task.is_busy() {
             return None;
         }
 
